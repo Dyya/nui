@@ -9,4 +9,4 @@ No permission is granted to:
 - modify, copy, or redistribute any part of this repository  
 - integrate any assets, logic, or interaction concepts into other software  
 
-All work in this repository — visual, interactive, or conceptual — remains proprietary to the author.
+All work in this repository. Visual, interactive, or conceptual, remains proprietary to the author.
