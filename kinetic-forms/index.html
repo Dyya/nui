@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Kinetic Forms - AD& </title>
+    <title>Kinetic Type & Form by AD&</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -92,6 +92,7 @@
             let particles = [];
             let walls = [];
             let textBodies = []; 
+            let gridTargets = []; 
             let currentMode = "FALL";
             
             let canvas, ctx;
@@ -121,7 +122,9 @@
                 world = engine.world;
 
                 createWalls();
+                
                 createParticles();
+                calculateGridTargets();
                 
                 createTextBodies(STATES[0].text);
                 currentMode = STATES[0].mode;
@@ -149,6 +152,62 @@
                 canvas.style.height = `${canvasHeight}px`;
 
                 ctx.scale(dpr, dpr);
+            }
+
+            function calculateGridTargets() {
+                gridTargets = [];
+                const gridMargin = canvasWidth * 0.05; 
+                const availableWidth = canvasWidth - (gridMargin * 2);
+                const availableHeight = canvasHeight - (gridMargin * 2);
+
+                let cols = Math.ceil(Math.sqrt(CONFIG.particleCount * (availableWidth / availableHeight) * 1.8)); 
+                let rows = Math.ceil(CONFIG.particleCount / cols * 1.8);
+
+                let validSlots = [];
+                
+                for(let attempt = 0; attempt < 5; attempt++) {
+                    validSlots = [];
+                    const cellW = availableWidth / cols;
+                    const cellH = availableHeight / rows;
+
+                    for (let r = 0; r < rows; r++) {
+                        for (let c = 0; c < cols; c++) {
+                            const x = gridMargin + (c * cellW) + (cellW/2);
+                            const y = gridMargin + (r * cellH) + (cellH/2);
+
+                            // Expanded Exclusion Zone (Slightly larger hole)
+                            const centerX = canvasWidth / 2;
+                            const centerY = canvasHeight / 2;
+                            const exW = canvasWidth * 0.7;  // Increased width
+                            const exH = canvasHeight * 0.5; // Increased height
+
+                            const inExclusion = (
+                                x > centerX - exW/2 && 
+                                x < centerX + exW/2 && 
+                                y > centerY - exH/2 && 
+                                y < centerY + exH/2
+                            );
+
+                            if (!inExclusion) {
+                                validSlots.push({x, y});
+                            }
+                        }
+                    }
+
+                    if (validSlots.length >= CONFIG.particleCount) break;
+                    cols++;
+                    rows++;
+                }
+
+                const step = validSlots.length / Math.max(1, CONFIG.particleCount);
+                for(let i = 0; i < CONFIG.particleCount; i++) {
+                    const slotIndex = Math.floor(i * step);
+                    if (validSlots[slotIndex]) {
+                        gridTargets.push(validSlots[slotIndex]);
+                    } else {
+                        gridTargets.push({x: canvasWidth/2, y: 50}); 
+                    }
+                }
             }
 
             function setupInteraction() {
@@ -320,13 +379,13 @@
                     const char = text[i];
                     const metrics = ctx.measureText(char);
                     const charWidth = metrics.width;
-                    const charHeight = fontSize * 0.72; 
+                    const charHeight = fontSize * 0.6; // Tighter bounding box (was 0.72)
 
                     const centerX = currentX + (charWidth / 2);
 
                     const body = Bodies.rectangle(centerX, centerY, charWidth, charHeight, {
                         isStatic: true,
-                        friction: 0.8,
+                        friction: 0.1,   // Slippery! (Was 0.8)
                         restitution: 0.4,
                         chamfer: { radius: 4 } 
                     });
@@ -409,39 +468,24 @@
                             engine.world.gravity.x = 0;
                             body.frictionAir = 0.02;
 
-                            const cols = Math.floor(Math.sqrt(particles.length * (canvasWidth/canvasHeight)));
-                            const spacingX = canvasWidth / (cols + 1);
-                            const spacingY = spacingX; 
-                            
-                            const row = Math.floor(index / cols);
-                            const col = index % cols;
-                            
-                            const totalGridWidth = (cols - 1) * spacingX;
-                            const totalRows = Math.ceil(particles.length / cols);
-                            const totalGridHeight = (totalRows - 1) * spacingY;
-                            
-                            const startX = (canvasWidth - totalGridWidth) / 2;
-                            const startY = (canvasHeight - totalGridHeight) / 2;
-                            const targetX = startX + (col * spacingX);
-                            const targetY = startY + (row * spacingY);
+                            if (gridTargets[index]) {
+                                const target = gridTargets[index];
+                                const dx = target.x - body.position.x;
+                                const dy = target.y - body.position.y;
+                                const dist = Math.sqrt(dx*dx + dy*dy);
 
-                            const dx = targetX - body.position.x;
-                            const dy = targetY - body.position.y;
-                            const dist = Math.sqrt(dx*dx + dy*dy);
+                                const forceX = dx * 0.00008; 
+                                const forceY = dy * 0.00008;
+                                Body.applyForce(body, body.position, { x: forceX, y: forceY });
 
-                            const forceX = dx * 0.00008; 
-                            const forceY = dy * 0.00008;
-                            
-                            Body.applyForce(body, body.position, { x: forceX, y: forceY });
-                            
-                            if (dist > 20 && body.speed < 0.5) {
-                                Body.applyForce(body, body.position, {
-                                    x: (Math.random() - 0.5) * 0.005 * body.mass,
-                                    y: (Math.random() - 0.5) * 0.005 * body.mass
-                                });
+                                if (dist > 20 && body.speed < 0.5) {
+                                    Body.applyForce(body, body.position, {
+                                        x: (Math.random() - 0.5) * 0.005 * body.mass,
+                                        y: (Math.random() - 0.5) * 0.005 * body.mass
+                                    });
+                                }
+                                Body.setVelocity(body, { x: body.velocity.x * 0.9, y: body.velocity.y * 0.9 });
                             }
-
-                            Body.setVelocity(body, { x: body.velocity.x * 0.9, y: body.velocity.y * 0.9 });
                             break;
 
                         case "ENTROPY":
@@ -515,6 +559,8 @@
                     updateDimensions();
                     createWalls();
                     Matter.Mouse.setOffset(mouseConstraint.mouse, { x: 0, y: 0 });
+                    
+                    calculateGridTargets();
                     
                     transitionState = 'IDLE';
                     cycleStartTime = Date.now();
