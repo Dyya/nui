@@ -1,6 +1,6 @@
 ### License & Usage
 
-© 2025 Adi Dizdarević — All rights reserved.
+© 2024-5 Adi Dizdarević — All rights reserved.
 
 This repository is publicly visible for **preview and demonstration purposes only**.
 
