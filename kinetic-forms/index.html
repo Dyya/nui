@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Kinetic Forms - AD& </title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@100..900&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #0a0a0a;
+            --text-color: #ffffff;
+            --accent-color: #007aff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Work Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            overflow: hidden;
+            cursor: crosshair;
+            touch-action: none;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <script>
+        /**
+         * KINETIC TYPE SYSTEM
+         * Author: Adi Dizdarevic
+         */
+        
+        const KineticTypeApp = (() => {
+            
+            const CONFIG = {
+                particleCount: 70,
+                textDuration: 6000, 
+                colors: ['#FFFFFF', '#FFFFFF', '#FF3B30', '#007AFF', '#FFCC00', '#E5E5EA'], 
+                physics: {
+                    gravity: 1,
+                    friction: 0.5,
+                    restitution: 0.7 
+                },
+                staggerDelay: 50,  
+                shrinkSpeed: 0.82, 
+                growSpeed: 1.15    
+            };
+
+            const STATES = [
+                { text: "FORM", mode: "GRID" },
+                { text: "CHAOS", mode: "ENTROPY" },
+                { text: "COHESION", mode: "CENTER" },
+                { text: "GRAVITY", mode: "FALL" },
+                { text: "FLOW", mode: "FLOW" }
+            ];
+
+            const Engine = Matter.Engine,
+                  Runner = Matter.Runner,
+                  World = Matter.World,
+                  Bodies = Matter.Bodies,
+                  Body = Matter.Body,
+                  Common = Matter.Common,
+                  Mouse = Matter.Mouse,
+                  MouseConstraint = Matter.MouseConstraint;
+
+            let engine, world, runner;
+            let particles = [];
+            let walls = [];
+            let textBodies = []; 
+            let currentMode = "FALL";
+            
+            let canvas, ctx;
+            let canvasWidth, canvasHeight;
+            let dpr = 1; 
+            let mouseConstraint;
+            
+            let transitionState = 'IDLE'; 
+            let nextStateData = null;
+            let transitionStartTime = 0; 
+            let stateIndex = 0;
+            let cycleStartTime = 0;
+
+            function init() {
+                const container = document.getElementById('canvas-container');
+                canvas = document.createElement('canvas');
+                ctx = canvas.getContext('2d');
+                container.appendChild(canvas);
+
+                updateDimensions();
+
+                engine = Engine.create({
+                    positionIterations: 20, 
+                    velocityIterations: 10, 
+                    constraintIterations: 8 
+                });
+                world = engine.world;
+
+                createWalls();
+                createParticles();
+                
+                createTextBodies(STATES[0].text);
+                currentMode = STATES[0].mode;
+                cycleStartTime = Date.now();
+
+                setupInteraction();
+
+                runner = Runner.create();
+                Runner.run(runner, engine);
+                
+                requestAnimationFrame(renderLoop);
+                
+                window.addEventListener('resize', handleResize);
+            }
+
+            function updateDimensions() {
+                dpr = window.devicePixelRatio || 1;
+                canvasWidth = window.innerWidth;
+                canvasHeight = window.innerHeight;
+
+                canvas.width = canvasWidth * dpr;
+                canvas.height = canvasHeight * dpr;
+
+                canvas.style.width = `${canvasWidth}px`;
+                canvas.style.height = `${canvasHeight}px`;
+
+                ctx.scale(dpr, dpr);
+            }
+
+            function setupInteraction() {
+                const mouse = Mouse.create(canvas);
+                mouse.pixelRatio = dpr; 
+
+                mouseConstraint = MouseConstraint.create(engine, {
+                    mouse: mouse,
+                    constraint: {
+                        stiffness: 0.2,
+                        damping: 0.1,
+                        render: { visible: false }
+                    }
+                });
+                World.add(world, mouseConstraint);
+            }
+
+            function renderLoop() {
+                const now = Date.now();
+
+                handleCycle(now);
+                handleTextTransition(now);
+                applyFormationLogic(engine.timing.timestamp);
+
+                ctx.fillStyle = '#0a0a0a';
+                ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+                drawParticles();
+                drawText();
+
+                requestAnimationFrame(renderLoop);
+            }
+
+            function handleCycle(now) {
+                if (transitionState !== 'IDLE') return;
+
+                const elapsed = now - cycleStartTime;
+                if (elapsed >= CONFIG.textDuration) {
+                    stateIndex = (stateIndex + 1) % STATES.length;
+                    nextStateData = STATES[stateIndex];
+                    
+                    transitionState = 'OUT';
+                    transitionStartTime = now;
+                    cycleStartTime = now; 
+                }
+            }
+
+            function handleTextTransition(now) {
+                if (transitionState === 'IDLE') return;
+
+                const elapsed = now - transitionStartTime;
+                
+                if (transitionState === 'OUT') {
+                    let animationComplete = true;
+                    
+                    textBodies.forEach((tb, i) => {
+                        const myStartTime = i * CONFIG.staggerDelay;
+                        if (elapsed > myStartTime) {
+                            if (tb.currentScale > 0.01) {
+                                Body.scale(tb.body, CONFIG.shrinkSpeed, CONFIG.shrinkSpeed);
+                                tb.currentScale *= CONFIG.shrinkSpeed;
+                                animationComplete = false; 
+                            } else if (tb.currentScale !== 0) {
+                                Body.scale(tb.body, 0.001, 0.001); 
+                                tb.currentScale = 0;
+                            }
+                        } else {
+                            animationComplete = false;
+                        }
+                    });
+
+                    if (animationComplete) {
+                        cleanTextBodies();
+                        transitionState = 'IN';
+                        transitionStartTime = Date.now(); 
+                        currentMode = nextStateData.mode; 
+                        
+                        createTextBodies(nextStateData.text);
+                        
+                        textBodies.forEach(tb => {
+                            const startScale = 0.05;
+                            Body.scale(tb.body, startScale, startScale);
+                            tb.currentScale = startScale;
+                        });
+                    }
+                }
+
+                if (transitionState === 'IN') {
+                    let animationComplete = true;
+                    
+                    textBodies.forEach((tb, i) => {
+                        const myStartTime = i * CONFIG.staggerDelay;
+                        if (elapsed > myStartTime) {
+                            if (tb.currentScale < 1.0) {
+                                const nextScale = tb.currentScale * CONFIG.growSpeed;
+                                if (nextScale >= 1.0) {
+                                    const finalScaleFactor = 1.0 / tb.currentScale;
+                                    Body.scale(tb.body, finalScaleFactor, finalScaleFactor);
+                                    tb.currentScale = 1.0;
+                                } else {
+                                    Body.scale(tb.body, CONFIG.growSpeed, CONFIG.growSpeed);
+                                    tb.currentScale *= CONFIG.growSpeed;
+                                    animationComplete = false;
+                                }
+                            }
+                        } else {
+                            animationComplete = false;
+                        }
+                    });
+
+                    if (animationComplete) {
+                        transitionState = 'IDLE';
+                        cycleStartTime = Date.now(); 
+                    }
+                }
+            }
+
+            function drawText() {
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                const baseFontSize = Math.min(canvasWidth, canvasHeight) * 0.15;
+
+                textBodies.forEach(tb => {
+                    ctx.save();
+                    ctx.translate(tb.body.position.x, tb.body.position.y);
+                    ctx.rotate(tb.body.angle);
+                    
+                    const currentFontSize = baseFontSize * tb.currentScale;
+                    ctx.font = `900 ${currentFontSize}px "Work Sans"`;
+                    
+                    ctx.fillText(tb.char, 0, currentFontSize * 0.05); 
+                    ctx.restore();
+                });
+            }
+
+            function drawParticles() {
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#0a0a0a';
+
+                particles.forEach(p => {
+                    const vertices = p.body.vertices;
+                    ctx.beginPath();
+                    ctx.moveTo(vertices[0].x, vertices[0].y);
+                    for (let j = 1; j < vertices.length; j += 1) {
+                        ctx.lineTo(vertices[j].x, vertices[j].y);
+                    }
+                    ctx.lineTo(vertices[0].x, vertices[0].y);
+                    ctx.closePath();
+                    
+                    ctx.fillStyle = p.color;
+                    ctx.fill();
+                    ctx.stroke();
+                });
+            }
+
+            function createTextBodies(text) {
+                cleanTextBodies();
+
+                const fontSize = Math.min(canvasWidth, canvasHeight) * 0.15;
+                ctx.font = `900 ${fontSize}px "Work Sans"`;
+
+                const totalWidth = ctx.measureText(text).width;
+                let currentX = (canvasWidth / 2) - (totalWidth / 2);
+                const centerY = canvasHeight / 2;
+
+                for (let i = 0; i < text.length; i++) {
+                    const char = text[i];
+                    const metrics = ctx.measureText(char);
+                    const charWidth = metrics.width;
+                    const charHeight = fontSize * 0.72; 
+
+                    const centerX = currentX + (charWidth / 2);
+
+                    const body = Bodies.rectangle(centerX, centerY, charWidth, charHeight, {
+                        isStatic: true,
+                        friction: 0.8,
+                        restitution: 0.4,
+                        chamfer: { radius: 4 } 
+                    });
+
+                    World.add(world, body);
+                    
+                    textBodies.push({
+                        body: body,
+                        char: char,
+                        currentScale: 1.0 
+                    });
+
+                    currentX += charWidth;
+                }
+            }
+
+            function cleanTextBodies() {
+                textBodies.forEach(tb => World.remove(world, tb.body));
+                textBodies = [];
+            }
+
+            function createWalls() {
+                World.remove(world, walls);
+                walls = [];
+                const thick = 200; 
+                const opts = { isStatic: true, friction: 0.5, restitution: 0.5, render: { visible: false } };
+                
+                walls.push(
+                    Bodies.rectangle(canvasWidth/2, -thick/2, canvasWidth + 200, thick, opts), 
+                    Bodies.rectangle(canvasWidth/2, canvasHeight + thick/2, canvasWidth + 200, thick, opts), 
+                    Bodies.rectangle(canvasWidth + thick/2, canvasHeight/2, thick, canvasHeight + 200, opts), 
+                    Bodies.rectangle(-thick/2, canvasHeight/2, thick, canvasHeight + 200, opts)
+                );
+                World.add(world, walls);
+            }
+
+            function createParticles() {
+                const baseSize = Math.min(canvasWidth, canvasHeight) / 25; 
+
+                for (let i = 0; i < CONFIG.particleCount; i++) {
+                    const size = Common.random(baseSize * 0.8, baseSize * 1.5);
+                    const x = Common.random(100, canvasWidth - 100);
+                    const y = Common.random(100, canvasHeight - 100);
+                    const color = Common.choose(CONFIG.colors);
+                    
+                    let body;
+                    const shapeType = Math.random();
+                    const bodyOpts = { 
+                        friction: 0.3,      
+                        frictionAir: 0.01,   
+                        restitution: 0.8,    
+                        density: 0.005,
+                        chamfer: { radius: size * 0.1 } 
+                    };
+
+                    if (shapeType < 0.4) {
+                        body = Bodies.circle(x, y, size/2, bodyOpts);
+                    } else if (shapeType < 0.8) {
+                        body = Bodies.rectangle(x, y, size, size, bodyOpts);
+                    } else {
+                        body = Bodies.polygon(x, y, 3, size/1.5, bodyOpts);
+                    }
+
+                    particles.push({ body: body, color: color });
+                    World.add(world, body);
+                }
+            }
+
+            function applyFormationLogic(time) {
+                const repulsionRadius = Math.min(canvasWidth, canvasHeight) * 0.12; 
+                const repulsionStrength = 0.0006; 
+
+                particles.forEach((p, index) => {
+                    const body = p.body;
+                    if (mouseConstraint.body === body) return; 
+
+                    switch (currentMode) {
+                        case "GRID":
+                            engine.world.gravity.y = 0;
+                            engine.world.gravity.x = 0;
+                            body.frictionAir = 0.02;
+
+                            const cols = Math.floor(Math.sqrt(particles.length * (canvasWidth/canvasHeight)));
+                            const spacingX = canvasWidth / (cols + 1);
+                            const spacingY = spacingX; 
+                            
+                            const row = Math.floor(index / cols);
+                            const col = index % cols;
+                            
+                            const totalGridWidth = (cols - 1) * spacingX;
+                            const totalRows = Math.ceil(particles.length / cols);
+                            const totalGridHeight = (totalRows - 1) * spacingY;
+                            
+                            const startX = (canvasWidth - totalGridWidth) / 2;
+                            const startY = (canvasHeight - totalGridHeight) / 2;
+                            const targetX = startX + (col * spacingX);
+                            const targetY = startY + (row * spacingY);
+
+                            const dx = targetX - body.position.x;
+                            const dy = targetY - body.position.y;
+                            const dist = Math.sqrt(dx*dx + dy*dy);
+
+                            const forceX = dx * 0.00008; 
+                            const forceY = dy * 0.00008;
+                            
+                            Body.applyForce(body, body.position, { x: forceX, y: forceY });
+                            
+                            if (dist > 20 && body.speed < 0.5) {
+                                Body.applyForce(body, body.position, {
+                                    x: (Math.random() - 0.5) * 0.005 * body.mass,
+                                    y: (Math.random() - 0.5) * 0.005 * body.mass
+                                });
+                            }
+
+                            Body.setVelocity(body, { x: body.velocity.x * 0.9, y: body.velocity.y * 0.9 });
+                            break;
+
+                        case "ENTROPY":
+                            engine.world.gravity.y = 0;
+                            engine.world.gravity.x = 0;
+                            body.frictionAir = 0.001; 
+                            if (body.speed < 1) {
+                                Body.applyForce(body, body.position, {
+                                    x: (Math.random() - 0.5) * 0.001 * body.mass,
+                                    y: (Math.random() - 0.5) * 0.001 * body.mass
+                                });
+                            }
+                            break;
+
+                        case "CENTER":
+                            engine.world.gravity.y = 0;
+                            const dxC = (canvasWidth / 2) - body.position.x;
+                            const dyC = (canvasHeight / 2) - body.position.y;
+                            Body.applyForce(body, body.position, {
+                                x: dxC * 0.00003 * body.mass,
+                                y: dyC * 0.00003 * body.mass
+                            });
+                            body.frictionAir = 0.08; 
+                            break;
+
+                        case "FALL":
+                            engine.world.gravity.y = 1;
+                            engine.world.gravity.x = 0;
+                            body.frictionAir = 0.01;
+                            break;
+
+                        case "FLOW":
+                            engine.world.gravity.y = 0;
+                            let windForce = 0.0001 * body.mass;
+                            const wave = Math.sin(time * 0.001 + body.position.x * 0.005) * 0.00005 * body.mass;
+                            Body.applyForce(body, body.position, { x: windForce, y: wave });
+                            body.frictionAir = 0.02; 
+                            if (body.position.x > canvasWidth + 100) {
+                                Body.setPosition(body, { x: -100, y: Math.random() * canvasHeight });
+                                Body.setVelocity(body, { x: 3, y: 0 });
+                            }
+                            break;
+                    }
+
+                    if (textBodies.length > 0) {
+                        textBodies.forEach(tb => {
+                            const dx = body.position.x - tb.body.position.x;
+                            const dy = body.position.y - tb.body.position.y;
+                            const distSq = dx*dx + dy*dy;
+                            
+                            if (distSq < repulsionRadius * repulsionRadius) {
+                                const dist = Math.sqrt(distSq);
+                                if (dist === 0) return;
+                                
+                                const strength = repulsionStrength * body.mass * (1 - dist / repulsionRadius);
+                                
+                                Body.applyForce(body, body.position, {
+                                    x: (dx / dist) * strength,
+                                    y: (dy / dist) * strength
+                                });
+                            }
+                        });
+                    }
+                });
+            }
+
+            let resizeTimeout;
+            function handleResize() {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(() => {
+                    updateDimensions();
+                    createWalls();
+                    Matter.Mouse.setOffset(mouseConstraint.mouse, { x: 0, y: 0 });
+                    
+                    transitionState = 'IDLE';
+                    cycleStartTime = Date.now();
+                    
+                    const text = nextStateData ? nextStateData.text : STATES[stateIndex].text;
+                    createTextBodies(text);
+                }, 100);
+            }
+
+            return {
+                start: init
+            };
+
+        })();
+
+        window.onload = KineticTypeApp.start;
+
+    </script>
+</body>
+</html>
