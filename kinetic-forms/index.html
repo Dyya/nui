@@ -3,581 +3,636 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Kinetic Type & Form by AD&</title>
-    
+    <meta name="description" content="Kinetic Type & Form — Interactive physics-driven typography experiment by AD&">
+    <meta name="theme-color" content="#0a0a0a">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230a0a0a' width='100' height='100' rx='20'/><text x='50' y='68' font-size='60' text-anchor='middle' fill='white' font-weight='900'>K</text></svg>">
+    <title>Kinetic Forms by AD&</title>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@100..900&display=swap" rel="stylesheet">
-    
+
     <style>
-        :root {
-            --bg-color: #0a0a0a;
-            --text-color: #ffffff;
-            --accent-color: #007aff;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            -webkit-tap-highlight-color: transparent;
-        }
-
+        :root { --bg: #0a0a0a; }
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
         body, html {
-            width: 100%;
-            height: 100%;
-            background-color: var(--bg-color);
-            color: var(--text-color);
+            width: 100%; height: 100%;
+            background: var(--bg);
+            color: #fff;
             font-family: 'Work Sans', -apple-system, BlinkMacSystemFont, sans-serif;
             overflow: hidden;
             cursor: crosshair;
             touch-action: none;
         }
-
         #canvas-container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%; z-index: 0;
         }
     </style>
 </head>
 <body>
+<div id="canvas-container"></div>
 
-    <div id="canvas-container"></div>
+<script>
+/**
+ * KINETIC FORMS
+ * Author: Adi Dizdarevic / AD&
+ *
+ * Physics-driven kinetic typography. 8 orchestrated modes.
+ * Text characters are real physics bodies — particles collide with them.
+ * Mode forces fade near text surfaces via proximity smoothstep.
+ * Z-depth transitions: text scales from/to zero at center point.
+ * Transition FSM: OUT → GAP → IN. Mode switches at OUT start.
+ */
 
-    <script>
-        /**
-         * KINETIC TYPE SYSTEM
-         * Author: Adi Dizdarevic
-         */
-        
-        const KineticTypeApp = (() => {
-            
-            const CONFIG = {
-                particleCount: 70,
-                textDuration: 6000, 
-                colors: ['#FFFFFF', '#FFFFFF', '#FF3B30', '#007AFF', '#FFCC00', '#E5E5EA'], 
-                physics: {
-                    gravity: 1,
-                    friction: 0.5,
-                    restitution: 0.7 
-                },
-                staggerDelay: 50,  
-                shrinkSpeed: 0.82, 
-                growSpeed: 1.15    
+const KineticTypeApp = (() => {
+
+    const CONFIG = {
+        particleCount: 70,
+        textDuration:  6000,
+        colors: ['#FFFFFF','#FFFFFF','#FF3B30','#007AFF','#FFCC00','#E5E5EA'],
+        staggerDelay:    30,
+        transOutDuration: 380,
+        transGapDuration: 350,
+        transInDuration:  420,
+    };
+
+    // ─── SEQUENCE ────────────────────────────────────────────
+    const STATES = [
+        { text: "PULSE",     mode: "PULSE" },
+        { text: "ORBIT",     mode: "ORBIT" },
+        { text: "SPIN",      mode: "SPIN" },
+        { text: "FORM",      mode: "GRID" },
+        { text: "CHAOS",     mode: "ENTROPY" },
+        { text: "GRAVITY",   mode: "FALL" },
+        { text: "DRIFT",     mode: "DRIFT" },
+        { text: "COHESION",  mode: "CENTER" },
+    ];
+
+    const { Engine, Runner, World, Bodies, Body, Common, Mouse, MouseConstraint } = Matter;
+
+    let engine, world, runner;
+    let particles = [];
+    let walls = [];
+    let textEntries = [];
+    let gridTargets = [];
+    let currentMode = "PULSE";
+    let canvas, ctx;
+    let W, H, dpr = 1;
+    let mouseConstraint;
+
+    let transitionState = 'IDLE';
+    let nextStateData = null;
+    let transitionStartTime = 0;
+    let stateIndex = 0;
+    let cycleStartTime = 0;
+    let modeStartTime = 0;
+    let textVisuals = [];
+
+    // ─── INIT ────────────────────────────────────────────────
+    function init() {
+        const container = document.getElementById('canvas-container');
+        canvas = document.createElement('canvas');
+        ctx = canvas.getContext('2d');
+        container.appendChild(canvas);
+        updateDimensions();
+
+        engine = Engine.create({
+            positionIterations: 30,
+            velocityIterations: 20,
+            constraintIterations: 10,
+        });
+        world = engine.world;
+
+        createWalls();
+        createParticles();
+        calculateGridTargets();
+        createTextBodies(STATES[0].text);
+        currentMode = STATES[0].mode;
+        modeStartTime = performance.now();
+        cycleStartTime = performance.now();
+
+        setupInteraction();
+
+        runner = Runner.create();
+        Runner.run(runner, engine);
+        requestAnimationFrame(renderLoop);
+        window.addEventListener('resize', handleResize);
+    }
+
+    function updateDimensions() {
+        dpr = window.devicePixelRatio || 1;
+        W = window.innerWidth;
+        H = window.innerHeight;
+        canvas.width = W * dpr;
+        canvas.height = H * dpr;
+        canvas.style.width  = W + 'px';
+        canvas.style.height = H + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function createWalls() {
+        World.remove(world, walls);
+        walls = [];
+        const t = 200;
+        const o = { isStatic: true, friction: 0.4, restitution: 0.5 };
+        walls.push(
+            Bodies.rectangle(W/2, -t/2,    W + 400, t, o),
+            Bodies.rectangle(W/2, H + t/2, W + 400, t, o),
+            Bodies.rectangle(W + t/2, H/2, t, H + 400, o),
+            Bodies.rectangle(-t/2, H/2,    t, H + 400, o),
+        );
+        World.add(world, walls);
+    }
+
+    // ─── PARTICLES ───────────────────────────────────────────
+    function createParticles() {
+        const baseSize = Math.min(W, H) / 25;
+        for (let i = 0; i < CONFIG.particleCount; i++) {
+            const size  = Common.random(baseSize * 0.8, baseSize * 1.5);
+            const x     = Common.random(100, W - 100);
+            const y     = Common.random(100, H - 100);
+            const color = Common.choose(CONFIG.colors);
+            const opts  = {
+                friction:    0.25,
+                frictionAir: 0.01,
+                restitution: 0.55,
+                density:     0.004,
+                chamfer:     { radius: size * 0.08 },
             };
+            const r = Math.random();
+            let body;
+            if (r < 0.4)       body = Bodies.circle(x, y, size / 2, opts);
+            else if (r < 0.8)  body = Bodies.rectangle(x, y, size, size, opts);
+            else                body = Bodies.polygon(x, y, 3, size / 1.5, opts);
 
-            const STATES = [
-                { text: "FORM", mode: "GRID" },
-                { text: "CHAOS", mode: "ENTROPY" },
-                { text: "COHESION", mode: "CENTER" },
-                { text: "GRAVITY", mode: "FALL" },
-                { text: "FLOW", mode: "FLOW" }
-            ];
+            particles.push({
+                body, color,
+                orbitAngle:  (i / CONFIG.particleCount) * Math.PI * 2,
+                orbitRadius: Common.random(0.25, 0.45),
+                orbitSpeed:  Common.random(0.3, 0.8),
+            });
+            World.add(world, body);
+        }
+    }
 
-            const Engine = Matter.Engine,
-                  Runner = Matter.Runner,
-                  World = Matter.World,
-                  Bodies = Matter.Bodies,
-                  Body = Matter.Body,
-                  Common = Matter.Common,
-                  Mouse = Matter.Mouse,
-                  MouseConstraint = Matter.MouseConstraint;
-
-            let engine, world, runner;
-            let particles = [];
-            let walls = [];
-            let textBodies = []; 
-            let gridTargets = []; 
-            let currentMode = "FALL";
-            
-            let canvas, ctx;
-            let canvasWidth, canvasHeight;
-            let dpr = 1; 
-            let mouseConstraint;
-            
-            let transitionState = 'IDLE'; 
-            let nextStateData = null;
-            let transitionStartTime = 0; 
-            let stateIndex = 0;
-            let cycleStartTime = 0;
-
-            function init() {
-                const container = document.getElementById('canvas-container');
-                canvas = document.createElement('canvas');
-                ctx = canvas.getContext('2d');
-                container.appendChild(canvas);
-
-                updateDimensions();
-
-                engine = Engine.create({
-                    positionIterations: 20, 
-                    velocityIterations: 10, 
-                    constraintIterations: 8 
-                });
-                world = engine.world;
-
-                createWalls();
-                
-                createParticles();
-                calculateGridTargets();
-                
-                createTextBodies(STATES[0].text);
-                currentMode = STATES[0].mode;
-                cycleStartTime = Date.now();
-
-                setupInteraction();
-
-                runner = Runner.create();
-                Runner.run(runner, engine);
-                
-                requestAnimationFrame(renderLoop);
-                
-                window.addEventListener('resize', handleResize);
-            }
-
-            function updateDimensions() {
-                dpr = window.devicePixelRatio || 1;
-                canvasWidth = window.innerWidth;
-                canvasHeight = window.innerHeight;
-
-                canvas.width = canvasWidth * dpr;
-                canvas.height = canvasHeight * dpr;
-
-                canvas.style.width = `${canvasWidth}px`;
-                canvas.style.height = `${canvasHeight}px`;
-
-                ctx.scale(dpr, dpr);
-            }
-
-            function calculateGridTargets() {
-                gridTargets = [];
-                const gridMargin = canvasWidth * 0.05; 
-                const availableWidth = canvasWidth - (gridMargin * 2);
-                const availableHeight = canvasHeight - (gridMargin * 2);
-
-                let cols = Math.ceil(Math.sqrt(CONFIG.particleCount * (availableWidth / availableHeight) * 1.8)); 
-                let rows = Math.ceil(CONFIG.particleCount / cols * 1.8);
-
-                let validSlots = [];
-                
-                for(let attempt = 0; attempt < 5; attempt++) {
-                    validSlots = [];
-                    const cellW = availableWidth / cols;
-                    const cellH = availableHeight / rows;
-
-                    for (let r = 0; r < rows; r++) {
-                        for (let c = 0; c < cols; c++) {
-                            const x = gridMargin + (c * cellW) + (cellW/2);
-                            const y = gridMargin + (r * cellH) + (cellH/2);
-
-                            // Expanded Exclusion Zone (Slightly larger hole)
-                            const centerX = canvasWidth / 2;
-                            const centerY = canvasHeight / 2;
-                            const exW = canvasWidth * 0.7;  // Increased width
-                            const exH = canvasHeight * 0.5; // Increased height
-
-                            const inExclusion = (
-                                x > centerX - exW/2 && 
-                                x < centerX + exW/2 && 
-                                y > centerY - exH/2 && 
-                                y < centerY + exH/2
-                            );
-
-                            if (!inExclusion) {
-                                validSlots.push({x, y});
-                            }
-                        }
-                    }
-
-                    if (validSlots.length >= CONFIG.particleCount) break;
-                    cols++;
-                    rows++;
-                }
-
-                const step = validSlots.length / Math.max(1, CONFIG.particleCount);
-                for(let i = 0; i < CONFIG.particleCount; i++) {
-                    const slotIndex = Math.floor(i * step);
-                    if (validSlots[slotIndex]) {
-                        gridTargets.push(validSlots[slotIndex]);
-                    } else {
-                        gridTargets.push({x: canvasWidth/2, y: 50}); 
-                    }
+    // ─── GRID TARGETS ────────────────────────────────────────
+    function calculateGridTargets() {
+        gridTargets = [];
+        const margin = W * 0.05;
+        const aW = W - margin * 2, aH = H - margin * 2;
+        let cols = Math.ceil(Math.sqrt(CONFIG.particleCount * (aW / aH) * 1.8));
+        let rows = Math.ceil(CONFIG.particleCount / cols * 1.8);
+        let slots = [];
+        for (let attempt = 0; attempt < 5; attempt++) {
+            slots = [];
+            const cW = aW / cols, cH = aH / rows;
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const x = margin + c * cW + cW / 2;
+                    const y = margin + r * cH + cH / 2;
+                    const exW = W * 0.7, exH = H * 0.5;
+                    if (x > W/2 - exW/2 && x < W/2 + exW/2 &&
+                        y > H/2 - exH/2 && y < H/2 + exH/2) continue;
+                    slots.push({ x, y });
                 }
             }
+            if (slots.length >= CONFIG.particleCount) break;
+            cols++; rows++;
+        }
+        const step = slots.length / Math.max(1, CONFIG.particleCount);
+        for (let i = 0; i < CONFIG.particleCount; i++) {
+            gridTargets.push(slots[Math.floor(i * step)] || { x: W/2, y: 50 });
+        }
+    }
 
-            function setupInteraction() {
-                const mouse = Mouse.create(canvas);
-                mouse.pixelRatio = dpr; 
+    // ─── TEXT BODIES ─────────────────────────────────────────
+    function createTextBodies(text) {
+        cleanTextBodies();
+        const fontSize = Math.min(W, H) * 0.15;
+        ctx.font = `900 ${fontSize}px "Work Sans"`;
+        const totalW = ctx.measureText(text).width;
+        let curX = (W - totalW) / 2;
+        const centerY = H / 2;
 
-                mouseConstraint = MouseConstraint.create(engine, {
-                    mouse: mouse,
-                    constraint: {
-                        stiffness: 0.2,
-                        damping: 0.1,
-                        render: { visible: false }
-                    }
-                });
-                World.add(world, mouseConstraint);
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            const charW = ctx.measureText(char).width;
+            const charH = fontSize * 0.62;
+            const bx = curX + charW / 2;
+
+            const body = Bodies.rectangle(bx, centerY, charW, charH, {
+                isStatic:    true,
+                friction:    0.05,
+                restitution: 0.35,
+                chamfer:     { radius: Math.min(charW, charH) * 0.08 },
+            });
+            World.add(world, body);
+
+            textEntries.push({
+                body, char,
+                baseW: charW, baseH: charH,
+                posX: bx, posY: centerY,
+                collisionActive: true,
+            });
+            textVisuals.push({ scale: 1, alpha: 1 });
+            curX += charW;
+        }
+    }
+
+    function cleanTextBodies() {
+        textEntries.forEach(te => World.remove(world, te.body));
+        textEntries = [];
+        textVisuals = [];
+    }
+
+    function setTextCollision(te, active) {
+        if (te.collisionActive === active) return;
+        te.collisionActive = active;
+        te.body.collisionFilter.mask     = active ? 0xFFFFFFFF : 0;
+        te.body.collisionFilter.category = active ? 0x0001 : 0;
+    }
+
+    function setupInteraction() {
+        const mouse = Mouse.create(canvas);
+        mouse.pixelRatio = dpr;
+        mouseConstraint = MouseConstraint.create(engine, {
+            mouse,
+            constraint: { stiffness: 0.2, damping: 0.1, render: { visible: false } },
+        });
+        World.add(world, mouseConstraint);
+    }
+
+    // ─── TEXT PROXIMITY ──────────────────────────────────────
+    function getTextProximityFactor(px, py) {
+        if (textEntries.length === 0) return 1;
+        let minEdge = Infinity;
+        for (const te of textEntries) {
+            if (!te.collisionActive) continue;
+            const hw = te.baseW * 0.5 + 6;
+            const hh = te.baseH * 0.5 + 6;
+            const dx = Math.max(Math.abs(px - te.posX) - hw, 0);
+            const dy = Math.max(Math.abs(py - te.posY) - hh, 0);
+            const d  = Math.sqrt(dx * dx + dy * dy);
+            if (d < minEdge) minEdge = d;
+        }
+        const ramp = Math.min(W, H) * 0.06;
+        if (minEdge >= ramp) return 1;
+        const t = minEdge / ramp;
+        return t * t * (3 - 2 * t);
+    }
+
+    // ─── MODE PHYSICS ────────────────────────────────────────
+    const MODE_GRAVITY = {
+        GRID: { x: 0, y: 0 },    ENTROPY: { x: 0, y: 0 },
+        FALL: { x: 0, y: 1 },    CENTER:  { x: 0, y: 0 },
+        PULSE: { x: 0, y: 0 },   ORBIT:   { x: 0, y: 0 },
+        SPIN: { x: 0, y: 0 },    DRIFT:   { x: 0, y: -0.07 },
+    };
+    const MODE_AIR_FRICTION = {
+        GRID: 0.035,   ENTROPY: 0.002,  FALL: 0.008,
+        CENTER: 0.025, PULSE: 0.04,     ORBIT: 0.012,
+        SPIN: 0.018,   DRIFT: 0.014,
+    };
+    const DEFAULT_FRICTION = 0.25;
+
+    function applyModePhysics(time) {
+        const now = performance.now();
+        const modeElapsed = (now - modeStartTime) / 1000;
+        const cx = W / 2, cy = H / 2;
+
+        const grav = MODE_GRAVITY[currentMode] || { x: 0, y: 0 };
+        engine.world.gravity.x = grav.x;
+        engine.world.gravity.y = grav.y;
+
+        const airFric = MODE_AIR_FRICTION[currentMode] || 0.01;
+
+        for (let idx = 0; idx < particles.length; idx++) {
+            const p    = particles[idx];
+            const body = p.body;
+            if (mouseConstraint.body === body) continue;
+
+            const px = body.position.x, py = body.position.y;
+            const prox = getTextProximityFactor(px, py);
+
+            body.frictionAir = airFric;
+            body.friction = DEFAULT_FRICTION;
+
+            if (Math.abs(body.angularVelocity) > 0.01) {
+                Body.setAngularVelocity(body, body.angularVelocity * 0.97);
             }
 
-            function renderLoop() {
-                const now = Date.now();
+            switch (currentMode) {
 
-                handleCycle(now);
-                handleTextTransition(now);
-                applyFormationLogic(engine.timing.timestamp);
-
-                ctx.fillStyle = '#0a0a0a';
-                ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-
-                drawParticles();
-                drawText();
-
-                requestAnimationFrame(renderLoop);
-            }
-
-            function handleCycle(now) {
-                if (transitionState !== 'IDLE') return;
-
-                const elapsed = now - cycleStartTime;
-                if (elapsed >= CONFIG.textDuration) {
-                    stateIndex = (stateIndex + 1) % STATES.length;
-                    nextStateData = STATES[stateIndex];
-                    
-                    transitionState = 'OUT';
-                    transitionStartTime = now;
-                    cycleStartTime = now; 
-                }
-            }
-
-            function handleTextTransition(now) {
-                if (transitionState === 'IDLE') return;
-
-                const elapsed = now - transitionStartTime;
-                
-                if (transitionState === 'OUT') {
-                    let animationComplete = true;
-                    
-                    textBodies.forEach((tb, i) => {
-                        const myStartTime = i * CONFIG.staggerDelay;
-                        if (elapsed > myStartTime) {
-                            if (tb.currentScale > 0.01) {
-                                Body.scale(tb.body, CONFIG.shrinkSpeed, CONFIG.shrinkSpeed);
-                                tb.currentScale *= CONFIG.shrinkSpeed;
-                                animationComplete = false; 
-                            } else if (tb.currentScale !== 0) {
-                                Body.scale(tb.body, 0.001, 0.001); 
-                                tb.currentScale = 0;
-                            }
-                        } else {
-                            animationComplete = false;
-                        }
+                case "GRID": {
+                    const tgt = gridTargets[idx];
+                    if (!tgt) break;
+                    const dx = tgt.x - px, dy = tgt.y - py;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const k = 0.00007 * prox;
+                    Body.applyForce(body, body.position, {
+                        x: dx * k - body.velocity.x * 0.00004 * body.mass * prox,
+                        y: dy * k - body.velocity.y * 0.00004 * body.mass * prox,
                     });
-
-                    if (animationComplete) {
-                        cleanTextBodies();
-                        transitionState = 'IN';
-                        transitionStartTime = Date.now(); 
-                        currentMode = nextStateData.mode; 
-                        
-                        createTextBodies(nextStateData.text);
-                        
-                        textBodies.forEach(tb => {
-                            const startScale = 0.05;
-                            Body.scale(tb.body, startScale, startScale);
-                            tb.currentScale = startScale;
+                    if (dist > 40 && body.speed < 0.3) {
+                        Body.applyForce(body, body.position, {
+                            x: (Math.random() - 0.5) * 0.002 * body.mass,
+                            y: (Math.random() - 0.5) * 0.002 * body.mass,
                         });
                     }
+                    if (dist < 8) {
+                        Body.setVelocity(body, { x: body.velocity.x * 0.85, y: body.velocity.y * 0.85 });
+                    }
+                    break;
                 }
 
-                if (transitionState === 'IN') {
-                    let animationComplete = true;
-                    
-                    textBodies.forEach((tb, i) => {
-                        const myStartTime = i * CONFIG.staggerDelay;
-                        if (elapsed > myStartTime) {
-                            if (tb.currentScale < 1.0) {
-                                const nextScale = tb.currentScale * CONFIG.growSpeed;
-                                if (nextScale >= 1.0) {
-                                    const finalScaleFactor = 1.0 / tb.currentScale;
-                                    Body.scale(tb.body, finalScaleFactor, finalScaleFactor);
-                                    tb.currentScale = 1.0;
-                                } else {
-                                    Body.scale(tb.body, CONFIG.growSpeed, CONFIG.growSpeed);
-                                    tb.currentScale *= CONFIG.growSpeed;
-                                    animationComplete = false;
-                                }
-                            }
-                        } else {
-                            animationComplete = false;
-                        }
+                case "ENTROPY": {
+                    if (body.speed < 2.5) {
+                        const s = 0.001 * body.mass * prox;
+                        Body.applyForce(body, body.position, {
+                            x: (Math.random() - 0.5) * s,
+                            y: (Math.random() - 0.5) * s,
+                        });
+                    }
+                    if (Math.random() < 0.015) {
+                        Body.setAngularVelocity(body, (Math.random() - 0.5) * 0.1);
+                    }
+                    break;
+                }
+
+                case "FALL":
+                    break;
+
+                case "CENTER": {
+                    const dx = cx - px, dy = cy - py;
+                    const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+
+                    const pullRamp = Math.min(1, modeElapsed / 2.5);
+                    const pull = 0.000025 * body.mass * prox * pullRamp * pullRamp;
+                    Body.applyForce(body, body.position, { x: dx * pull, y: dy * pull });
+
+                    if (modeElapsed < 2) {
+                        const tangentDecay = 1 - modeElapsed / 2;
+                        const nx = dx / dist, ny = dy / dist;
+                        const tangent = 0.00003 * body.mass * prox * tangentDecay;
+                        Body.applyForce(body, body.position, { x: ny * tangent, y: -nx * tangent });
+                    }
+                    break;
+                }
+
+                case "PULSE": {
+                    const dx = px - cx, dy = py - cy;
+                    const dfc = Math.sqrt(dx * dx + dy * dy);
+                    const maxR = Math.min(W, H) * 0.42;
+                    const phase = modeElapsed * 3.0 - (dfc / maxR) * Math.PI * 1.5;
+                    const targetR = maxR * (0.35 + 0.25 * Math.sin(phase));
+                    const currentR = Math.max(dfc, 1);
+                    const rf = (targetR - currentR) * 0.00004 * body.mass * prox;
+                    const nx = dx / currentR, ny = dy / currentR;
+
+                    Body.applyForce(body, body.position, {
+                        x: (dfc > 5 ? nx : (Math.random() - 0.5)) * rf,
+                        y: (dfc > 5 ? ny : (Math.random() - 0.5)) * rf,
+                    });
+                    Body.applyForce(body, body.position, {
+                        x: -ny * 0.000008 * body.mass * prox,
+                        y:  nx * 0.000008 * body.mass * prox,
+                    });
+                    break;
+                }
+
+                case "ORBIT": {
+                    const oR = p.orbitRadius * Math.min(W, H) * 0.5;
+                    p.orbitAngle += 0.012 * p.orbitSpeed;
+
+                    const tx = cx + Math.cos(p.orbitAngle) * oR * 1.3;
+                    const ty = cy + Math.sin(p.orbitAngle) * oR * 0.7;
+                    const dx = tx - px, dy = ty - py;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    const k = 0.00006 * prox;
+                    Body.applyForce(body, body.position, { x: dx * k, y: dy * k });
+
+                    if (dist < oR * 0.5) {
+                        Body.applyForce(body, body.position, {
+                            x: -Math.sin(p.orbitAngle) * 0.00003 * body.mass * prox,
+                            y:  Math.cos(p.orbitAngle) * 0.00002 * body.mass * prox,
+                        });
+                    }
+                    if (Math.random() < 0.02) {
+                        Body.setAngularVelocity(body, p.orbitSpeed * 0.02 * (Math.random() > 0.5 ? 1 : -1));
+                    }
+                    break;
+                }
+
+                case "SPIN": {
+                    const dx = px - cx, dy = py - cy;
+                    const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+                    const nx = dx / dist, ny = dy / dist;
+
+                    const ramp = Math.min(1, modeElapsed / 1.5);
+                    const rampEased = ramp * ramp * (3 - 2 * ramp);
+
+                    const tangent = 0.00008 * body.mass * prox * rampEased;
+                    Body.applyForce(body, body.position, { x: -ny * tangent, y: nx * tangent });
+
+                    const targetD = Math.min(W, H) * 0.32;
+                    const radial = (targetD - dist) * 0.000012 * body.mass * prox * rampEased;
+                    Body.applyForce(body, body.position, { x: nx * radial, y: ny * radial });
+
+                    Body.setAngularVelocity(body, body.angularVelocity * 0.96 + 0.004 * prox * 0.04 * rampEased);
+                    break;
+                }
+
+                case "DRIFT": {
+                    const massScale = 1 / (body.mass * 140 + 0.5);
+                    const phase = idx * 7.31;
+
+                    const w1 = Math.sin(time * 0.00022 + phase + idx * 2.1) * 0.000035;
+                    const w2 = Math.sin(time * 0.00048 + phase * 0.6 + idx * 0.7) * 0.000018;
+                    const w3 = Math.sin(time * 0.0001  + phase * 1.4 + idx * 4.3) * 0.000025;
+                    Body.applyForce(body, body.position, { x: (w1 + w2 + w3) * body.mass * prox, y: 0 });
+
+                    Body.applyForce(body, body.position, {
+                        x: 0,
+                        y: -0.000025 * body.mass * massScale * prox,
                     });
 
-                    if (animationComplete) {
-                        transitionState = 'IDLE';
-                        cycleStartTime = Date.now(); 
+                    const edgeM = W * 0.05;
+                    if (px < edgeM)     Body.applyForce(body, body.position, { x:  0.00004 * body.mass, y: 0 });
+                    if (px > W - edgeM) Body.applyForce(body, body.position, { x: -0.00004 * body.mass, y: 0 });
+
+                    if (py < -80) {
+                        Body.setPosition(body, { x: Common.random(60, W - 60), y: H + Common.random(20, 100) });
+                        Body.setVelocity(body, { x: 0, y: -0.2 });
                     }
+
+                    if (Math.random() < 0.003) {
+                        Body.setAngularVelocity(body, (Math.random() - 0.5) * 0.006);
+                    }
+
+                    if (body.speed > 1.6) {
+                        const s = 1.6 / body.speed;
+                        Body.setVelocity(body, { x: body.velocity.x * s, y: body.velocity.y * s });
+                    }
+                    break;
                 }
             }
+        }
+    }
 
-            function drawText() {
-                ctx.fillStyle = '#ffffff';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                
-                const baseFontSize = Math.min(canvasWidth, canvasHeight) * 0.15;
+    // ─── EASING ──────────────────────────────────────────────
+    function easeInQuart(t)  { return t * t * t * t; }
+    function easeOutQuart(t) { return 1 - Math.pow(1 - t, 4); }
 
-                textBodies.forEach(tb => {
-                    ctx.save();
-                    ctx.translate(tb.body.position.x, tb.body.position.y);
-                    ctx.rotate(tb.body.angle);
-                    
-                    const currentFontSize = baseFontSize * tb.currentScale;
-                    ctx.font = `900 ${currentFontSize}px "Work Sans"`;
-                    
-                    ctx.fillText(tb.char, 0, currentFontSize * 0.05); 
-                    ctx.restore();
-                });
+    // ─── TEXT TRANSITIONS ────────────────────────────────────
+    function handleCycle(now) {
+        if (transitionState !== 'IDLE') return;
+        if (now - cycleStartTime >= CONFIG.textDuration) {
+            stateIndex = (stateIndex + 1) % STATES.length;
+            nextStateData = STATES[stateIndex];
+            transitionState = 'OUT';
+            transitionStartTime = now;
+
+            currentMode = nextStateData.mode;
+            modeStartTime = now;
+            textEntries.forEach(te => setTextCollision(te, false));
+        }
+    }
+
+    function handleTextTransition(now) {
+        if (transitionState === 'IDLE') return;
+        const elapsed = now - transitionStartTime;
+
+        if (transitionState === 'OUT') {
+            let allDone = true;
+            for (let i = 0; i < textEntries.length; i++) {
+                const delay = i * CONFIG.staggerDelay;
+                if (elapsed < delay) { allDone = false; continue; }
+                const t = Math.min(1, (elapsed - delay) / CONFIG.transOutDuration);
+                const e = easeInQuart(t);
+                textVisuals[i] = { scale: 1 - e, alpha: 1 - e * e };
+                if (t < 1) allDone = false;
             }
-
-            function drawParticles() {
-                ctx.lineWidth = 2;
-                ctx.strokeStyle = '#0a0a0a';
-
-                particles.forEach(p => {
-                    const vertices = p.body.vertices;
-                    ctx.beginPath();
-                    ctx.moveTo(vertices[0].x, vertices[0].y);
-                    for (let j = 1; j < vertices.length; j += 1) {
-                        ctx.lineTo(vertices[j].x, vertices[j].y);
-                    }
-                    ctx.lineTo(vertices[0].x, vertices[0].y);
-                    ctx.closePath();
-                    
-                    ctx.fillStyle = p.color;
-                    ctx.fill();
-                    ctx.stroke();
-                });
-            }
-
-            function createTextBodies(text) {
+            if (allDone) {
                 cleanTextBodies();
+                transitionState = 'GAP';
+                transitionStartTime = now;
+            }
+        }
 
-                const fontSize = Math.min(canvasWidth, canvasHeight) * 0.15;
-                ctx.font = `900 ${fontSize}px "Work Sans"`;
-
-                const totalWidth = ctx.measureText(text).width;
-                let currentX = (canvasWidth / 2) - (totalWidth / 2);
-                const centerY = canvasHeight / 2;
-
-                for (let i = 0; i < text.length; i++) {
-                    const char = text[i];
-                    const metrics = ctx.measureText(char);
-                    const charWidth = metrics.width;
-                    const charHeight = fontSize * 0.6; // Tighter bounding box (was 0.72)
-
-                    const centerX = currentX + (charWidth / 2);
-
-                    const body = Bodies.rectangle(centerX, centerY, charWidth, charHeight, {
-                        isStatic: true,
-                        friction: 0.1,   // Slippery! (Was 0.8)
-                        restitution: 0.4,
-                        chamfer: { radius: 4 } 
-                    });
-
-                    World.add(world, body);
-                    
-                    textBodies.push({
-                        body: body,
-                        char: char,
-                        currentScale: 1.0 
-                    });
-
-                    currentX += charWidth;
+        else if (transitionState === 'GAP') {
+            if (elapsed >= CONFIG.transGapDuration) {
+                createTextBodies(nextStateData.text);
+                textEntries.forEach(te => setTextCollision(te, false));
+                for (let i = 0; i < textEntries.length; i++) {
+                    textVisuals[i] = { scale: 0, alpha: 0 };
                 }
+                transitionState = 'IN';
+                transitionStartTime = now;
             }
+        }
 
-            function cleanTextBodies() {
-                textBodies.forEach(tb => World.remove(world, tb.body));
-                textBodies = [];
-            }
-
-            function createWalls() {
-                World.remove(world, walls);
-                walls = [];
-                const thick = 200; 
-                const opts = { isStatic: true, friction: 0.5, restitution: 0.5, render: { visible: false } };
-                
-                walls.push(
-                    Bodies.rectangle(canvasWidth/2, -thick/2, canvasWidth + 200, thick, opts), 
-                    Bodies.rectangle(canvasWidth/2, canvasHeight + thick/2, canvasWidth + 200, thick, opts), 
-                    Bodies.rectangle(canvasWidth + thick/2, canvasHeight/2, thick, canvasHeight + 200, opts), 
-                    Bodies.rectangle(-thick/2, canvasHeight/2, thick, canvasHeight + 200, opts)
-                );
-                World.add(world, walls);
-            }
-
-            function createParticles() {
-                const baseSize = Math.min(canvasWidth, canvasHeight) / 25; 
-
-                for (let i = 0; i < CONFIG.particleCount; i++) {
-                    const size = Common.random(baseSize * 0.8, baseSize * 1.5);
-                    const x = Common.random(100, canvasWidth - 100);
-                    const y = Common.random(100, canvasHeight - 100);
-                    const color = Common.choose(CONFIG.colors);
-                    
-                    let body;
-                    const shapeType = Math.random();
-                    const bodyOpts = { 
-                        friction: 0.3,      
-                        frictionAir: 0.01,   
-                        restitution: 0.8,    
-                        density: 0.005,
-                        chamfer: { radius: size * 0.1 } 
-                    };
-
-                    if (shapeType < 0.4) {
-                        body = Bodies.circle(x, y, size/2, bodyOpts);
-                    } else if (shapeType < 0.8) {
-                        body = Bodies.rectangle(x, y, size, size, bodyOpts);
-                    } else {
-                        body = Bodies.polygon(x, y, 3, size/1.5, bodyOpts);
-                    }
-
-                    particles.push({ body: body, color: color });
-                    World.add(world, body);
+        else if (transitionState === 'IN') {
+            let allDone = true;
+            for (let i = 0; i < textEntries.length; i++) {
+                const delay = i * CONFIG.staggerDelay;
+                if (elapsed < delay) { allDone = false; continue; }
+                const t = Math.min(1, (elapsed - delay) / CONFIG.transInDuration);
+                const e = easeOutQuart(t);
+                textVisuals[i] = { scale: e, alpha: e };
+                if (t > 0.85 && !textEntries[i].collisionActive) {
+                    setTextCollision(textEntries[i], true);
                 }
+                if (t < 1) allDone = false;
             }
-
-            function applyFormationLogic(time) {
-                const repulsionRadius = Math.min(canvasWidth, canvasHeight) * 0.12; 
-                const repulsionStrength = 0.0006; 
-
-                particles.forEach((p, index) => {
-                    const body = p.body;
-                    if (mouseConstraint.body === body) return; 
-
-                    switch (currentMode) {
-                        case "GRID":
-                            engine.world.gravity.y = 0;
-                            engine.world.gravity.x = 0;
-                            body.frictionAir = 0.02;
-
-                            if (gridTargets[index]) {
-                                const target = gridTargets[index];
-                                const dx = target.x - body.position.x;
-                                const dy = target.y - body.position.y;
-                                const dist = Math.sqrt(dx*dx + dy*dy);
-
-                                const forceX = dx * 0.00008; 
-                                const forceY = dy * 0.00008;
-                                Body.applyForce(body, body.position, { x: forceX, y: forceY });
-
-                                if (dist > 20 && body.speed < 0.5) {
-                                    Body.applyForce(body, body.position, {
-                                        x: (Math.random() - 0.5) * 0.005 * body.mass,
-                                        y: (Math.random() - 0.5) * 0.005 * body.mass
-                                    });
-                                }
-                                Body.setVelocity(body, { x: body.velocity.x * 0.9, y: body.velocity.y * 0.9 });
-                            }
-                            break;
-
-                        case "ENTROPY":
-                            engine.world.gravity.y = 0;
-                            engine.world.gravity.x = 0;
-                            body.frictionAir = 0.001; 
-                            if (body.speed < 1) {
-                                Body.applyForce(body, body.position, {
-                                    x: (Math.random() - 0.5) * 0.001 * body.mass,
-                                    y: (Math.random() - 0.5) * 0.001 * body.mass
-                                });
-                            }
-                            break;
-
-                        case "CENTER":
-                            engine.world.gravity.y = 0;
-                            const dxC = (canvasWidth / 2) - body.position.x;
-                            const dyC = (canvasHeight / 2) - body.position.y;
-                            Body.applyForce(body, body.position, {
-                                x: dxC * 0.00003 * body.mass,
-                                y: dyC * 0.00003 * body.mass
-                            });
-                            body.frictionAir = 0.08; 
-                            break;
-
-                        case "FALL":
-                            engine.world.gravity.y = 1;
-                            engine.world.gravity.x = 0;
-                            body.frictionAir = 0.01;
-                            break;
-
-                        case "FLOW":
-                            engine.world.gravity.y = 0;
-                            let windForce = 0.0001 * body.mass;
-                            const wave = Math.sin(time * 0.001 + body.position.x * 0.005) * 0.00005 * body.mass;
-                            Body.applyForce(body, body.position, { x: windForce, y: wave });
-                            body.frictionAir = 0.02; 
-                            if (body.position.x > canvasWidth + 100) {
-                                Body.setPosition(body, { x: -100, y: Math.random() * canvasHeight });
-                                Body.setVelocity(body, { x: 3, y: 0 });
-                            }
-                            break;
-                    }
-
-                    if (textBodies.length > 0) {
-                        textBodies.forEach(tb => {
-                            const dx = body.position.x - tb.body.position.x;
-                            const dy = body.position.y - tb.body.position.y;
-                            const distSq = dx*dx + dy*dy;
-                            
-                            if (distSq < repulsionRadius * repulsionRadius) {
-                                const dist = Math.sqrt(distSq);
-                                if (dist === 0) return;
-                                
-                                const strength = repulsionStrength * body.mass * (1 - dist / repulsionRadius);
-                                
-                                Body.applyForce(body, body.position, {
-                                    x: (dx / dist) * strength,
-                                    y: (dy / dist) * strength
-                                });
-                            }
-                        });
-                    }
+            if (allDone) {
+                textEntries.forEach((te, i) => {
+                    setTextCollision(te, true);
+                    textVisuals[i] = { scale: 1, alpha: 1 };
                 });
+                transitionState = 'IDLE';
+                cycleStartTime = now;
             }
+        }
+    }
 
-            let resizeTimeout;
-            function handleResize() {
-                clearTimeout(resizeTimeout);
-                resizeTimeout = setTimeout(() => {
-                    updateDimensions();
-                    createWalls();
-                    Matter.Mouse.setOffset(mouseConstraint.mouse, { x: 0, y: 0 });
-                    
-                    calculateGridTargets();
-                    
-                    transitionState = 'IDLE';
-                    cycleStartTime = Date.now();
-                    
-                    const text = nextStateData ? nextStateData.text : STATES[stateIndex].text;
-                    createTextBodies(text);
-                }, 100);
-            }
+    // ─── RENDER ──────────────────────────────────────────────
+    function drawParticles() {
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#0a0a0a';
+        for (const p of particles) {
+            const v = p.body.vertices;
+            ctx.beginPath();
+            ctx.moveTo(v[0].x, v[0].y);
+            for (let j = 1; j < v.length; j++) ctx.lineTo(v[j].x, v[j].y);
+            ctx.closePath();
+            ctx.fillStyle = p.color;
+            ctx.fill();
+            ctx.stroke();
+        }
+    }
 
-            return {
-                start: init
-            };
+    function drawText() {
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const baseFontSize = Math.min(W, H) * 0.15;
 
-        })();
+        for (let i = 0; i < textEntries.length; i++) {
+            const te = textEntries[i];
+            const vis = textVisuals[i];
+            if (!vis || vis.scale < 0.005) continue;
 
-        window.onload = KineticTypeApp.start;
+            ctx.save();
+            ctx.translate(te.posX, te.posY);
+            const fs = baseFontSize * vis.scale;
+            ctx.font = `900 ${fs}px "Work Sans"`;
+            ctx.globalAlpha = vis.alpha;
+            ctx.fillText(te.char, 0, fs * 0.05);
+            ctx.globalAlpha = 1;
+            ctx.restore();
+        }
+    }
 
-    </script>
+    function renderLoop() {
+        const now = performance.now();
+        handleCycle(now);
+        handleTextTransition(now);
+        applyModePhysics(engine.timing.timestamp);
+
+        ctx.fillStyle = '#0a0a0a';
+        ctx.fillRect(0, 0, W, H);
+        drawParticles();
+        drawText();
+        requestAnimationFrame(renderLoop);
+    }
+
+    // ─── RESIZE ──────────────────────────────────────────────
+    let resizeTimeout;
+    function handleResize() {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            updateDimensions();
+            createWalls();
+            Mouse.setOffset(mouseConstraint.mouse, { x: 0, y: 0 });
+            calculateGridTargets();
+
+            transitionState = 'IDLE';
+            nextStateData = null;
+            cycleStartTime = performance.now();
+            modeStartTime = performance.now();
+
+            createTextBodies(STATES[stateIndex].text);
+            currentMode = STATES[stateIndex].mode;
+        }, 100);
+    }
+
+    return { start: init };
+})();
+
+window.onload = KineticTypeApp.start;
+</script>
 </body>
 </html>
