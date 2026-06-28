@@ -1,0 +1,1704 @@
+<!DOCTYPE html>
+<!--
+  Typo bomber - bomb a paragraph into a poster
+  Pilot a little plane over a paragraph and drop bombs on the words you don't need; letters shatter by their own ink mass and what survives becomes a poster you can capture and share.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · http://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. All rights reserved.
+-->
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Typo bomber - bomb a paragraph into a poster</title>
+<meta name="description" content="An interactive erasure tool: pilot a little plane over a paragraph and drop bombs on the words you don't need. Letters shatter by their own ink mass and what survives settles into a poster you can capture and share.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="http://adidizdarevic.com/">
+<meta name="theme-color" content="#f0ebdf">
+
+<!-- Open Graph (minimal) -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Typo bomber - bomb a paragraph into a poster">
+<meta property="og:description" content="Drop bombs on the words you don't need; what survives becomes a poster you can capture and share.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Typo bomber",
+  "applicationCategory": "DesignApplication",
+  "description": "An interactive erasure tool: pilot a little plane over a paragraph and drop bombs on the words you don't need. Letters shatter by their own ink mass and what survives settles into a poster you can capture and share.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "kinetic typography, typesetting, erasure poetry, type destruction, generative, poster, canvas, interactive, Pretext",
+  "license": "All rights reserved",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "http://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "http://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:    #f0ebdf;   /* cream paper */
+  --ink:   #1d1a14;   /* warm near-black */
+  --ink-2: rgba(29,26,20,.55);
+  --ink-3: rgba(29,26,20,.28);
+  --ink-4: rgba(29,26,20,.10);
+  --red:   #b93d2a;   /* bomb accent */
+  --red-2: rgba(185,61,42,.55);
+  --ember: #e8833a;   /* explosion warm */
+  --mono:  'IBM Plex Mono', 'SF Mono', Menlo, monospace;
+  --serif: 'Instrument Serif', Georgia, serif;
+}
+[data-theme="dark"] {
+  --bg:    #17130c;
+  --ink:   #ede6d5;
+  --ink-2: rgba(237,230,213,.55);
+  --ink-3: rgba(237,230,213,.26);
+  --ink-4: rgba(237,230,213,.10);
+  --red:   #d85542;
+  --red-2: rgba(216,85,66,.65);
+  --ember: #f0a453;
+}
+html, body {
+  background: var(--bg); color: var(--ink);
+  overflow: hidden; height: 100%; width: 100%;
+  transition: background .5s, color .5s;
+  cursor: none;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+/* The glass panel stays clickable with the game cursor hidden. */
+.adui * { cursor: default; }
+.adui a { cursor: pointer; }
+
+/* ── stage ────────────────────────────────── */
+#stage {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 80px 60px 120px;
+}
+
+/* ── text layout (Pretext) ────────────────── */
+#text {
+  position: relative;
+  max-width: 780px;
+  font-family: var(--serif);
+  font-size: 38px;
+  line-height: 1.28;
+  letter-spacing: -0.005em;
+  user-select: none;
+  pointer-events: none;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  transition: opacity .55s cubic-bezier(.2,.6,.2,1);
+}
+.glyph {
+  position: absolute;
+  display: inline-block;
+  transition: opacity .18s, color .22s;
+  will-change: transform, opacity;
+  white-space: pre;
+}
+.glyph.gone     { opacity: 0; pointer-events: none; transition: none; }
+.glyph.scorched { color: var(--red-2); }
+.glyph.unstable { animation: tremor 90ms steps(2, end) infinite; }
+.glyph.falling  { animation: none; transition: none; will-change: transform, opacity; }
+@keyframes tremor {
+  from { transform: translate(-1.1px, 0); }
+  to   { transform: translate(1.1px, -.4px); }
+}
+
+/* ── fx canvas (plane, bombs, explosions) ── */
+#fx {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* ── grain ─────────────────────────────────── */
+#grain {
+  position: fixed; inset: 0; pointer-events: none; z-index: 2;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  opacity: .035;
+  mix-blend-mode: multiply;
+}
+[data-theme="dark"] #grain { opacity: .05; mix-blend-mode: screen; }
+
+/* Fade the glass panel while bombs are in the air, for immersion. */
+.adui { transition: opacity .25s ease; }
+body.bombing .adui { opacity: .22; }
+
+/* ── settled state: crop marks around the surviving composition ── */
+#cropmarks {
+  position: fixed;
+  pointer-events: none;
+  z-index: 12;
+  opacity: 0;
+  transition: opacity 1.3s cubic-bezier(.2,.6,.2,1);
+}
+#cropmarks.show { opacity: .62; }
+.cm-mark {
+  position: absolute;
+  width: 16px; height: 16px;
+  border-color: var(--ink-2);
+  border-style: solid;
+  border-width: 0;
+}
+.cm-mark.tl { top: 0;    left: 0;  border-top-width: 1px;    border-left-width: 1px; }
+.cm-mark.tr { top: 0;    right: 0; border-top-width: 1px;    border-right-width: 1px; }
+.cm-mark.bl { bottom: 0; left: 0;  border-bottom-width: 1px; border-left-width: 1px; }
+.cm-mark.br { bottom: 0; right: 0; border-bottom-width: 1px; border-right-width: 1px; }
+
+/* ── cleared state: passage index (roman numerals) doubles as a level picker ── */
+#cleared {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 14; pointer-events: none;
+  opacity: 0;
+  transition: opacity .6s cubic-bezier(.2,.6,.2,1);
+}
+#cleared.show { opacity: 1; }
+.passage-index {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 38px;
+  color: var(--ink-3);
+  display: flex; align-items: baseline; gap: 18px;
+  letter-spacing: .04em;
+}
+.pi {
+  transition: color .9s, transform .9s;
+  color: var(--ink-4);
+  display: inline-block;
+  pointer-events: none;   /* only clickable while the picker is actually shown */
+  cursor: pointer;
+}
+#cleared.show .pi { pointer-events: auto; }
+.pi:hover { color: var(--red); }
+.pi.done { color: var(--ink-2); }   /* this level already cleared */
+.pi.now { color: var(--ink); transform: translateY(-2px); }
+.pi-sep { font-size: 14px; color: var(--ink-4); align-self: center; }
+
+/* ── game-complete: overall score + share ──────────────────── */
+#complete {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 16; pointer-events: none;
+  opacity: 0;
+  transition: opacity .6s cubic-bezier(.2,.6,.2,1);
+}
+#complete.show { opacity: 1; pointer-events: auto; cursor: default; }
+.cmp-card {
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  text-align: center; color: var(--ink); max-width: 92vw; padding: 8px 24px;
+}
+.cmp-kicker {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .3em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.cmp-rows {
+  display: grid; grid-template-columns: auto auto auto; gap: 6px 26px;
+  align-items: baseline;
+  font-family: var(--mono); font-size: 12px; letter-spacing: .04em; color: var(--ink-2);
+}
+.cmp-rows .r-roman {
+  font-family: var(--serif); font-style: italic; font-size: 20px;
+  color: var(--ink); text-align: left;
+}
+.cmp-rows .r-num { font-variant-numeric: tabular-nums; text-align: right; }
+.cmp-rule { width: 56px; height: 1px; background: var(--ink-4); }
+.cmp-total {
+  font-family: var(--serif); font-size: 56px; line-height: 1; color: var(--ink);
+}
+.cmp-sub {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-2);
+}
+.cmp-actions { display: flex; gap: 10px; margin-top: 6px; }
+.cmp-btn {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-2); background: none; border: 1px solid var(--ink-4);
+  padding: 9px 16px; border-radius: 999px; cursor: pointer;
+  transition: color .2s, border-color .2s;
+}
+.cmp-btn:hover { color: var(--ink); border-color: var(--ink-2); }
+.cmp-btn.accent:hover { color: var(--red); border-color: var(--red); }
+
+/* ── export flash ──────────────────────────── */
+#flash {
+  position: fixed; inset: 0;
+  background: var(--ink);
+  z-index: 30; pointer-events: none;
+  opacity: 0; transition: opacity .18s;
+}
+#flash.on { opacity: .14; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="text"></div>
+</div>
+
+<canvas id="fx">Typo bomber, an interactive erasure tool. Requires JavaScript and an HTML5 canvas.</canvas>
+<div id="grain"></div>
+<div id="flash"></div>
+
+<div id="cropmarks" aria-hidden="true">
+  <div class="cm-mark tl"></div>
+  <div class="cm-mark tr"></div>
+  <div class="cm-mark bl"></div>
+  <div class="cm-mark br"></div>
+</div>
+
+<div id="cleared" aria-hidden="true">
+  <div class="passage-index" id="passage-index"></div>
+</div>
+
+<div id="complete" aria-hidden="true">
+  <div class="cmp-card" id="cmp-card"></div>
+</div>
+
+<script src="./core/ui.js"></script>
+<script type="module">
+import {
+  prepareWithSegments,
+  layoutWithLines
+} from 'https://esm.sh/@chenglou/pretext@0.0.5';
+
+// ═══════════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════════
+const lerp  = (a,b,t) => a + (b-a) * t;
+const clamp = (v,lo,hi) => Math.max(lo, Math.min(hi, v));
+const rand  = (a=1, b) => b === undefined ? Math.random() * a : a + Math.random() * (b-a);
+const TAU   = Math.PI * 2;
+const wait  = ms => new Promise(r => setTimeout(r, ms));
+const raf   = () => new Promise(r => requestAnimationFrame(r));
+
+const PAYLOAD_HEAVY = 1.8;   // shift / heavier bomb multiplier
+
+// ═══════════════════════════════════════════════════════════
+//  PALETTE CACHE - read CSS vars once per theme, not per frame
+// ═══════════════════════════════════════════════════════════
+let PAL = {};
+function refreshPalette(){
+  const cs = getComputedStyle(document.documentElement);
+  const v = n => cs.getPropertyValue(n).trim();
+  PAL = {
+    bg:   v('--bg'),
+    ink:  v('--ink'),
+    ink2: v('--ink-2'),
+    ink3: v('--ink-3'),
+    red:  v('--red'),
+    ember:v('--ember'),
+  };
+}
+refreshPalette();
+
+// ═══════════════════════════════════════════════════════════
+//  TEXT CORPUS - each entry is a "level" (passage i..iv)
+// ═══════════════════════════════════════════════════════════
+const TEXTS = [
+  // i - the self-referential one
+  "the city is loud and full of words nobody asked for so we go up in the little plane and we drop bombs on the words we don't need and what falls away falls away and what stays becomes a poster becomes a poem becomes the thing we meant to say all along",
+
+  // ii - manifesto-ish
+  "every subtraction is a composition. remove the scaffolding. remove the safe word. remove the good opinion of cautious people. the shape you find underneath was already there waiting. you did not carve it. you uncovered it. the bomb is a blunt eraser and that is fine.",
+
+  // iii - softer, reflective
+  "there is a quiet that lives behind the paragraph. when enough of it is gone you can hear it. a sentence thins into a single word. a word thins into a breath. the page becomes mostly page. mostly pause. mostly the part that was never written down to begin with.",
+
+  // iv - dense noise for satisfying bombing
+  "synergy paradigm ecosystem value-add disruptive leverage scalable stakeholder actionable insights go-forward strategy circle back touch base double click let's align offline bandwidth deliverable deepdive holistic mission-critical pivot iterate frictionless low-hanging transformative best-of-breed mindshare evangelize optimize ideate sunset socialize roadmap northstar flywheel flywheel flywheel"
+];
+let textIdx = 0;
+
+// Per-passage scoring. A level counts as "done" once its page is cleared;
+// the game completes when all four are done. Efficiency = letters / bombs,
+// which rewards using the word/line cascade rather than bombing every glyph.
+let bombsThisLevel = 0;
+const levelStats = TEXTS.map(() => null);   // {bombs, letters} per cleared level
+
+// ═══════════════════════════════════════════════════════════
+//  GLYPH SAMPLING - ink shape + mass from the actual render
+//  Each letter becomes a physics object with a shatter shape
+//  derived from its own ink footprint, and a structural mass
+//  proportional to how much ink it carries. 'W' is heavier
+//  than 'i' not because we said so, but because it literally
+//  occupies more pixels on the page.
+// ═══════════════════════════════════════════════════════════
+const shapeCache = new Map();
+const _sampleCv  = document.createElement('canvas');
+const _sampleCtx = _sampleCv.getContext('2d', { willReadFrequently: true });
+const SAMPLE_STEP = 4;
+
+function sampleGlyph(ch, fontSpec, w, h){
+  const key = ch + '|' + fontSpec;
+  let cached = shapeCache.get(key);
+  if (cached) return cached;
+
+  const pad = 4;
+  const cw  = Math.ceil(w + pad * 2);
+  const chh = Math.ceil(h);
+  _sampleCv.width  = cw;
+  _sampleCv.height = chh;
+  _sampleCtx.clearRect(0, 0, cw, chh);
+  _sampleCtx.font = fontSpec;
+  _sampleCtx.textBaseline = 'top';
+  _sampleCtx.fillStyle = '#000';
+  _sampleCtx.fillText(ch, pad, 0);
+
+  const data = _sampleCtx.getImageData(0, 0, cw, chh).data;
+  const pts  = [];
+  let ink = 0;
+  for (let y = 0; y < chh; y += SAMPLE_STEP){
+    for (let x = 0; x < cw; x += SAMPLE_STEP){
+      const i = (y * cw + x) * 4;
+      if (data[i + 3] > 80){
+        pts.push({ ox: x - pad, oy: y });
+        ink++;
+      }
+    }
+  }
+  // Normalize to ~0.3..3.2 range. 'i' ends up ~0.4, 'W' ~2.6.
+  const mass = clamp(ink * SAMPLE_STEP * SAMPLE_STEP / (w * h * 0.38), 0.3, 3.2);
+  const result = { shape: pts, mass };
+  shapeCache.set(key, result);
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LAYOUT - Pretext breaks lines, canvas measures each glyph
+// ═══════════════════════════════════════════════════════════
+const textEl = document.getElementById('text');
+const measureCv = document.createElement('canvas');
+const mctx = measureCv.getContext('2d');
+
+// glyphs: { el, ch, x, y, w, h, dead, lineIdx, ... }
+let glyphs = [];
+let totalLetters = 0;
+let totalWords = 0;
+let remainingLetters = 0;
+
+async function layoutText(){
+  const fontSpec = getComputedStyle(textEl).font ||
+                   `${getComputedStyle(textEl).fontSize} ${getComputedStyle(textEl).fontFamily}`;
+  const fontSize = parseFloat(getComputedStyle(textEl).fontSize);
+  const lineHeight = fontSize * 1.28;
+  mctx.font = fontSpec;
+
+  const stage = document.getElementById('stage');
+  const maxW = Math.min(780, stage.clientWidth - 120);
+
+  const raw = TEXTS[textIdx];
+  const prepared = prepareWithSegments(raw, fontSpec);
+  const { lines, height } = layoutWithLines(prepared, maxW, lineHeight);
+
+  textEl.innerHTML = '';
+  textEl.style.width  = maxW + 'px';
+  textEl.style.height = height + 'px';
+
+  glyphs = [];
+  totalLetters = 0; totalWords = 0;
+  let wordCur = false;
+  let curWordId = null;
+  let wordIdCounter = 0;
+
+  lines.forEach((line, li) => {
+    const chars = [...line.text];
+    let x = 0;
+    const y = li * lineHeight;
+    for (const ch of chars){
+      const w = mctx.measureText(ch).width;
+      if (ch.trim() === ''){
+        if (wordCur){ wordCur = false; curWordId = null; }
+        x += w;
+        continue;
+      }
+      if (!wordCur){
+        wordCur = true;
+        curWordId = wordIdCounter++;
+        totalWords++;
+      }
+
+      const el = document.createElement('span');
+      el.className = 'glyph';
+      el.textContent = ch;
+      el.style.left   = x + 'px';
+      el.style.top    = y + 'px';
+      el.style.width  = w + 'px';
+      el.style.height = lineHeight + 'px';
+      textEl.appendChild(el);
+
+      // Sample glyph ink → shatter shape + structural mass
+      const sampled = sampleGlyph(ch, fontSpec, w, lineHeight);
+
+      glyphs.push({
+        el, ch, x, y, w, h: lineHeight,
+        lineIdx: li,
+        wordId:  curWordId,
+        mass:    sampled.mass,
+        shape:   sampled.shape,
+        dead:     false,
+        dmg:      0,
+        scorched: false,
+        unstable: false,
+        unstableT: 0,
+        falling:  false
+      });
+      totalLetters++;
+      x += w;
+    }
+    wordCur = false; curWordId = null;
+  });
+
+  remainingLetters = totalLetters;
+  bombsThisLevel = 0;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CANVAS (plane / bombs / explosions)
+// ═══════════════════════════════════════════════════════════
+const cv = document.getElementById('fx');
+const ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = Math.min(devicePixelRatio || 1, 2);
+
+function resize(){
+  W = innerWidth; H = innerHeight;
+  cv.width  = W * DPR;
+  cv.height = H * DPR;
+  cv.style.width  = W + 'px';
+  cv.style.height = H + 'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.imageSmoothingEnabled = false;
+}
+resize();
+window.addEventListener('resize', () => { resize(); relayout(); });
+
+// ═══════════════════════════════════════════════════════════
+//  AUDIO (synth - engine drone, whistle, boom, pops)
+// ═══════════════════════════════════════════════════════════
+let actx = null, masterGain = null, droneG = null, engineOn = false;
+let muted = false;
+
+function ensureAudio(){
+  if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = actx.createGain();
+  masterGain.gain.value = muted ? 0 : 0.5;
+  masterGain.connect(actx.destination);
+
+  // low engine drone - very subtle
+  const osc = actx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.value = 72;
+  const lfo = actx.createOscillator();
+  lfo.frequency.value = 7.5;
+  const lfoG = actx.createGain(); lfoG.gain.value = 2.2;
+  lfo.connect(lfoG); lfoG.connect(osc.frequency);
+  const bp = actx.createBiquadFilter();
+  bp.type = 'lowpass'; bp.frequency.value = 220; bp.Q.value = 4;
+  droneG = actx.createGain(); droneG.gain.value = 0.0;
+  osc.connect(bp); bp.connect(droneG); droneG.connect(masterGain);
+  osc.start(); lfo.start();
+
+  // fade drone in over 1.5s
+  droneG.gain.setTargetAtTime(0.045, actx.currentTime, 0.6);
+  engineOn = true;
+}
+
+function whistle(duration = 0.55){
+  if (!actx) return;
+  const t = actx.currentTime;
+  const o = actx.createOscillator();
+  const g = actx.createGain();
+  o.type = 'triangle';
+  o.frequency.setValueAtTime(2200, t);
+  o.frequency.exponentialRampToValueAtTime(260, t + duration);
+  g.gain.setValueAtTime(0.0, t);
+  g.gain.linearRampToValueAtTime(0.09, t + 0.05);
+  g.gain.exponentialRampToValueAtTime(0.001, t + duration);
+  o.connect(g); g.connect(masterGain);
+  o.start(t); o.stop(t + duration + 0.05);
+}
+
+function boom(size = 1){
+  if (!actx) return;
+  const t = actx.currentTime;
+  // noise burst
+  const len = actx.sampleRate * 0.45;
+  const buf = actx.createBuffer(1, len, actx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++){
+    d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (len * 0.25));
+  }
+  const src = actx.createBufferSource();
+  src.buffer = buf;
+  const lp = actx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(900 * size, t);
+  lp.frequency.exponentialRampToValueAtTime(180, t + 0.4);
+  lp.Q.value = 1.2;
+  const g = actx.createGain();
+  g.gain.setValueAtTime(0.0, t);
+  g.gain.linearRampToValueAtTime(0.42 * size, t + 0.004);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+  src.connect(lp); lp.connect(g); g.connect(masterGain);
+  src.start(t);
+
+  // sub thump
+  const o = actx.createOscillator();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(120, t);
+  o.frequency.exponentialRampToValueAtTime(38, t + 0.22);
+  const og = actx.createGain();
+  og.gain.setValueAtTime(0.28 * size, t);
+  og.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+  o.connect(og); og.connect(masterGain);
+  o.start(t); o.stop(t + 0.4);
+}
+
+function pop(){
+  if (!actx) return;
+  const t = actx.currentTime;
+  const o = actx.createOscillator();
+  const g = actx.createGain();
+  o.type = 'square';
+  o.frequency.setValueAtTime(800 + Math.random() * 600, t);
+  o.frequency.exponentialRampToValueAtTime(120, t + 0.08);
+  g.gain.setValueAtTime(0.06, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+  o.connect(g); g.connect(masterGain);
+  o.start(t); o.stop(t + 0.1);
+}
+
+function toggleMute(){
+  muted = !muted;
+  if (masterGain) masterGain.gain.setTargetAtTime(muted ? 0 : 0.5, actx.currentTime, 0.15);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PLANE
+// ═══════════════════════════════════════════════════════════
+const plane = {
+  x: W * 0.5,
+  y: 48,
+  tx: W * 0.5,         // target x (pointer)
+  bob: 0,
+  dir: 1,              // 1 right, -1 left
+};
+
+function drawPlane(){
+  const p = Math.round(plane.x);
+  const q = Math.round(plane.y + Math.sin(plane.bob) * 2);
+  const s = 3; // pixel size
+  const d = plane.dir;
+
+  ctx.save();
+  // direction flip
+  ctx.translate(p, q);
+  ctx.scale(d, 1);
+
+  // body (8-bit silhouette - classic side-view bomber)
+  ctx.fillStyle = PAL.ink;
+  const px = (x,y,w=1,h=1) => ctx.fillRect(x*s, y*s, w*s, h*s);
+
+  // fuselage
+  px(-6, 0, 12, 2);
+  // nose
+  px( 6,-1, 2, 1);
+  px( 6, 2, 2, 1);
+  // cockpit
+  px(-1,-1, 3, 1);
+  // tail
+  px(-7, -2, 2, 2);
+  // wings (wide)
+  px(-4, -3, 7, 1);
+  px(-4,  3, 7, 1);
+  // red stripe
+  ctx.fillStyle = PAL.red;
+  px( 0, 0, 3, 2);
+  // prop spinner / blur
+  ctx.fillStyle = PAL.ink;
+  const bladeOff = ((performance.now() / 35) | 0) % 2;
+  px( 8 + bladeOff, -2, 1, 5);
+
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  BOMBS
+// ═══════════════════════════════════════════════════════════
+const bombs = [];
+
+function dropBomb(tx, ty, size = 1){
+  ensureAudio();
+  const dx = tx - plane.x;
+  const dy = Math.max(40, ty - (plane.y + 10));
+  // Ballistic aim: pick vx so the bomb's arc would intersect the click point
+  // under our fixed gravity. fall time t = sqrt(2*dy/g).
+  const g = 0.36;
+  const t = Math.sqrt(2 * dy / g);
+  const vx = clamp(dx / t, -12, 12);
+  bombs.push({
+    x: plane.x,
+    y: plane.y + 10,
+    tx, ty,
+    vy: 0.3,
+    vx,
+    age: 0,
+    size,
+    rot: 0
+  });
+  whistle(clamp(0.35 + Math.hypot(dx, dy) / 1400, 0.3, 0.8));
+  bombsThisLevel++;
+  markAction();
+}
+
+function stepBomb(b, dt){
+  const x0 = b.x, y0 = b.y;
+  b.age += dt;
+  b.vy += 0.36 * dt * 60;   // gravity
+  b.x  += b.vx * dt * 60;
+  b.y  += b.vy * dt * 60;
+  b.rot += 0.12;
+
+  // smoke trail
+  if (b.age > 0.02 && Math.random() < 0.6){
+    particles.push({
+      x: b.x + rand(-2,2), y: b.y - 2,
+      vx: rand(-0.3,0.3), vy: rand(-0.8,-0.1),
+      size: rand(1.5, 3),
+      life: 1.0, decay: rand(0.015, 0.03),
+      col: 'smoke'
+    });
+  }
+
+  // ─── Swept collision vs live text. Explode on first impact.
+  const hit = sweptTextHit(x0, y0, b.x, b.y, 5);
+  if (hit){
+    explode(hit.x, hit.y, b.vx, b.vy, b.size, hit.g);
+    return false;
+  }
+
+  // Off-screen without hitting text - puff of dust so the user
+  // can see where it went, then quietly gone.
+  if (b.y > H + 30 || b.x < -60 || b.x > W + 60){
+    const px = clamp(b.x, 0, W), py = Math.min(b.y, H - 4);
+    for (let i = 0; i < 6; i++){
+      particles.push({
+        x: px + rand(-4, 4), y: py + rand(-3, 0),
+        vx: rand(-0.4, 0.4), vy: rand(-0.6, -0.05),
+        size: rand(2, 4),
+        life: 0.7, decay: rand(0.04, 0.08),
+        col: 'smoke'
+      });
+    }
+    return false;
+  }
+
+  return true;
+}
+
+// Point vs live-glyph bbox (with a little slack).
+function firstTextHit(px, py, r){
+  const rect = textEl.getBoundingClientRect();
+  const lx = px - rect.left, ly = py - rect.top;
+  if (lx < -r || ly < -r || lx > rect.width + r || ly > rect.height + r) return null;
+  for (const g of glyphs){
+    if (g.dead || g.falling) continue;
+    // Tighter y band so the bomb doesn't "collide" with pure line gutter.
+    if (lx > g.x - r && lx < g.x + g.w + r &&
+        ly > g.y + g.h * 0.18 - r && ly < g.y + g.h * 0.96 + r){
+      return g;
+    }
+  }
+  return null;
+}
+
+// Sweep from last frame to current frame - prevents tunnelling
+// through thin glyphs at high velocity.
+function sweptTextHit(x0, y0, x1, y1, r){
+  const dx = x1 - x0, dy = y1 - y0;
+  const dist = Math.hypot(dx, dy);
+  const steps = Math.max(1, Math.ceil(dist / 5));
+  for (let i = 1; i <= steps; i++){
+    const t = i / steps;
+    const px = x0 + dx * t;
+    const py = y0 + dy * t;
+    const g = firstTextHit(px, py, r);
+    if (g) return { x: px, y: py, g };
+  }
+  return null;
+}
+
+function drawBomb(b){
+  const s = 3;
+  ctx.save();
+  ctx.translate(Math.round(b.x), Math.round(b.y));
+  // slight sway
+  ctx.rotate(Math.sin(b.rot) * 0.15);
+  ctx.fillStyle = PAL.ink;
+  // bomb body 3x5 px
+  ctx.fillRect(-1*s, -2*s, 2*s, 4*s);
+  ctx.fillRect(-2*s,  0*s, 4*s, 2*s);
+  // nose
+  ctx.fillRect(-1*s, -3*s, 2*s, 1*s);
+  // fins (at top)
+  ctx.fillRect(-2*s, 2*s, 1*s, 1*s);
+  ctx.fillRect( 1*s, 2*s, 1*s, 1*s);
+  // red band
+  ctx.fillStyle = PAL.red;
+  ctx.fillRect(-1*s, -1*s, 2*s, 1*s);
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  EXPLOSION - radial blast, mild forward bias on the shrapnel.
+//  The visible flash ring is a clean circle (not stretched).
+// ═══════════════════════════════════════════════════════════
+const particles = [];
+const flashes = [];
+
+function explode(x, y, vx, vy, size = 1, primaryHit = null){
+  const speed = Math.hypot(vx, vy);
+  const dir = speed > 0.1 ? { x: vx / speed, y: vy / speed } : { x: 0, y: 1 };
+  // Kinetic-ish energy: size provides base, speed multiplies.
+  const energy = 180 * size + speed * speed * 1.4;
+  const baseR  = 42 + Math.sqrt(energy) * 1.8;
+
+  boom(size);
+  shake(6 * size);
+
+  // Circular flash ring - radiates evenly from the impact point.
+  flashes.push({ x, y, r: baseR * 0.42, life: 1 });
+
+  // Shockwave shrapnel - slight forward lean along the impact direction.
+  const n = Math.floor(34 * size);
+  const baseA = Math.atan2(dir.y, dir.x);
+  for (let i = 0; i < n; i++){
+    const forward = Math.random() < 0.5;
+    const a = forward ? baseA + rand(-1.2, 1.2) : Math.random() * TAU;
+    const v = rand(1.5, 5.5) * size * (forward ? 1.08 : 0.92);
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * v,
+      vy: Math.sin(a) * v - rand(0, 2),
+      size: (rand(2, 5) | 0),
+      life: 1,
+      decay: rand(0.02, 0.055),
+      col: Math.random() < 0.55 ? 'ember' : (Math.random() < 0.7 ? 'ink' : 'red')
+    });
+  }
+  // smoke
+  for (let i = 0; i < 12; i++){
+    particles.push({
+      x: x + rand(-6,6), y: y + rand(-6,6),
+      vx: rand(-0.8, 0.8), vy: rand(-1.4, -0.3),
+      size: rand(3, 6),
+      life: 1, decay: rand(0.008, 0.018),
+      col: 'smoke'
+    });
+  }
+
+  damageGlyphs(x, y, energy, dir, baseR, primaryHit);
+  processCohesion();
+}
+
+// ── Damage pass ──────────────────────────────────────────
+// Each glyph's destruction is determined by:
+//   1. Distance from impact (inverse-squared-ish falloff)
+//   2. Mild alignment with impact velocity (blast reaches a touch
+//      farther forward than sideways, kept near-circular on purpose)
+//   3. Glyph's structural threshold (28 × sampled ink mass)
+//   4. Accumulated prior damage (two glancing blows can kill)
+function damageGlyphs(cx, cy, energy, dir, baseR, primaryHit){
+  const rect = textEl.getBoundingClientRect();
+  const hits = [];
+
+  for (const g of glyphs){
+    if (g.dead || g.falling) continue;
+
+    const gx = rect.left + g.x + g.w * 0.5;
+    const gy = rect.top  + g.y + g.h * 0.55;
+    const dx = gx - cx, dy = gy - cy;
+    const d  = Math.max(0.5, Math.hypot(dx, dy));
+    if (d > baseR * 2.4) continue;
+
+    const ndx = dx / d, ndy = dy / d;
+    // Forward alignment: +1 directly ahead of impact, −1 behind.
+    const align = ndx * dir.x + ndy * dir.y;
+    // Near-circular blast: a small forward stretch, a small rear squash.
+    const stretch = 0.94 + Math.max(0, align) * 0.30 + Math.min(0, align) * 0.18;
+    const rEff = baseR * stretch;
+    if (d > rEff) continue;
+
+    const falloff = Math.pow(1 - d / rEff, 1.4);
+    let eAt = energy * falloff;
+
+    // Epicenter contact bonus - the glyph the bomb literally struck.
+    if (g === primaryHit) eAt *= 2.2;
+
+    const threshold = 28 * g.mass;
+
+    if (eAt >= threshold){
+      hits.push({
+        g, nx: ndx, ny: ndy,
+        impulse: clamp((eAt - threshold) * 0.05 + 2, 2, 16)
+      });
+    } else {
+      // Below threshold: scorch + accumulate damage. Second glancing
+      // blow can push accumulated damage over the edge.
+      g.dmg += eAt / threshold;
+      if (!g.scorched){
+        g.scorched = true;
+        g.el.classList.add('scorched');
+      }
+      if (g.dmg >= 1){
+        hits.push({ g, nx: ndx, ny: ndy, impulse: 2 });
+      }
+    }
+  }
+
+  for (const h of hits){
+    destroyGlyph(h.g, cx, cy, h.nx, h.ny, h.impulse);
+  }
+}
+
+// ── Destruction ──────────────────────────────────────────
+// Shatter uses the glyph's own sampled ink shape. Each ink
+// cell becomes a particle with velocity = (radial-from-impact)
+// blended with (shared impulse along blast direction).
+function destroyGlyph(g, cx, cy, nx, ny, impulse){
+  if (g.dead) return;
+  g.dead = true;
+  remainingLetters--;
+  pop();
+  markAction();
+
+  const rect = textEl.getBoundingClientRect();
+  const gx = rect.left + g.x;
+  const gy = rect.top  + g.y;
+
+  const shape = g.shape;
+  const power = 2.8 + impulse * 0.55;
+  const sharedShare = 0.55;
+
+  for (const pt of shape){
+    const px = gx + pt.ox + SAMPLE_STEP * 0.5;
+    const py = gy + pt.oy + SAMPLE_STEP * 0.5;
+    const rx = px - cx, ry = py - cy;
+    const dd = Math.max(1, Math.hypot(rx, ry));
+    const radStrength = power * (0.55 + Math.min(80, 140 / dd) * 0.015);
+    particles.push({
+      x: px, y: py,
+      vx: (rx/dd) * radStrength + nx * power * sharedShare + rand(-0.4, 0.4),
+      vy: (ry/dd) * radStrength + ny * power * sharedShare - rand(0.2, 1.8),
+      size: SAMPLE_STEP,
+      life: 1,
+      decay: rand(0.02, 0.045),
+      col: 'glyph',
+      fill: PAL.ink
+    });
+  }
+
+  g.el.classList.remove('scorched', 'unstable');
+  g.el.classList.add('gone');
+}
+
+// ── Word & line cohesion ─────────────────────────────────
+// Letters are not isolated - they belong to words (bonded by
+// meaning) and lines (bonded by layout). When enough of a
+// word's ink-mass is gone, the rest becomes structurally
+// unstable: they tremble briefly, then tumble off the page.
+// The same applies to lines, at a stricter threshold.
+function processCohesion(){
+  const wordStats = new Map();
+  const lineStats = new Map();
+
+  for (const g of glyphs){
+    // "gone" includes unstable/falling too - they contribute
+    // toward the cascade even before they physically leave.
+    const gone = g.dead || g.unstable || g.falling;
+
+    if (g.wordId != null){
+      let ws = wordStats.get(g.wordId);
+      if (!ws){ ws = { total: 0, gone: 0, alive: [] }; wordStats.set(g.wordId, ws); }
+      ws.total += g.mass;
+      if (gone) ws.gone += g.mass; else ws.alive.push(g);
+    }
+    let ls = lineStats.get(g.lineIdx);
+    if (!ls){ ls = { total: 0, gone: 0, alive: [] }; lineStats.set(g.lineIdx, ls); }
+    ls.total += g.mass;
+    if (gone) ls.gone += g.mass; else ls.alive.push(g);
+  }
+
+  const now = performance.now();
+
+  // Word cascade - 55% of ink-mass gone destabilizes the rest.
+  for (const ws of wordStats.values()){
+    if (ws.total > 0 && ws.gone / ws.total > 0.55 && ws.alive.length){
+      for (const g of ws.alive){
+        g.unstable = true;
+        g.unstableT = now + rand(250, 1400);
+        g.el.classList.add('unstable');
+      }
+    }
+  }
+  // Line cascade - 70% threshold, longer fall delay.
+  for (const ls of lineStats.values()){
+    if (ls.total > 0 && ls.gone / ls.total > 0.70 && ls.alive.length){
+      for (const g of ls.alive){
+        if (!g.unstable){
+          g.unstable = true;
+          g.unstableT = now + rand(500, 2000);
+          g.el.classList.add('unstable');
+        }
+      }
+    }
+  }
+}
+
+// ── Falling letters (post-cohesion) ──────────────────────
+function startFalling(g){
+  g.falling = true;
+  g.fx = g.x; g.fy = g.y;
+  g.fvx = rand(-0.9, 0.9);
+  g.fvy = rand(-0.4, 0.3);
+  g.frot = 0;
+  g.frotV = rand(-0.055, 0.055);
+  g.el.classList.remove('unstable', 'scorched');
+  g.el.classList.add('falling');
+}
+
+function stepFalling(g, dt){
+  g.fvy += 0.42 * dt * 60;
+  g.fx  += g.fvx * dt * 60;
+  g.fy  += g.fvy * dt * 60;
+  g.frot += g.frotV * dt * 60;
+
+  const tdx = g.fx - g.x;
+  const tdy = g.fy - g.y;
+  g.el.style.transform = `translate(${tdx}px, ${tdy}px) rotate(${g.frot}rad)`;
+
+  const tr = textEl.getBoundingClientRect();
+  const absY = tr.top + g.fy;
+  if (absY > H - 90){
+    g.el.style.opacity = String(Math.max(0, 1 - (absY - (H - 90)) / 110));
+  }
+  if (absY > H + 30){
+    g.dead = true;
+    g.falling = false;
+    remainingLetters--;
+    g.el.classList.add('gone');
+    g.el.style.transform = '';
+    markAction();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  FLASHES (circular ring + core)
+// ═══════════════════════════════════════════════════════════
+function drawFlash(f){
+  const e = 1 - f.life;
+  const r = f.r + e * 45;
+  ctx.save();
+  ctx.globalAlpha = f.life * 0.7;
+  ctx.strokeStyle = PAL.ember;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(f.x, f.y, r, 0, TAU);
+  ctx.stroke();
+  ctx.globalAlpha = f.life * 0.9;
+  ctx.fillStyle = PAL.ember;
+  ctx.beginPath();
+  ctx.arc(f.x, f.y, Math.max(0, f.r * 0.3 - e * 12), 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PARTICLES
+// ═══════════════════════════════════════════════════════════
+function stepParticle(p, dt){
+  p.x += p.vx * dt * 60;
+  p.y += p.vy * dt * 60;
+  // gravity for glyph/ember/ink; smoke drifts up
+  if (p.col === 'smoke') {
+    p.vy -= 0.06 * dt * 60;
+    p.vx *= 0.985;
+  } else {
+    p.vy += 0.28 * dt * 60;
+    p.vx *= 0.96;
+  }
+  p.life -= p.decay * dt * 60;
+  return p.life > 0 && p.y < H + 40;
+}
+
+function drawParticle(p){
+  ctx.save();
+  ctx.globalAlpha = clamp(p.life, 0, 1);
+
+  if (p.col === 'smoke'){
+    ctx.globalAlpha *= 0.35;
+    ctx.fillStyle = PAL.ink2;
+  } else if (p.col === 'ember'){
+    ctx.fillStyle = PAL.ember;
+  } else if (p.col === 'red'){
+    ctx.fillStyle = PAL.red;
+  } else if (p.col === 'glyph'){
+    ctx.fillStyle = p.fill || PAL.ink;
+  } else {
+    ctx.fillStyle = PAL.ink;
+  }
+  const s = p.size;
+  ctx.fillRect(Math.round(p.x - s*0.5), Math.round(p.y - s*0.5), s, s);
+  ctx.restore();
+}
+
+// ── Aim reticle - a faint crosshair at the pointer, so the drop
+//    target reads even though the system cursor is hidden.
+function drawReticle(){
+  if (overPanel) return;
+  const x = Math.round(mouseX), y = Math.round(mouseY);
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = PAL.red;
+  ctx.fillRect(x - 7, y, 4, 1);
+  ctx.fillRect(x + 4, y, 4, 1);
+  ctx.fillRect(x, y - 7, 1, 4);
+  ctx.fillRect(x, y + 4, 1, 4);
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SCREEN SHAKE
+// ═══════════════════════════════════════════════════════════
+let shakeAmp = 0;
+function shake(a){ shakeAmp = Math.max(shakeAmp, a); }
+
+// ═══════════════════════════════════════════════════════════
+//  GLASS UI (core/ui.js) - masthead + bottom legend
+// ═══════════════════════════════════════════════════════════
+const DEFAULT_HINTS = 'Click drop · Shift heavier · 1-4 level · N next · E share · T theme · Q quiet';
+const ui = window.PT.ui({
+  title: 'Typo bomber',
+  hints: DEFAULT_HINTS,
+  theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
+});
+function syncTitle(){
+  ui.setTitle('Typo bomber · ' + (ROMAN[textIdx] || (textIdx + 1)));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INPUT (pointer + keyboard, touch-friendly)
+// ═══════════════════════════════════════════════════════════
+let mouseX = W/2, mouseY = H/2;
+let overPanel = false;
+
+const onPanel = e => !!(e.target && e.target.closest && e.target.closest('.adui'));
+
+function aimAt(e){
+  mouseX = e.clientX; mouseY = e.clientY;
+  plane.tx = clamp(mouseX, 30, W - 30);
+}
+
+window.addEventListener('pointermove', e => {
+  overPanel = onPanel(e);
+  // While the pointer is over the glass panel the plane releases its
+  // grip (freezes at last x) so controls stay reachable.
+  if (!overPanel) aimAt(e);
+});
+
+window.addEventListener('pointerdown', e => {
+  if (onPanel(e)) return;
+  // Clicks on the level picker or the completion screen drive their own
+  // controls - they must NOT also drop a bomb on the spot.
+  if (e.target && e.target.closest &&
+      (e.target.closest('#cleared') || e.target.closest('#complete'))) return;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  aimAt(e);                       // touch: tap position becomes the aim
+  ensureAudio();
+  // Dropping a bomb is an "action" - clears any settled/cleared state.
+  if (state !== 'playing'){ leaveSettled(); leaveCleared(); state = 'playing'; }
+  const size = e.shiftKey ? PAYLOAD_HEAVY : 1;
+  dropBomb(mouseX, mouseY, size);
+  document.body.classList.add('bombing');
+  clearTimeout(bombingTimeout);
+  bombingTimeout = setTimeout(() => document.body.classList.remove('bombing'), 1400);
+});
+
+let bombingTimeout = null;
+
+window.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // End screen: a focused set of controls.
+  if (state === 'complete'){
+    switch (e.code){
+      case 'KeyE': shareResults(); break;
+      case 'KeyR': newGame(); break;
+      case 'KeyT': toggleTheme(); break;
+      case 'KeyQ': ensureAudio(); toggleMute(); break;
+    }
+    return;
+  }
+  switch (e.code){
+    case 'KeyQ': ensureAudio(); toggleMute(); break;
+    case 'KeyR': reset(); break;
+    case 'KeyN': advanceToNext(); break;
+    case 'KeyT': toggleTheme(); break;
+    case 'KeyE': exportPoster(); break;
+    case 'Enter': case 'NumpadEnter':
+      e.preventDefault(); advanceToNext(); break;
+    case 'Digit1': case 'Numpad1': selectLevel(0); break;
+    case 'Digit2': case 'Numpad2': selectLevel(1); break;
+    case 'Digit3': case 'Numpad3': selectLevel(2); break;
+    case 'Digit4': case 'Numpad4': selectLevel(3); break;
+    case 'Space':
+      e.preventDefault();
+      ensureAudio();
+      if (state !== 'playing'){ leaveSettled(); leaveCleared(); state = 'playing'; }
+      dropBomb(plane.x, H * 0.55, 1);
+      break;
+  }
+});
+
+function toggleTheme(){
+  const cur = document.documentElement.dataset.theme;
+  const next = cur === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = next;
+  document.querySelector('meta[name=theme-color]')
+          ?.setAttribute('content', next === 'dark' ? '#17130c' : '#f0ebdf');
+  refreshPalette();
+  ui.theme(next);
+}
+
+function reset(){
+  particles.length = 0;
+  bombs.length = 0;
+  flashes.length = 0;
+  relayout();
+}
+
+async function relayout(){
+  // clean up existing glyphs
+  glyphs.forEach(g => g.el.remove());
+  glyphs = [];
+  leaveSettled();
+  leaveCleared();
+  state = 'playing';
+  lastActionT = 0;
+  await layoutText();
+  renderPassageIndex();
+  syncTitle();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PROGRESSION - settled, cleared, advance, level select
+//
+//  A round of play moves through three states:
+//    playing  - normal bombing
+//    settled  - letters remain but no action for a few seconds;
+//               crop marks fade in around what survives. This
+//               is the poster. Capture it, or advance.
+//    cleared  - no letters remain; roman-numeral passage index
+//               appears centered and doubles as a level picker.
+//
+//  Any bomb, destruction, or fall-to-death resets settled.
+//  Advancing or picking a level runs a small crossfade.
+// ═══════════════════════════════════════════════════════════
+let state = 'playing';
+let lastActionT = 0;
+let transitioning = false;   // true while a passage crossfade is in flight
+const SETTLE_DELAY = 4200;
+const ROMAN = ['i','ii','iii','iv','v','vi','vii','viii','ix','x'];
+
+function markAction(){
+  lastActionT = performance.now();
+  if (state === 'settled') leaveSettled();
+}
+
+function enterSettled(){
+  if (state === 'settled') return;
+  state = 'settled';
+  positionCropMarks();
+  document.getElementById('cropmarks').classList.add('show');
+  ui.setHints('E share this poster · N next · Click keep bombing');
+}
+function leaveSettled(){
+  if (state !== 'settled') return;
+  state = 'playing';
+  document.getElementById('cropmarks').classList.remove('show');
+  ui.setHints(DEFAULT_HINTS);
+}
+
+function enterCleared(){
+  if (state === 'cleared') return;
+  state = 'cleared';
+  document.getElementById('cleared').classList.add('show');
+  ui.setHints('Page cleared · 1-4 pick level · N next passage');
+}
+function leaveCleared(){
+  if (state !== 'cleared') return;
+  state = 'playing';
+  document.getElementById('cleared').classList.remove('show');
+  ui.setHints(DEFAULT_HINTS);
+}
+
+// The page just emptied. Record the level's score, then either show the
+// per-level picker (more levels to clear) or the game-complete screen.
+function onPageCleared(){
+  levelStats[textIdx] = { bombs: bombsThisLevel, letters: totalLetters };
+  renderPassageIndex();   // reflect the newly-completed level's marker
+  // The game ends when the final passage (iv) falls, or when every passage
+  // has been cleared - whichever comes first. Otherwise: show the picker.
+  const isFinal = textIdx === TEXTS.length - 1;
+  const allDone = levelStats.every(s => s !== null);
+  if (isFinal || allDone) enterComplete();
+  else enterCleared();
+}
+
+function enterComplete(){
+  if (state === 'complete') return;
+  state = 'complete';
+  document.getElementById('cropmarks').classList.remove('show');
+  document.getElementById('cleared').classList.remove('show');
+  renderComplete();
+  document.getElementById('complete').classList.add('show');
+  ui.setHints('Game complete · E share score · R play again');
+}
+function leaveComplete(){
+  if (state !== 'complete') return;
+  state = 'playing';
+  document.getElementById('complete').classList.remove('show');
+  ui.setHints(DEFAULT_HINTS);
+}
+
+// Fresh run: wipe the scoreboard and drop back to the first passage.
+function newGame(){
+  for (let i = 0; i < levelStats.length; i++) levelStats[i] = null;
+  leaveComplete();
+  goToPassage(0);
+}
+
+function scoreTotals(){
+  let letters = 0, bombs = 0;
+  for (const s of levelStats){ if (s){ letters += s.letters; bombs += s.bombs; } }
+  const perBomb = bombs > 0 ? letters / bombs : letters;
+  return { letters, bombs, perBomb };
+}
+
+function completionKicker(){
+  const done = levelStats.filter(Boolean).length;
+  return done === TEXTS.length
+    ? 'All four passages cleared'
+    : `${done} of ${TEXTS.length} passages cleared`;
+}
+
+function renderComplete(){
+  const card = document.getElementById('cmp-card');
+  const rows = levelStats.map((s, i) => {
+    const roman = `<span class="r-roman">${ROMAN[i]}</span>`;
+    if (!s) return roman + `<span class="r-num"></span><span class="r-num">skipped</span>`;
+    return roman +
+           `<span class="r-num">${s.letters} letters</span>` +
+           `<span class="r-num">${s.bombs} ${s.bombs === 1 ? 'bomb' : 'bombs'}</span>`;
+  }).join('');
+  const t = scoreTotals();
+  card.innerHTML =
+    `<div class="cmp-kicker">${completionKicker()}</div>` +
+    `<div class="cmp-rows">${rows}</div>` +
+    `<div class="cmp-rule"></div>` +
+    `<div class="cmp-total">${t.letters}</div>` +
+    `<div class="cmp-sub">letters erased · ${t.bombs} bombs · ${t.perBomb.toFixed(1)} per bomb</div>` +
+    `<div class="cmp-actions">` +
+      `<button class="cmp-btn accent" type="button" data-cmp="share">E share score</button>` +
+      `<button class="cmp-btn" type="button" data-cmp="again">R play again</button>` +
+    `</div>`;
+  card.querySelector('[data-cmp="share"]').addEventListener('click', shareResults);
+  card.querySelector('[data-cmp="again"]').addEventListener('click', newGame);
+}
+
+// Crop-mark box = bbox of all surviving glyphs, with padding.
+function positionCropMarks(){
+  const live = glyphs.filter(g => !g.dead && !g.falling);
+  if (!live.length) return;
+  const rect = textEl.getBoundingClientRect();
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const g of live){
+    const l = rect.left + g.x;
+    const t = rect.top  + g.y + g.h * 0.18;
+    const r = rect.left + g.x + g.w;
+    const b = rect.top  + g.y + g.h * 0.92;
+    if (l < minX) minX = l;
+    if (t < minY) minY = t;
+    if (r > maxX) maxX = r;
+    if (b > maxY) maxY = b;
+  }
+  const pad = 22;
+  const cm = document.getElementById('cropmarks');
+  cm.style.left   = (minX - pad) + 'px';
+  cm.style.top    = (minY - pad) + 'px';
+  cm.style.width  = (maxX - minX + pad * 2) + 'px';
+  cm.style.height = (maxY - minY + pad * 2) + 'px';
+}
+
+function renderPassageIndex(){
+  const el = document.getElementById('passage-index');
+  el.innerHTML = '';
+  for (let i = 0; i < TEXTS.length; i++){
+    if (i > 0){
+      const sep = document.createElement('span');
+      sep.className = 'pi-sep';
+      sep.textContent = '·';
+      el.appendChild(sep);
+    }
+    const span = document.createElement('span');
+    span.className = 'pi' + (i === textIdx ? ' now' : '') + (levelStats[i] ? ' done' : '');
+    span.textContent = ROMAN[i] || (i + 1);
+    span.title = 'level ' + (ROMAN[i] || (i + 1)) + (levelStats[i] ? ' · cleared' : '');
+    span.addEventListener('click', () => selectLevel(i));
+    el.appendChild(span);
+  }
+}
+
+// Jump straight to a passage / level (number keys, or clicking the index).
+function selectLevel(idx){
+  if (idx < 0 || idx >= TEXTS.length) return;
+  if (idx === textIdx && state === 'playing') return;
+  goToPassage(idx);
+}
+
+function advanceToNext(){
+  goToPassage((textIdx + 1) % TEXTS.length);
+}
+
+async function goToPassage(idx){
+  transitioning = true;
+  leaveSettled(); leaveCleared(); leaveComplete();
+  state = 'playing';
+  // Soft crossfade of the text container
+  textEl.style.opacity = '0';
+  await wait(540);
+  textIdx = ((idx % TEXTS.length) + TEXTS.length) % TEXTS.length;
+  // rebuild inside the faded container so the reveal feels like one gesture
+  glyphs.forEach(g => g.el.remove());
+  glyphs = [];
+  await layoutText();
+  renderPassageIndex();
+  syncTitle();
+  particles.length = 0; bombs.length = 0; flashes.length = 0;
+  // force next-frame opacity transition
+  await raf();
+  textEl.style.opacity = '1';
+  lastActionT = 0;
+  transitioning = false;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  EXPORT / SHARE - snapshot the surviving composition as PNG.
+//  Uses the Web Share API where available (one tap to socials on
+//  mobile), and falls back to a download everywhere else.
+// ═══════════════════════════════════════════════════════════
+let sharing = false;
+
+async function exportPoster(){
+  if (sharing) return;
+  sharing = true;
+
+  // capture flash
+  const f = document.getElementById('flash');
+  f.classList.add('on');
+  setTimeout(() => f.classList.remove('on'), 280);
+
+  const scale = 2;
+  const outCv = document.createElement('canvas');
+  const stage = document.getElementById('stage');
+  const sw = stage.clientWidth;
+  const sh = stage.clientHeight;
+  outCv.width  = sw * scale;
+  outCv.height = sh * scale;
+  const octx = outCv.getContext('2d');
+  octx.scale(scale, scale);
+
+  octx.fillStyle = PAL.bg;
+  octx.fillRect(0, 0, sw, sh);
+
+  // subtle grain
+  octx.globalAlpha = 0.04;
+  for (let i = 0; i < 400; i++){
+    octx.fillStyle = Math.random() < 0.5 ? PAL.ink : PAL.bg;
+    octx.fillRect(Math.random()*sw, Math.random()*sh, 2, 2);
+  }
+  octx.globalAlpha = 1;
+
+  // draw surviving glyphs
+  const stageRect = stage.getBoundingClientRect();
+  const textRect  = textEl.getBoundingClientRect();
+  const offX = textRect.left - stageRect.left;
+  const offY = textRect.top  - stageRect.top;
+
+  const fontSpec = getComputedStyle(textEl).font ||
+                   `${getComputedStyle(textEl).fontSize} ${getComputedStyle(textEl).fontFamily}`;
+  octx.font = fontSpec;
+  octx.textBaseline = 'alphabetic';
+  octx.fillStyle = PAL.ink;
+
+  const lineH = parseFloat(getComputedStyle(textEl).fontSize) * 1.28;
+  const ascent = lineH * 0.82;
+
+  for (const g of glyphs){
+    if (g.dead) continue;
+    octx.fillText(g.ch, offX + g.x, offY + g.y + ascent);
+  }
+
+  // maker mark
+  octx.fillStyle = PAL.ink2;
+  octx.font = '10px "IBM Plex Mono", monospace';
+  octx.fillText('Typo bomber · AD& · adidizdarevic.com', 24, sh - 22);
+
+  const stamp = new Date().toISOString().slice(0,10);
+  const filename = `typo-bomber-${ROMAN[textIdx] || (textIdx+1)}-${stamp}.png`;
+
+  try {
+    await shareCanvas(outCv, filename, 'A poster bombed out of a paragraph. Made with Typo bomber.');
+  } finally {
+    sharing = false;
+  }
+}
+
+// Share a rendered canvas: native Web Share where available, else download.
+function shareCanvas(canvas, filename, shareText){
+  return new Promise(resolve => {
+    canvas.toBlob(async (blob) => {
+      try {
+        if (!blob) return;
+        const file = new File([blob], filename, { type: 'image/png' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })){
+          try {
+            await navigator.share({ files: [file], title: 'Typo bomber', text: shareText });
+            return;
+          } catch (err){
+            if (err && err.name === 'AbortError') return;   // user dismissed
+            // otherwise fall through to download
+          }
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      } finally {
+        resolve();
+      }
+    }, 'image/png');
+  });
+}
+
+// Render the final scoreboard as a square card, ready to share.
+function renderScoreCardCanvas(){
+  const scale = 2;
+  const S = 1080;
+  const c = document.createElement('canvas');
+  c.width = S * scale; c.height = S * scale;
+  const o = c.getContext('2d');
+  o.scale(scale, scale);
+
+  o.fillStyle = PAL.bg;
+  o.fillRect(0, 0, S, S);
+
+  // grain
+  o.globalAlpha = 0.04;
+  for (let i = 0; i < 1100; i++){
+    o.fillStyle = Math.random() < 0.5 ? PAL.ink : PAL.bg;
+    o.fillRect(Math.random()*S, Math.random()*S, 2, 2);
+  }
+  o.globalAlpha = 1;
+
+  // masthead
+  o.textAlign = 'center';
+  o.fillStyle = PAL.ink2;
+  o.font = '500 19px "IBM Plex Mono", monospace';
+  o.fillText('T Y P O   B O M B E R', S/2, 156);
+  o.fillStyle = PAL.ink3;
+  o.font = '12px "IBM Plex Mono", monospace';
+  o.fillText(completionKicker().toUpperCase(), S/2, 188);
+
+  // per-level rows
+  const t = scoreTotals();
+  const startY = 318, rowH = 74;
+  levelStats.forEach((s, i) => {
+    const y = startY + i * rowH;
+    o.textAlign = 'left';
+    o.fillStyle = s ? PAL.ink : PAL.ink3;
+    o.font = 'italic 38px "Instrument Serif", serif';
+    o.fillText(ROMAN[i], S/2 - 300, y);
+    o.textAlign = 'right';
+    o.fillStyle = PAL.ink2;
+    o.font = '21px "IBM Plex Mono", monospace';
+    if (s){
+      o.fillText(`${s.letters} letters`, S/2 + 90, y);
+      o.fillText(`${s.bombs} ${s.bombs === 1 ? 'bomb' : 'bombs'}`, S/2 + 300, y);
+    } else {
+      o.fillStyle = PAL.ink3;
+      o.fillText('skipped', S/2 + 300, y);
+    }
+  });
+
+  // rule
+  o.fillStyle = PAL.ink4 || PAL.ink3;
+  o.fillRect(S/2 - 30, startY + 4*rowH - 8, 60, 1);
+
+  // grand total
+  o.textAlign = 'center';
+  o.fillStyle = PAL.ink;
+  o.font = '128px "Instrument Serif", serif';
+  o.fillText(String(t.letters), S/2, 800);
+  o.fillStyle = PAL.ink2;
+  o.font = '16px "IBM Plex Mono", monospace';
+  o.fillText(`LETTERS ERASED · ${t.bombs} BOMBS · ${t.perBomb.toFixed(1)} PER BOMB`, S/2, 848);
+
+  // maker mark
+  o.fillStyle = PAL.ink2;
+  o.font = '13px "IBM Plex Mono", monospace';
+  o.fillText('AD&  ·  adidizdarevic.com', S/2, S - 64);
+
+  return c;
+}
+
+async function shareResults(){
+  if (sharing) return;
+  sharing = true;
+  const f = document.getElementById('flash');
+  f.classList.add('on');
+  setTimeout(() => f.classList.remove('on'), 280);
+  try {
+    const card = renderScoreCardCanvas();
+    const t = scoreTotals();
+    const stamp = new Date().toISOString().slice(0,10);
+    await shareCanvas(card, `typo-bomber-score-${stamp}.png`,
+      `I erased ${t.letters} letters across four passages in Typo bomber.`);
+  } finally {
+    sharing = false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MAIN LOOP
+// ═══════════════════════════════════════════════════════════
+let last = performance.now();
+function tick(now){
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  // ── unstable → falling transitions + physics step
+  const nowMs = performance.now();
+  for (const g of glyphs){
+    if (g.unstable && !g.dead && !g.falling && nowMs >= g.unstableT){
+      startFalling(g);
+    }
+    if (g.falling && !g.dead){
+      stepFalling(g, dt);
+    }
+  }
+
+  // ── state transitions
+  // Cleared: triggers the instant the last letter leaves.
+  // Settled: requires a few seconds of inactivity with survivors.
+  // Suppressed during a passage change so the outgoing (empty) page
+  // can't re-trigger "cleared" over the incoming text.
+  if (!transitioning && state === 'playing' && totalLetters > 0){
+    if (remainingLetters === 0 && lastActionT > 0){
+      onPageCleared();
+    } else if (
+      remainingLetters > 0 &&
+      remainingLetters < totalLetters &&
+      lastActionT > 0 &&
+      nowMs - lastActionT > SETTLE_DELAY
+    ){
+      enterSettled();
+    }
+  }
+
+  // plane update
+  const newDir = Math.sign(plane.tx - plane.x);
+  if (newDir !== 0 && newDir !== plane.dir) plane.dir = newDir;
+  plane.x = lerp(plane.x, plane.tx, 0.08);
+  plane.bob += 0.05;
+  plane.y = 52;   // keep plane near the top
+
+  // drawing
+  ctx.clearRect(0, 0, W, H);
+
+  // shake
+  let ox = 0, oy = 0;
+  if (shakeAmp > 0.1){
+    ox = (Math.random() - 0.5) * shakeAmp;
+    oy = (Math.random() - 0.5) * shakeAmp;
+    shakeAmp *= 0.85;
+    textEl.style.transform = `translate(${ox}px, ${oy}px)`;
+  } else if (shakeAmp > 0){
+    shakeAmp = 0;
+    textEl.style.transform = '';
+  }
+  ctx.save();
+  ctx.translate(ox, oy);
+
+  // bombs
+  for (let i = bombs.length - 1; i >= 0; i--){
+    if (!stepBomb(bombs[i], dt)) bombs.splice(i, 1);
+  }
+  for (const b of bombs) drawBomb(b);
+
+  // particles
+  for (let i = particles.length - 1; i >= 0; i--){
+    if (!stepParticle(particles[i], dt)) particles.splice(i, 1);
+  }
+  for (const p of particles) drawParticle(p);
+
+  // flashes
+  for (let i = flashes.length - 1; i >= 0; i--){
+    flashes[i].life -= dt * 2.6;
+    if (flashes[i].life <= 0) flashes.splice(i, 1);
+  }
+  for (const f of flashes) drawFlash(f);
+
+  // plane + reticle
+  drawPlane();
+  drawReticle();
+
+  ctx.restore();
+
+  requestAnimationFrame(tick);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════
+async function init(){
+  // wait for fonts so Pretext measures correctly
+  await document.fonts.ready;
+  refreshPalette();
+  await layoutText();
+  renderPassageIndex();
+  syncTitle();
+  requestAnimationFrame(tick);
+}
+
+init();
+</script>
+</body>
+</html>
