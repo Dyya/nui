@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<!--
+  Spread - editorial spread compositor
+  A multi-column editorial compositor with drop caps, pull-quotes and justified columns composed into a spread, rendered live on canvas.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · http://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. All rights reserved.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spread - editorial spread compositor</title>
+<meta name="description" content="A multi-column editorial compositor with drop caps, pull-quotes and justified columns composed into a spread, rendered live on canvas.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="http://adidizdarevic.com/">
+<meta name="theme-color" content="#F5F0E8">
+
+<!-- Open Graph (minimal) -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Spread - editorial spread compositor">
+<meta property="og:description" content="Drop caps, pull-quotes and justified columns composed into a spread, rendered live on canvas.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Spread",
+  "applicationCategory": "DesignApplication",
+  "description": "A multi-column editorial compositor with drop caps, pull-quotes and justified columns composed into a spread, rendered live on canvas.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "typography, editorial, multi-column, compositor, layout, drop cap, generative, canvas",
+  "license": "All rights reserved",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "http://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "http://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #F5F0E8; touch-action: none; -webkit-tap-highlight-color: transparent; }
+  canvas { display: block; cursor: default; }
+</style>
+</head>
+<body>
+<canvas id="c">Spread, an editorial spread compositor. Requires JavaScript and an HTML5 canvas.</canvas>
+<script src="./core/ui.js"></script>
+<script>
+(() => {
+'use strict';
+
+/* ── Canvas ── */
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+let W, H;
+
+/* ── UI panel ── */
+const ui = PT.ui({
+  title: 'Spread',
+  hints: 'Drag quote · 1–4 mode · G grid · Scroll size · Shift weight · Q quote · T text · P images · C color · B paper · E export',
+  theme: 'light',
+});
+
+/* ── Constants ── */
+const MODES = ['CLASSIC', 'ASYMMETRIC', 'MODERNIST', 'MINIMAL'];
+const ACCENTS = [
+  { name: 'Orange',  color: '#E8642D' },
+  { name: 'Blue',    color: '#5A78FF' },
+  { name: 'Red',     color: '#CC2233' },
+  { name: 'Forest',  color: '#2C4A32' },
+  { name: 'Black',   color: '#0A0A0A' },
+];
+const PAPERS = [
+  { name: 'Warm Cream', color: '#F5F0E8', light: true },
+  { name: 'White',      color: '#FAFAFA', light: true },
+  { name: 'Cool Gray',  color: '#F0F0F0', light: true },
+  { name: 'Newsprint',  color: '#E8E0D0', light: true },
+  { name: 'Dark',       color: '#1A1A1A', light: false },
+];
+
+const PUBLICATION = 'THE TYPE REVIEW';
+const DATE_STR = 'SPRING 2026';
+
+/* ── Dummy text ── */
+const LOREM = `The relationship between typography and architecture has long been a subject of fascination for designers working at the intersection of space and language. When we consider the ways in which letterforms occupy and define their surrounding environment, we begin to understand that type is never merely decorative. It is structural. It carries weight, creates rhythm, and establishes the visual tempo of any composition it inhabits. The great Swiss typographers of the mid-twentieth century understood this implicitly. Their grids were not constraints but instruments of liberation, providing a framework within which endless variation could flourish. Max Bill, Josef Muller-Brockmann, and their contemporaries demonstrated that rigorous systems could produce work of extraordinary beauty and clarity. Today we find ourselves in a moment of typographic abundance. Variable fonts offer continuous axes of variation where once we had only discrete weights and widths. The designer can now sculpt letterforms in real time, adjusting optical size, weight, and width with the precision of a craftsperson shaping material by hand. This is not merely a technical advancement. It represents a fundamental shift in our relationship with type as a medium. The paragraph, that most fundamental unit of written discourse, deserves more attention than it typically receives. A well-set paragraph is a miniature landscape, its texture determined by the interplay of typeface, size, leading, measure, and word spacing. Rivers of white space flow through poorly justified text like cracks in dry earth. Conversely, a masterfully composed column of text presents a surface of remarkable evenness, inviting the eye to move steadily forward through the content. Editorial design has always been a conversation between constraint and expression. The magazine spread, with its fixed dimensions and repeating structure, might seem an unlikely canvas for innovation. Yet generation after generation of art directors have found new ways to surprise and delight within these boundaries. The pull quote, that staple of magazine typography, serves both functional and aesthetic purposes. It breaks the monotony of continuous text, provides entry points for the scanning reader, and allows the designer to introduce dramatic scale contrast within the page. When set in a contrasting weight or style, the pull quote becomes a typographic event, a moment of emphasis that punctuates the reading experience. Column grids provide the underlying structure for most editorial layouts. A three-column grid offers flexibility without complexity. A four-column grid allows for greater variation in text and image placement. The five-column grid, favored by many newspaper designers, provides maximum flexibility at the cost of narrow measures that can be challenging for body text. The choice of grid is never neutral. It shapes the character of the publication as surely as the choice of typeface or paper stock. White space is not empty space. It is an active element of the composition, providing breathing room for the eye and creating visual hierarchy through contrast with the printed areas. The modernist principle of less is more finds its most eloquent expression in editorial design, where the judicious use of white space can elevate a simple text layout into something genuinely beautiful. Drop capitals have been used since the earliest manuscripts to signal the beginning of a new section or chapter. In contemporary editorial design, the drop cap serves a similar orienting function while also providing an opportunity for typographic display. A well-executed drop cap draws the eye to the start of the text and establishes a visual anchor for the page. The running header, quietly persistent at the top of each page, provides wayfinding for the reader navigating through a longer text. Like a street sign or a compass bearing, it offers orientation without demanding attention. The best running headers are nearly invisible during the act of reading but immediately useful when needed. Folio numbers, those humble page markers at the bottom or edges of the spread, complete the navigational apparatus of the printed page. Together with running headers, they form a system that allows the reader to move confidently through the publication, knowing always where they are and how to find their way back.`;
+
+/* ── State ── */
+const GRID_OPTIONS = [2, 3, 4, 5];
+
+let state = {
+  modeIndex: 0,
+  accentIndex: 0,
+  paperIndex: 0,
+  gridIndex: -1,   // -1 = use mode default, 0-3 = override to GRID_OPTIONS[i]
+  bodySize: 10.5,
+  quoteWeight: 300,
+  quoteText: 'Type is never merely decorative. It is structural.',
+  bodyText: LOREM,
+  showImages: false,
+  quotePosX: 0.3,  // normalized 0-1 within spread area
+  quotePosY: 0.3,
+};
+
+let dirty = true;
+let layoutCache = null;  // cached word positions
+let fontsLoaded = false;
+
+/* ── Pull quote drag ── */
+let dragging = false;
+let dragOffsetX = 0, dragOffsetY = 0;
+let quoteRect = { x: 0, y: 0, w: 0, h: 0 }; // screen coords of pull quote
+
+/* ── Resize ── */
+let resizeTimer = null;
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  dirty = true;
+  layoutCache = null;
+}
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(resize, 100);
+});
+resize();
+
+/* ── Helpers ── */
+function textColor() {
+  return PAPERS[state.paperIndex].light ? '#1A1A1A' : '#E8E0D0';
+}
+function subtleColor() {
+  return PAPERS[state.paperIndex].light ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.15)';
+}
+function accentColor() {
+  const c = ACCENTS[state.accentIndex].color;
+  if (c === '#0A0A0A' && !PAPERS[state.paperIndex].light) return '#E8E0D0';
+  return c;
+}
+
+/* ── Layout computation ── */
+function getLayoutParams() {
+  const mode = MODES[state.modeIndex];
+  const margin = Math.max(48, Math.min(64, W * 0.04));
+  const gap = 22;
+  const spreadW = W - margin * 2;
+  const headerH = 24;
+  const folioH = 24;
+  const contentTop = margin + headerH + 16;
+  const contentBottom = H - margin - folioH - 16;
+  const contentH = contentBottom - contentTop;
+  const contentLeft = margin;
+  const contentRight = W - margin;
+
+  let cols, colWidths;
+  let quoteSpanCols, quoteSizeBase;
+
+  switch (mode) {
+    case 'CLASSIC':
+      cols = 3;
+      colWidths = null; // equal
+      quoteSpanCols = 2;
+      quoteSizeBase = 48;
+      break;
+    case 'ASYMMETRIC':
+      cols = 2;
+      colWidths = [0.35, 0.65];
+      quoteSpanCols = 1;
+      quoteSizeBase = 56;
+      break;
+    case 'MODERNIST':
+      cols = 4;
+      colWidths = null;
+      quoteSpanCols = 2;
+      quoteSizeBase = 40;
+      break;
+    case 'MINIMAL':
+      cols = 1;
+      colWidths = [0.55];
+      quoteSpanCols = 1;
+      quoteSizeBase = 64;
+      break;
+  }
+
+  // Grid override
+  if (state.gridIndex >= 0) {
+    cols = GRID_OPTIONS[state.gridIndex];
+    colWidths = null; // equal columns when overridden
+    quoteSpanCols = Math.min(quoteSpanCols, Math.max(1, cols - 1));
+  }
+
+  // Build column rects
+  const columnRects = [];
+  if (colWidths) {
+    let x = contentLeft;
+    for (let i = 0; i < cols; i++) {
+      const w = (spreadW - gap * (cols - 1)) * colWidths[i];
+      columnRects.push({ x, y: contentTop, w, h: contentH });
+      x += w + gap;
+    }
+  } else {
+    const colW = (spreadW - gap * (cols - 1)) / cols;
+    for (let i = 0; i < cols; i++) {
+      columnRects.push({
+        x: contentLeft + i * (colW + gap),
+        y: contentTop,
+        w: colW,
+        h: contentH,
+      });
+    }
+  }
+
+  // Center single column for MINIMAL (only when no grid override or still 1 col)
+  if (mode === 'MINIMAL' && cols === 1) {
+    const colW = columnRects[0].w;
+    columnRects[0].x = (W - colW) / 2;
+  }
+
+  return { mode, margin, gap, spreadW, headerH, folioH, contentTop, contentBottom, contentH, contentLeft, contentRight, cols, columnRects, quoteSpanCols, quoteSizeBase };
+}
+
+/* ── Pull quote bounding box ── */
+function computeQuoteBounds(lp) {
+  const { mode, columnRects, quoteSizeBase, contentTop, contentH, margin } = lp;
+  const qSize = Math.max(24, Math.min(80, quoteSizeBase * (W / 1200)));
+  const qWeight = state.quoteWeight;
+
+  // Measure quote text
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = `${qWeight} ${qSize}px 'DM Sans', sans-serif`;
+
+  let maxW;
+  if (mode === 'MINIMAL') {
+    maxW = columnRects[0].w;
+  } else if (mode === 'ASYMMETRIC') {
+    maxW = columnRects[0].w;
+  } else {
+    // Span columns
+    const firstCol = columnRects[0];
+    const lastCol = columnRects[Math.min(lp.quoteSpanCols, columnRects.length) - 1];
+    maxW = (lastCol.x + lastCol.w) - firstCol.x;
+  }
+
+  // Word-wrap the quote
+  const quoteWords = state.quoteText.split(/\s+/);
+  const qLines = [];
+  let curLine = '';
+  for (const word of quoteWords) {
+    const test = curLine ? curLine + ' ' + word : word;
+    if (ctx.measureText(test).width > maxW && curLine) {
+      qLines.push(curLine);
+      curLine = word;
+    } else {
+      curLine = test;
+    }
+  }
+  if (curLine) qLines.push(curLine);
+
+  const qLineH = qSize * 1.2;
+  const qBlockH = qLines.length * qLineH + 24; // +padding for quote marks
+  const qBlockW = maxW;
+
+  // Position based on normalized coords
+  const areaX = margin;
+  const areaW = W - margin * 2 - qBlockW;
+  const areaY = contentTop;
+  const areaH = contentH - qBlockH;
+
+  let qx, qy;
+  if (mode === 'MINIMAL') {
+    qx = columnRects[0].x;
+    qy = areaY + state.quotePosY * Math.max(0, areaH);
+  } else {
+    qx = areaX + state.quotePosX * Math.max(0, areaW);
+    qy = areaY + state.quotePosY * Math.max(0, areaH);
+  }
+
+  return { qx, qy, qBlockW: qBlockW, qBlockH, qLines, qSize, qLineH, qWeight, maxW };
+}
+
+/* ── Body text layout ── */
+function computeBodyLayout(lp, qb) {
+  const { columnRects } = lp;
+  const bodySize = state.bodySize;
+  const lineH = bodySize * 1.55;
+  const bodyWords = state.bodyText.split(/\s+/);
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = `400 ${bodySize}px 'DM Sans', sans-serif`;
+  const spaceW = ctx.measureText(' ').width;
+
+  // Quote exclusion rect with padding
+  const qPad = 14;
+  const qExcl = {
+    left:   qb.qx - qPad,
+    top:    qb.qy - qPad,
+    right:  qb.qx + qb.qBlockW + qPad,
+    bottom: qb.qy + qb.qBlockH + qPad,
+  };
+
+  // Image exclusion rects
+  const imgExcl = getImageRects(lp).map(r => ({
+    left: r.x - 8, top: r.y - 8, right: r.x + r.w + 8, bottom: r.y + r.h + 8,
+  }));
+
+  // Drop cap setup
+  let dropCapInfo = null;
+  const dropCapLines = 3;
+  const dropCapSize = bodySize * dropCapLines * 1.15;
+  let dcExcl = null;
+
+  if (bodyWords.length > 0 && lp.mode !== 'MINIMAL') {
+    const firstChar = bodyWords[0][0];
+    ctx.font = `700 ${dropCapSize}px 'DM Sans', sans-serif`;
+    const dcWidth = ctx.measureText(firstChar).width + 4;
+    ctx.font = `400 ${bodySize}px 'DM Sans', sans-serif`;
+
+    const col0 = columnRects[0];
+    const dcTop = col0.y;
+    const dcBot = dcTop + dropCapLines * lineH;
+
+    // Only place drop cap if top of first column isn't blocked by quote
+    const blocked = (dcTop < qExcl.bottom && dcBot > qExcl.top &&
+                     col0.x < qExcl.right && col0.x + dcWidth > qExcl.left);
+
+    if (!blocked) {
+      dropCapInfo = {
+        char: firstChar,
+        x: col0.x,
+        y: col0.y + bodySize,
+        size: dropCapSize,
+        width: dcWidth,
+        bottom: dcBot,
+      };
+      dcExcl = {
+        left: col0.x,
+        top: col0.y,
+        right: col0.x + dcWidth,
+        bottom: dcBot,
+      };
+    }
+  }
+
+  // For each line in each column, compute the available horizontal segments
+  // after subtracting exclusion rects (quote, drop cap, images).
+  // Then fill words greedily into those segments.
+
+  function lineSegments(colR, baselineY) {
+    // Line occupies vertical band [baselineY - bodySize, baselineY + (lineH - bodySize)]
+    const ly0 = baselineY - bodySize;
+    const ly1 = baselineY + lineH * 0.2; // a bit below baseline
+
+    let left = colR.x;
+    let right = colR.x + colR.w;
+
+    // Collect all exclusion zones that vertically overlap this line
+    const excls = [];
+    const allExcl = [qExcl];
+    if (dcExcl) allExcl.push(dcExcl);
+    for (const ie of imgExcl) allExcl.push(ie);
+
+    for (const ex of allExcl) {
+      if (ly0 < ex.bottom && ly1 > ex.top && left < ex.right && right > ex.left) {
+        excls.push(ex);
+      }
+    }
+
+    if (excls.length === 0) return [{ left, right }];
+
+    // Build segments by cutting exclusions out of [left, right]
+    let segs = [{ left, right }];
+    for (const ex of excls) {
+      const next = [];
+      for (const s of segs) {
+        if (ex.left >= s.right || ex.right <= s.left) {
+          // No overlap
+          next.push(s);
+        } else {
+          // Cut
+          if (ex.left > s.left) next.push({ left: s.left, right: ex.left });
+          if (ex.right < s.right) next.push({ left: ex.right, right: s.right });
+        }
+      }
+      segs = next;
+    }
+
+    // Filter out segments too narrow for a word
+    return segs.filter(s => (s.right - s.left) > bodySize * 2);
+  }
+
+  // Drop cap: the big initial letter is drawn separately, so remove it from the
+  // first word. The remainder rejoins the normal flow and sets (and spaces) like
+  // any other word - the first-line segment already begins to the right of the cap.
+  if (dropCapInfo) {
+    const rest = bodyWords[0].substring(1);
+    if (rest) bodyWords[0] = rest;
+    else bodyWords.shift();
+  }
+
+  // Measure all words once (after any drop-cap adjustment)
+  const wordWidths = new Float64Array(bodyWords.length);
+  ctx.font = `400 ${bodySize}px 'DM Sans', sans-serif`;
+  for (let i = 0; i < bodyWords.length; i++) {
+    wordWidths[i] = ctx.measureText(bodyWords[i]).width;
+  }
+
+  const positioned = [];
+  let wordIdx = 0;
+
+  for (let ci = 0; ci < columnRects.length && wordIdx < bodyWords.length; ci++) {
+    const col = columnRects[ci];
+    let baselineY = col.y + bodySize;
+
+    while (baselineY <= col.y + col.h && wordIdx < bodyWords.length) {
+      const segs = lineSegments(col, baselineY);
+
+      if (segs.length === 0) {
+        baselineY += lineH;
+        continue;
+      }
+
+      // Fill words into each available segment (left-to-right)
+      for (const seg of segs) {
+        let cx = seg.left;
+        const maxX = seg.right;
+
+        while (wordIdx < bodyWords.length) {
+          const ww = wordWidths[wordIdx];
+          if (cx + ww > maxX + 1) {
+            // Word doesn't fit
+            if (cx <= seg.left + 1) {
+              // First word on segment too long - force place it and move on
+              positioned.push({ word: bodyWords[wordIdx], x: cx, y: baselineY });
+              wordIdx++;
+            }
+            break;
+          }
+          positioned.push({ word: bodyWords[wordIdx], x: cx, y: baselineY });
+          cx += ww + spaceW;
+          wordIdx++;
+        }
+      }
+
+      baselineY += lineH;
+    }
+  }
+
+  return { positioned, dropCapInfo };
+}
+
+/* ── Image placeholders ── */
+function getImageRects(lp) {
+  const { mode, columnRects, contentTop, contentH } = lp;
+  const rects = [];
+  if (!state.showImages) return rects;
+
+  switch (mode) {
+    case 'CLASSIC':
+      if (columnRects.length >= 3) {
+        const col = columnRects[2];
+        rects.push({ x: col.x, y: col.y, w: col.w, h: contentH * 0.4 });
+      }
+      break;
+    case 'ASYMMETRIC':
+      if (columnRects.length >= 2) {
+        const col = columnRects[1];
+        rects.push({ x: col.x, y: col.y + contentH * 0.5, w: col.w, h: contentH * 0.45 });
+      }
+      break;
+    case 'MODERNIST':
+      if (columnRects.length >= 4) {
+        const c1 = columnRects[2];
+        rects.push({ x: c1.x, y: c1.y, w: c1.w, h: contentH * 0.35 });
+        const c2 = columnRects[0];
+        rects.push({ x: c2.x, y: c2.y + contentH * 0.65, w: c2.w, h: contentH * 0.3 });
+      }
+      break;
+    case 'MINIMAL':
+      // Single centered image below quote
+      if (columnRects.length >= 1) {
+        const col = columnRects[0];
+        rects.push({ x: col.x, y: col.y + contentH * 0.15, w: col.w, h: contentH * 0.3 });
+      }
+      break;
+  }
+  return rects;
+}
+
+/* ── Full layout ── */
+function computeFullLayout() {
+  const lp = getLayoutParams();
+  const qb = computeQuoteBounds(lp);
+  const images = getImageRects(lp);
+  const body = computeBodyLayout(lp, qb);
+  quoteRect = { x: qb.qx, y: qb.qy, w: qb.qBlockW, h: qb.qBlockH };
+  return { lp, qb, body, images };
+}
+
+/* ── Render ── */
+function render() {
+  if (!dirty) return;
+  dirty = false;
+
+  if (!layoutCache) {
+    layoutCache = computeFullLayout();
+  }
+
+  const { lp, qb, body, images } = layoutCache;
+  const { margin, columnRects, contentTop, contentBottom, contentLeft, contentRight } = lp;
+  const paper = PAPERS[state.paperIndex];
+  const txt = textColor();
+  const accent = accentColor();
+  const subtle = subtleColor();
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // Background
+  ctx.fillStyle = paper.color;
+  ctx.fillRect(0, 0, W, H);
+
+  // Spread center line (subtle)
+  ctx.strokeStyle = subtle;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(W / 2, margin * 0.5);
+  ctx.lineTo(W / 2, H - margin * 0.5);
+  ctx.stroke();
+
+  // Running header (letterspaced manually for broad compat)
+  function drawLetterspaced(text, x, y, spacing, align) {
+    ctx.font = '400 9px "IBM Plex Mono", monospace';
+    const chars = text.split('');
+    if (align === 'right') {
+      let totalW = 0;
+      for (const ch of chars) totalW += ctx.measureText(ch).width + spacing;
+      totalW -= spacing;
+      x -= totalW;
+    }
+    for (const ch of chars) {
+      ctx.fillText(ch, x, y);
+      x += ctx.measureText(ch).width + spacing;
+    }
+  }
+  ctx.fillStyle = txt;
+  ctx.globalAlpha = 0.35;
+  ctx.textAlign = 'left';
+  drawLetterspaced(PUBLICATION, margin, margin - 4, 1.0, 'left');
+  drawLetterspaced(DATE_STR, W - margin, margin - 4, 1.0, 'right');
+  ctx.globalAlpha = 1;
+
+  // Folios
+  ctx.font = '400 9px "IBM Plex Mono", monospace';
+  ctx.fillStyle = txt;
+  ctx.globalAlpha = 0.3;
+  ctx.textAlign = 'left';
+  ctx.fillText('24', margin, H - margin + 12);
+  ctx.textAlign = 'right';
+  ctx.fillText('25', W - margin, H - margin + 12);
+  ctx.globalAlpha = 1;
+
+  // Column guide lines (very subtle)
+  ctx.strokeStyle = subtle;
+  ctx.lineWidth = 0.25;
+  ctx.globalAlpha = 0.3;
+  for (const col of columnRects) {
+    ctx.beginPath();
+    ctx.moveTo(col.x, contentTop - 8);
+    ctx.lineTo(col.x, contentBottom + 8);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(col.x + col.w, contentTop - 8);
+    ctx.lineTo(col.x + col.w, contentBottom + 8);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Image placeholders
+  for (const img of images) {
+    ctx.fillStyle = subtle;
+    ctx.globalAlpha = 0.15;
+    ctx.fillRect(img.x, img.y, img.w, img.h);
+    ctx.globalAlpha = 1;
+    // Cross-hatch
+    ctx.strokeStyle = subtle;
+    ctx.lineWidth = 0.5;
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.moveTo(img.x, img.y);
+    ctx.lineTo(img.x + img.w, img.y + img.h);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(img.x + img.w, img.y);
+    ctx.lineTo(img.x, img.y + img.h);
+    ctx.stroke();
+    // Border
+    ctx.strokeRect(img.x, img.y, img.w, img.h);
+    ctx.globalAlpha = 1;
+  }
+
+  // Pull quote
+  const { qx, qy, qLines, qSize, qLineH, qWeight, qBlockW, qBlockH } = qb;
+
+  // Quote mark (opening)
+  ctx.font = `200 ${qSize * 1.8}px 'DM Sans', sans-serif`;
+  ctx.fillStyle = accent;
+  ctx.globalAlpha = 0.15;
+  ctx.textAlign = 'left';
+  ctx.fillText('\u201C', qx - qSize * 0.3, qy + qSize * 0.9);
+  ctx.globalAlpha = 1;
+
+  // Quote lines
+  ctx.font = `${qWeight} ${qSize}px 'DM Sans', sans-serif`;
+  ctx.fillStyle = accent;
+  ctx.textAlign = 'left';
+  for (let i = 0; i < qLines.length; i++) {
+    ctx.fillText(qLines[i], qx, qy + qSize + i * qLineH);
+  }
+
+  // Closing quote mark
+  ctx.font = `200 ${qSize * 1.2}px 'DM Sans', sans-serif`;
+  ctx.globalAlpha = 0.2;
+  const lastLineW = ctx.measureText(qLines[qLines.length - 1]).width;
+  ctx.font = `200 ${qSize * 1.8}px 'DM Sans', sans-serif`;
+  // Placed after last line
+  ctx.fillText('\u201D', qx + Math.min(lastLineW + 4, qBlockW), qy + qSize + (qLines.length - 1) * qLineH);
+  ctx.globalAlpha = 1;
+
+  // Thin rule under quote
+  ctx.strokeStyle = accent;
+  ctx.globalAlpha = 0.3;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(qx, qy + qBlockH - 4);
+  ctx.lineTo(qx + Math.min(qBlockW * 0.3, 120), qy + qBlockH - 4);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Drop cap
+  if (body.dropCapInfo) {
+    const dc = body.dropCapInfo;
+    ctx.font = `700 ${dc.size}px 'DM Sans', sans-serif`;
+    ctx.fillStyle = accent;
+    ctx.textAlign = 'left';
+    ctx.fillText(dc.char, dc.x, dc.y + dc.size * 0.72);
+  }
+
+  // Body text
+  ctx.font = `400 ${state.bodySize}px 'DM Sans', sans-serif`;
+  ctx.fillStyle = txt;
+  ctx.textAlign = 'left';
+  const words = body.positioned;
+  for (let i = 0; i < words.length; i++) {
+    ctx.fillText(words[i].word, words[i].x, words[i].y);
+  }
+}
+
+/* ── Animation loop ── */
+function frame() {
+  render();
+  requestAnimationFrame(frame);
+}
+
+/* ── UI update ── */
+function updateUI() {
+  document.body.style.background = PAPERS[state.paperIndex].color;
+}
+
+function invalidate() {
+  layoutCache = null;
+  dirty = true;
+}
+
+/* ── Input ── */
+function handleKey(e) {
+  const k = e.key.toLowerCase();
+  if (e.target !== document.body) return;
+
+  switch (k) {
+    case 'e':
+      exportPNG();
+      break;
+    case 'r':
+      state.modeIndex = 0;
+      state.accentIndex = 0;
+      state.paperIndex = 0;
+      state.gridIndex = -1;
+      state.bodySize = 10.5;
+      state.quoteWeight = 300;
+      state.quoteText = 'Type is never merely decorative. It is structural.';
+      state.bodyText = LOREM;
+      state.showImages = false;
+      state.quotePosX = 0.3;
+      state.quotePosY = 0.3;
+      invalidate();
+      updateUI();
+      break;
+    case 'm':
+      state.modeIndex = (state.modeIndex + 1) % MODES.length;
+      state.gridIndex = -1; // reset grid override on mode change
+      setDefaultQuotePos();
+      invalidate();
+      updateUI();
+      break;
+    case 'g':
+      state.gridIndex = (state.gridIndex + 1) % GRID_OPTIONS.length;
+      invalidate();
+      updateUI();
+      break;
+    case 'q': {
+      const val = prompt('Pull quote text:', state.quoteText);
+      if (val !== null && val.trim()) {
+        state.quoteText = val.trim();
+        invalidate();
+        updateUI();
+      }
+      break;
+    }
+    case 't': {
+      const val = prompt('Body text (first ~200 chars used as start):', state.bodyText.substring(0, 200));
+      if (val !== null && val.trim()) {
+        state.bodyText = val.trim() + ' ' + LOREM;
+        invalidate();
+        updateUI();
+      }
+      break;
+    }
+    case 'p':
+      state.showImages = !state.showImages;
+      invalidate();
+      updateUI();
+      break;
+    case 'c':
+      state.accentIndex = (state.accentIndex + 1) % ACCENTS.length;
+      invalidate();
+      updateUI();
+      break;
+    case 'b':
+      state.paperIndex = (state.paperIndex + 1) % PAPERS.length;
+      invalidate();
+      updateUI();
+      break;
+    case '1': case '2': case '3': case '4':
+      state.modeIndex = parseInt(k) - 1;
+      state.gridIndex = -1;
+      setDefaultQuotePos();
+      invalidate();
+      updateUI();
+      break;
+  }
+}
+
+function setDefaultQuotePos() {
+  const mode = MODES[state.modeIndex];
+  switch (mode) {
+    case 'CLASSIC':
+      state.quotePosX = 0.3;
+      state.quotePosY = 0.3;
+      break;
+    case 'ASYMMETRIC':
+      state.quotePosX = 0.0;
+      state.quotePosY = 0.25;
+      break;
+    case 'MODERNIST':
+      state.quotePosX = 0.55;
+      state.quotePosY = 0.05;
+      break;
+    case 'MINIMAL':
+      state.quotePosX = 0.0;
+      state.quotePosY = 0.02;
+      break;
+  }
+}
+
+function handleWheel(e) {
+  e.preventDefault();
+  const delta = Math.sign(e.deltaY);
+  if (e.shiftKey) {
+    // Adjust quote weight
+    state.quoteWeight = Math.max(100, Math.min(900, state.quoteWeight + delta * 50));
+  } else {
+    // Adjust body size
+    state.bodySize = Math.max(8, Math.min(16, state.bodySize + delta * -0.5));
+  }
+  invalidate();
+  updateUI();
+}
+
+/* ── Drag pull quote ── */
+function handlePointerDown(e) {
+  const x = e.clientX;
+  const y = e.clientY;
+  // Hit test on quote rect
+  if (x >= quoteRect.x - 16 && x <= quoteRect.x + quoteRect.w + 16 &&
+      y >= quoteRect.y - 16 && y <= quoteRect.y + quoteRect.h + 16) {
+    dragging = true;
+    dragOffsetX = x - quoteRect.x;
+    dragOffsetY = y - quoteRect.y;
+    canvas.style.cursor = 'grabbing';
+    e.preventDefault();
+  }
+}
+
+function handlePointerMove(e) {
+  if (!dragging) {
+    // Hover cursor
+    const x = e.clientX;
+    const y = e.clientY;
+    if (x >= quoteRect.x - 16 && x <= quoteRect.x + quoteRect.w + 16 &&
+        y >= quoteRect.y - 16 && y <= quoteRect.y + quoteRect.h + 16) {
+      canvas.style.cursor = 'grab';
+    } else {
+      canvas.style.cursor = 'default';
+    }
+    return;
+  }
+
+  const lp = getLayoutParams();
+  const margin = lp.margin;
+  const contentTop = lp.contentTop;
+  const contentH = lp.contentH;
+
+  const newX = e.clientX - dragOffsetX;
+  const newY = e.clientY - dragOffsetY;
+
+  // Convert to normalized
+  const areaW = W - margin * 2 - quoteRect.w;
+  const areaH = contentH - quoteRect.h;
+
+  state.quotePosX = Math.max(0, Math.min(1, (newX - margin) / Math.max(1, areaW)));
+  state.quotePosY = Math.max(0, Math.min(1, (newY - contentTop) / Math.max(1, areaH)));
+
+  invalidate();
+}
+
+function handlePointerUp() {
+  if (dragging) {
+    dragging = false;
+    canvas.style.cursor = 'default';
+  }
+}
+
+/* ── Export ── */
+function exportPNG() {
+  // Hide UI during export
+  ui.hide();
+
+  // Force render at 2x regardless of device
+  const expCanvas = document.createElement('canvas');
+  expCanvas.width = W * 2;
+  expCanvas.height = H * 2;
+  const expCtx = expCanvas.getContext('2d', { alpha: false });
+
+  // Draw the existing canvas (already at dpr) scaled to fill 2x
+  expCtx.imageSmoothingEnabled = true;
+  expCtx.imageSmoothingQuality = 'high';
+  expCtx.fillStyle = PAPERS[state.paperIndex].color;
+  expCtx.fillRect(0, 0, expCanvas.width, expCanvas.height);
+  expCtx.drawImage(canvas, 0, 0, expCanvas.width, expCanvas.height);
+
+  expCanvas.toBlob(blob => {
+    if (!blob) { console.error('Export failed: blob was null'); return; }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `spread-${MODES[state.modeIndex].toLowerCase()}-${Date.now()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    // Restore UI
+    ui.show();
+  }, 'image/png');
+}
+
+/* ── Event listeners ── */
+document.addEventListener('keydown', handleKey);
+canvas.addEventListener('wheel', handleWheel, { passive: false });
+canvas.addEventListener('pointerdown', handlePointerDown);
+window.addEventListener('pointermove', handlePointerMove);
+window.addEventListener('pointerup', handlePointerUp);
+
+/* ── Font loading ── */
+setDefaultQuotePos();
+updateUI();
+dirty = true;
+requestAnimationFrame(frame);
+
+const fontTimeout = setTimeout(() => {
+  if (!fontsLoaded) {
+    fontsLoaded = true;
+    invalidate();
+  }
+}, 3000);
+
+document.fonts.ready.then(() => {
+  clearTimeout(fontTimeout);
+  fontsLoaded = true;
+  invalidate();
+});
+
+})();
+</script>
+</body>
+</html>
