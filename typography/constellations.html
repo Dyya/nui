@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<!--
+  Constellations - letterforms as 3D constellations
+  Typographic constellations in 3D space, letterforms scattered and linked like star maps, rendered live on canvas.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · http://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. All rights reserved.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Constellations - letterforms as 3D constellations</title>
+<meta name="description" content="Typographic constellations in 3D space, letterforms scattered and linked like star maps, rendered live on canvas.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="http://adidizdarevic.com/">
+<meta name="theme-color" content="#05070C">
+
+<!-- Open Graph (minimal) -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Constellations - letterforms as 3D constellations">
+<meta property="og:description" content="Letterforms scattered and linked like star maps in 3D space, rendered live on canvas.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Constellations",
+  "applicationCategory": "DesignApplication",
+  "description": "Typographic constellations in 3D space, letterforms scattered and linked like star maps, rendered live on canvas.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "typography, 3D, constellations, letterforms, generative, canvas",
+  "license": "All rights reserved",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "http://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "http://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@200;300;400;500;600&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05070C; }
+  canvas { display: block; position: fixed; top: 0; left: 0; width: 100%; height: 100%; }
+
+  .found-words {
+    position: fixed; bottom: 56px; left: 16px; z-index: 10; padding: 8px 12px;
+    pointer-events: none; font-family: 'IBM Plex Mono', monospace;
+    color: #F5DEB3; font-size: 10px; letter-spacing: 0.08em; font-weight: 400;
+    user-select: none; max-height: 40vh; overflow: hidden;
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-radius: 10px;
+    background: rgba(10,10,10,0.35); border: 1px solid rgba(255,255,255,0.08);
+  }
+  .found-words:empty { display: none; }
+  .found-words .found-label {
+    color: #5A6A8A; font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .found-words .found-word {
+    margin-bottom: 4px; display: flex; align-items: center; gap: 8px;
+    font-family: 'DM Sans', sans-serif; font-weight: 300;
+  }
+  .found-words .found-word .mini-constellation {
+    width: 28px; height: 18px; flex-shrink: 0;
+  }
+  .found-words .found-word .mini-constellation line {
+    stroke: #F5DEB3; stroke-width: 1; opacity: 0.5;
+  }
+  .found-words .found-word .mini-constellation circle {
+    fill: #F5DEB3; opacity: 0.8;
+  }
+</style>
+</head>
+<body>
+<canvas id="sky">Constellations, letterforms as 3D constellations. Requires JavaScript and an HTML5 canvas.</canvas>
+<div class="found-words" id="foundWords"></div>
+
+<script src="./core/ui.js"></script>
+<script>
+'use strict';
+
+const ui = PT.ui({
+  title: 'Constellations',
+  hints: 'Drag orbit · Scroll zoom · Click connect · Double-click finish · Del undo · Space rotate · E export · C clear · R reset',
+  theme: 'dark'
+});
+
+// --- Constants ---
+const STAR_COUNT = 300;
+const DUST_COUNT = 500;
+const CUBE_HALF = 600;
+const CAM_DIST_MIN = 500;
+const CAM_DIST_MAX = 1500;
+const CAM_DIST_DEFAULT = 900;
+const FOV_DEG = 60;
+const NEAR_PLANE = 10;
+const CLICK_RADIUS = 25;
+const LINE_DRAW_DURATION = 300;
+const AUTO_ROT_SPEED = 0.0005;
+const AUTO_ROT_RESUME_DELAY = 2000;
+const LERP_SPEED = 0.07;
+
+// --- Hidden phrases ---
+const HIDDEN_PHRASES = [
+  "EVERY LETTER IS A STAR",
+  "WORDS EMERGE FROM DARKNESS",
+  "MEANING HIDES IN PLAIN SIGHT",
+  "CONNECTION CREATES LANGUAGE",
+  "THE SKY IS AN OPEN BOOK"
+];
+
+// --- Word dictionary ---
+const DICTIONARY = new Set([
+  "STAR","STARS","LIGHT","NIGHT","DARK","DARKNESS","SKY","BOOK","OPEN","WORD","WORDS",
+  "LETTER","LETTERS","EVERY","EMERGE","MEANING","HIDES","PLAIN","SIGHT","CONNECTION",
+  "CREATES","CREATE","LANGUAGE","THE","IS","AN","A","IN","FROM","IT",
+  "GLOW","DREAM","DRIFT","ECHO","FADE","FALL","FIRE","FLAME","FLOAT","FLOW",
+  "FLY","FOG","GHOST","GLEAM","GLIMPSE","GRACE","HAZE","HEART","HOPE","HORIZON",
+  "HUSH","ICE","INK","JADE","KEEN","LAKE","LAPSE","LARK","LEAF","LENS",
+  "LIMN","LOOM","LOST","LULL","LUNA","LURE","MIST","MOON","MUSE","MYTH",
+  "NEAR","NEST","NODE","NOON","NOTE","NULL","OAK","ORB","PALE","PATH",
+  "PEAK","PINE","POEM","POND","PULSE","QUIET","RAIN","RARE","REED","REST",
+  "RIFT","RISE","ROOT","RUIN","RUSH","SAGE","SAIL","SAND","SEED","SELF",
+  "SHADE","SHELL","SHINE","SILK","SILVER","SLEEP","SLOW","SNOW","SOFT","SONG",
+  "SOUL","SPARK","SPELL","SPIRE","STILL","STONE","STORM","SUN","SURGE","SWAN",
+  "SWAY","TALE","THIN","THORN","TIDE","TIME","TONE","TRACE","TRAIL","TREE",
+  "TURN","VALE","VAST","VEIL","VINE","VOID","WADE","WAKE","WANE","WARM",
+  "WAVE","WEAVE","WELL","WEST","WILD","WILL","WIND","WING","WISH","WISP",
+  "WONDER","WREN","YEAR","ZERO","ZONE","ABOVE","ALONE","ASH","AWE","BEAM",
+  "BLOOM","BLUE","BONE","CALM","CAVE","CLAY","CLOUD","COLD","CORAL","CRANE",
+  "CROWN","CUBE","DAZE","DEEP","DEW","DUNE","DUST","EARTH","EDGE","ELM",
+  "EMBER","ERA","EVE","EYE","FERN","FOX","FROST","GALE","GEM","GOLD",
+  "GRAIN","HALO","HAWK","HEAL","HIDE","HILL","HOME","ISLE","IVY","JOY",
+  "KITE","KNOT","LAND","LACE","LAST","LATE","LAW","LIE","LIME","LINE",
+  "LONG","LOOK","LOVE","MAP","MARE","MARK","MAZE","MERE","MILE","MIND",
+  "MOOR","MOSS","NAME","NEW","OAR","OLD","ONE","OWL","OX","PEAR",
+  "PIER","PLAY","PLUM","PYRE","QUILL","RIM","RING","ROCK","ROPE","ROSE",
+  "RUN","RYE","SEA","SET","SHY","SIGN","SIT","SOOT","SPAN","DEPTH","ORBIT",
+  "SPACE","GALAXY","COSMOS","VOID","NEBULA","PULSE","AXIS","FLUX"
+]);
+
+// --- Canvas setup ---
+const canvas = document.getElementById('sky');
+const ctx = canvas.getContext('2d', { alpha: false });
+let W, H, dpr, focalLength;
+
+// --- State ---
+let stars = [];
+let dust = [];
+let activeChain = [];
+let activeChainSet = new Set();
+let completedConstellations = [];
+let foundWordsSet = new Set();
+let hoveredStar = -1;
+let now = 0;
+
+// --- Camera state ---
+let cam = {
+  yaw: 0, pitch: 0, dist: CAM_DIST_DEFAULT,
+  targetYaw: 0, targetPitch: 0, targetDist: CAM_DIST_DEFAULT,
+  autoRotate: true,
+  lastInteraction: 0,
+  isDragging: false,
+  dragStartX: 0, dragStartY: 0,
+  dragStartYaw: 0, dragStartPitch: 0
+};
+
+let mouse = { x: -9999, y: -9999 };
+
+// --- Nebula offscreen ---
+let nebulaCanvas, nebulaCtx;
+
+// --- Bloom sprite (pre-rendered) ---
+let bloomSprite;
+function createBloomSprite() {
+  const size = 128;
+  bloomSprite = document.createElement('canvas');
+  bloomSprite.width = size;
+  bloomSprite.height = size;
+  const bctx = bloomSprite.getContext('2d');
+  const grad = bctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  grad.addColorStop(0, 'rgba(245, 235, 220, 0.35)');
+  grad.addColorStop(0.3, 'rgba(245, 235, 220, 0.08)');
+  grad.addColorStop(0.7, 'rgba(200, 200, 240, 0.02)');
+  grad.addColorStop(1, 'rgba(200, 200, 240, 0)');
+  bctx.fillStyle = grad;
+  bctx.fillRect(0, 0, size, size);
+}
+
+// --- Seeded RNG ---
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rng = mulberry32(42);
+
+// --- 3D Math ---
+function rotateY(x, y, z, angle) {
+  const c = Math.cos(angle), s = Math.sin(angle);
+  return [c * x + s * z, y, -s * x + c * z];
+}
+
+function rotateX(x, y, z, angle) {
+  const c = Math.cos(angle), s = Math.sin(angle);
+  return [x, c * y - s * z, s * y + c * z];
+}
+
+function transformPoint(x, y, z) {
+  // Translate to camera space (camera at distance along +Z)
+  let px = x, py = y, pz = z;
+  // Rotate by camera yaw and pitch
+  [px, py, pz] = rotateY(px, py, pz, -cam.yaw);
+  [px, py, pz] = rotateX(px, py, pz, -cam.pitch);
+  // Camera is at (0, 0, cam.dist) looking at origin
+  pz = pz + cam.dist;
+  return [px, py, pz];
+}
+
+function project(px, py, pz) {
+  if (pz < NEAR_PLANE) return null;
+  const scale = focalLength / pz;
+  return {
+    sx: W / 2 + px * scale,
+    sy: H / 2 - py * scale, // flip Y for screen coords
+    scale: scale,
+    depth: pz
+  };
+}
+
+// --- Star generation ---
+function generateStars() {
+  stars = [];
+  const phraseStars = [];
+
+  // Place phrase characters with sequential proximity in 3D
+  HIDDEN_PHRASES.forEach((phrase, pi) => {
+    const chars = phrase.replace(/ /g, '').split('');
+    // Choose a region center for this phrase
+    const cx = (rng() - 0.5) * CUBE_HALF * 1.2;
+    const cy = (rng() - 0.5) * CUBE_HALF * 1.0;
+    const cz = (rng() - 0.5) * CUBE_HALF * 1.0;
+    const spread = 80 + rng() * 60;
+
+    chars.forEach((char, ci) => {
+      const angle1 = (ci / chars.length) * Math.PI * 2 + rng() * 0.6;
+      const angle2 = rng() * Math.PI - Math.PI / 2;
+      const r = spread * (0.5 + rng() * 0.8);
+      const star = {
+        x: cx + Math.cos(angle1) * Math.cos(angle2) * r,
+        y: cy + Math.sin(angle2) * r * 0.7,
+        z: cz + Math.sin(angle1) * Math.cos(angle2) * r,
+        char: char,
+        baseBrightness: 0.7 + rng() * 0.3,
+        twinklePhase: rng() * Math.PI * 2,
+        twinkleSpeed: 0.3 + rng() * 0.7,
+        baseSize: 12 + rng() * 6,
+        phraseIndex: pi,
+        charIndex: ci
+      };
+      phraseStars.push(star);
+      stars.push(star);
+    });
+  });
+
+  // Fill remaining with random noise stars
+  const alpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  while (stars.length < STAR_COUNT) {
+    stars.push({
+      x: (rng() - 0.5) * CUBE_HALF * 2,
+      y: (rng() - 0.5) * CUBE_HALF * 2,
+      z: (rng() - 0.5) * CUBE_HALF * 2,
+      char: alpha[Math.floor(rng() * 26)],
+      baseBrightness: 0.4 + rng() * 0.6,
+      twinklePhase: rng() * Math.PI * 2,
+      twinkleSpeed: 0.2 + rng() * 1.0,
+      baseSize: 10 + rng() * 10,
+      phraseIndex: -1,
+      charIndex: -1
+    });
+  }
+
+  // Generate dust particles
+  dust = [];
+  for (let i = 0; i < DUST_COUNT; i++) {
+    dust.push({
+      x: (rng() - 0.5) * CUBE_HALF * 3,
+      y: (rng() - 0.5) * CUBE_HALF * 3,
+      z: (rng() - 0.5) * CUBE_HALF * 3,
+      brightness: 0.15 + rng() * 0.35,
+      size: 0.5 + rng() * 1.5
+    });
+  }
+}
+
+// --- Nebula rendering (offscreen) ---
+function buildNebula() {
+  nebulaCanvas = document.createElement('canvas');
+  nebulaCanvas.width = W * dpr;
+  nebulaCanvas.height = H * dpr;
+  nebulaCtx = nebulaCanvas.getContext('2d');
+  nebulaCtx.scale(dpr, dpr);
+  // We'll draw nebulae each frame since they move with camera
+}
+
+const nebulaCenters = [
+  { x: 300, y: 150, z: -200, r: 400, color: [30, 15, 60] },
+  { x: -250, y: -100, z: 300, r: 350, color: [15, 10, 50] },
+  { x: 100, y: -300, z: -100, r: 300, color: [40, 15, 45] },
+  { x: -200, y: 200, z: 200, r: 280, color: [20, 12, 55] }
+];
+
+function drawNebulae() {
+  nebulaCenters.forEach(neb => {
+    const [px, py, pz] = transformPoint(neb.x, neb.y, neb.z);
+    if (pz < NEAR_PLANE) return;
+    const p = project(px, py, pz);
+    if (!p) return;
+    const screenR = neb.r * p.scale;
+    if (screenR < 5) return;
+    const [r, g, b] = neb.color;
+    const alpha = Math.min(0.12, 0.08 * (focalLength / pz));
+    const grad = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, screenR);
+    grad.addColorStop(0, `rgba(${r},${g},${b},${alpha})`);
+    grad.addColorStop(0.5, `rgba(${r},${g},${b},${alpha * 0.4})`);
+    grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(p.sx - screenR, p.sy - screenR, screenR * 2, screenR * 2);
+  });
+}
+
+// --- Resize ---
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  focalLength = (H / 2) / Math.tan((FOV_DEG / 2) * Math.PI / 180);
+}
+
+// --- Projected star cache (reused each frame) ---
+let projected = []; // { idx, sx, sy, scale, depth, brightness, screenSize }
+let projectedMap = new Map(); // idx -> projected entry (O(1) lookup)
+
+function projectAllStars() {
+  projected.length = 0;
+  projectedMap.clear();
+  const time = now * 0.001;
+  const margin = 80;
+
+  for (let i = 0; i < stars.length; i++) {
+    const s = stars[i];
+    const [px, py, pz] = transformPoint(s.x, s.y, s.z);
+    if (pz < NEAR_PLANE) continue;
+    const p = project(px, py, pz);
+    if (!p) continue;
+    // Skip off-screen
+    if (p.sx < -margin || p.sx > W + margin || p.sy < -margin || p.sy > H + margin) continue;
+
+    // Depth fade: closer = brighter
+    const maxDist = cam.dist + CUBE_HALF * 2;
+    const depthFade = Math.max(0.1, 1.0 - (pz / maxDist) * 0.8);
+    // Twinkle
+    const twinkle = 0.85 + 0.15 * Math.sin(time * s.twinkleSpeed + s.twinklePhase);
+    const brightness = s.baseBrightness * depthFade * twinkle;
+    const screenSize = s.baseSize * p.scale;
+
+    // Depth fog: fade to background at extreme distances
+    const fogStart = cam.dist + CUBE_HALF;
+    const fogEnd = cam.dist + CUBE_HALF * 2.5;
+    const fogFactor = pz > fogStart ? Math.max(0, 1 - (pz - fogStart) / (fogEnd - fogStart)) : 1;
+
+    const entry = {
+      idx: i,
+      sx: p.sx,
+      sy: p.sy,
+      scale: p.scale,
+      depth: pz,
+      brightness: brightness * fogFactor,
+      screenSize: Math.max(4, screenSize)
+    };
+    projected.push(entry);
+    projectedMap.set(i, entry);
+  }
+
+  // Sort back-to-front (furthest first)
+  projected.sort((a, b) => b.depth - a.depth);
+}
+
+// --- Font bucketing ---
+const WEIGHT_BUCKETS = [200, 300, 400, 500];
+const SIZE_BUCKETS = [8, 13, 20];
+
+function quantizeWeight(brightness) {
+  if (brightness < 0.3) return 200;
+  if (brightness < 0.5) return 300;
+  if (brightness < 0.7) return 400;
+  return 500;
+}
+
+function quantizeSize(size) {
+  if (size < 10) return SIZE_BUCKETS[0];
+  if (size < 16) return SIZE_BUCKETS[1];
+  return SIZE_BUCKETS[2];
+}
+
+// --- Drawing ---
+function drawDust() {
+  const margin = 30;
+  ctx.fillStyle = '#ffffff';
+  for (let i = 0; i < dust.length; i++) {
+    const d = dust[i];
+    const [px, py, pz] = transformPoint(d.x, d.y, d.z);
+    if (pz < NEAR_PLANE) continue;
+    const p = project(px, py, pz);
+    if (!p) continue;
+    if (p.sx < -margin || p.sx > W + margin || p.sy < -margin || p.sy > H + margin) continue;
+
+    const maxDist = cam.dist + CUBE_HALF * 3;
+    const depthFade = Math.max(0.02, 1.0 - (pz / maxDist) * 0.9);
+    const alpha = d.brightness * depthFade;
+    if (alpha < 0.02) continue;
+
+    ctx.globalAlpha = alpha;
+    const sz = d.size * p.scale * 2;
+    ctx.fillRect(p.sx, p.sy, Math.max(0.5, sz), Math.max(0.5, sz));
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawStars() {
+  // Batch by font bucket
+  let lastFont = '';
+  const chainSet = activeChainSet;
+  const isInChain = chainSet.size > 0;
+
+  for (let pi = 0; pi < projected.length; pi++) {
+    const p = projected[pi];
+    const s = stars[p.idx];
+    const isHovered = p.idx === hoveredStar;
+    const inChain = chainSet.has(p.idx);
+    const inFoundConstellation = isStarInFoundConstellation(p.idx);
+
+    let brightness = p.brightness;
+    let size = p.screenSize;
+
+    if (isHovered) {
+      brightness = Math.min(1, brightness * 1.5);
+      size *= 1.4;
+    }
+    if (inChain) {
+      brightness = Math.min(1, brightness * 1.3);
+    }
+
+    // Bloom for bright/close stars
+    if (brightness > 0.5 && size > 8) {
+      const bloomSize = size * 4;
+      ctx.globalAlpha = brightness * 0.25;
+      ctx.drawImage(bloomSprite, p.sx - bloomSize / 2, p.sy - bloomSize / 2, bloomSize, bloomSize);
+    }
+
+    // Found word glow
+    if (inFoundConstellation) {
+      ctx.globalAlpha = 0.3;
+      const glowSize = size * 3;
+      ctx.drawImage(bloomSprite, p.sx - glowSize / 2, p.sy - glowSize / 2, glowSize, glowSize);
+    }
+
+    // Font batching
+    const qWeight = quantizeWeight(brightness);
+    const qSize = quantizeSize(size);
+    const fontKey = `${qWeight} ${qSize}px 'DM Sans'`;
+    if (fontKey !== lastFont) {
+      ctx.font = fontKey;
+      lastFont = fontKey;
+    }
+
+    // Color
+    const b = Math.round(brightness * 255);
+    if (inFoundConstellation) {
+      ctx.fillStyle = `rgba(245,222,179,${brightness})`;
+    } else if (inChain) {
+      ctx.fillStyle = `rgba(240,232,216,${Math.min(1, brightness + 0.2)})`;
+    } else {
+      ctx.fillStyle = `rgba(${b},${b},${Math.min(255, b + 10)},${brightness})`;
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(s.char, p.sx, p.sy);
+
+    // Hover ring
+    if (isHovered) {
+      ctx.beginPath();
+      ctx.arc(p.sx, p.sy, size * 0.9, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(245,222,179,${brightness * 0.5})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+}
+
+function isStarInFoundConstellation(idx) {
+  for (let c = 0; c < completedConstellations.length; c++) {
+    const con = completedConstellations[c];
+    if (con.starSet.has(idx)) return true;
+  }
+  return false;
+}
+
+function drawConnections() {
+  const time = now;
+
+  // Draw completed constellation lines
+  for (let c = 0; c < completedConstellations.length; c++) {
+    const con = completedConstellations[c];
+    for (let i = 0; i < con.chain.length - 1; i++) {
+      drawLine3D(con.chain[i], con.chain[i + 1], con.startTime, i, true);
+    }
+  }
+
+  // Draw active chain lines
+  for (let i = 0; i < activeChain.length - 1; i++) {
+    drawLine3D(activeChain[i], activeChain[i + 1], 0, i, false);
+  }
+
+  // Draw line from last chain star to mouse
+  if (activeChain.length > 0) {
+    const lastIdx = activeChain[activeChain.length - 1];
+    const lastProj = getProjectedStar(lastIdx);
+    if (lastProj) {
+      ctx.beginPath();
+      ctx.moveTo(lastProj.sx, lastProj.sy);
+      ctx.lineTo(mouse.x, mouse.y);
+      ctx.strokeStyle = 'rgba(240,232,216,0.15)';
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    }
+  }
+}
+
+function drawLine3D(idx1, idx2, conStartTime, segIndex, isCompleted) {
+  const p1 = getProjectedStar(idx1);
+  const p2 = getProjectedStar(idx2);
+  if (!p1 || !p2) return;
+
+  // Animate in
+  let progress = 1;
+  if (conStartTime > 0) {
+    const elapsed = now - conStartTime - segIndex * 60;
+    progress = Math.min(1, Math.max(0, elapsed / LINE_DRAW_DURATION));
+    progress = 1 - (1 - progress) * (1 - progress); // ease-out
+  }
+
+  // Depth-based opacity
+  const avgDepth = (p1.depth + p2.depth) / 2;
+  const maxDist = cam.dist + CUBE_HALF * 2;
+  const depthAlpha = Math.max(0.08, 1 - (avgDepth / maxDist) * 0.7);
+
+  const baseAlpha = isCompleted ? 0.35 : 0.45;
+  const alpha = baseAlpha * depthAlpha * progress;
+
+  const ex = p1.sx + (p2.sx - p1.sx) * progress;
+  const ey = p1.sy + (p2.sy - p1.sy) * progress;
+
+  ctx.beginPath();
+  ctx.moveTo(p1.sx, p1.sy);
+  ctx.lineTo(ex, ey);
+  ctx.strokeStyle = isCompleted ? `rgba(245,222,179,${alpha})` : `rgba(240,232,216,${alpha})`;
+  ctx.lineWidth = isCompleted ? 1.2 : 1;
+  ctx.stroke();
+}
+
+function getProjectedStar(idx) {
+  return projectedMap.get(idx) || null;
+}
+
+// --- Hit testing ---
+function findNearestStar(mx, my) {
+  let best = -1, bestDist = CLICK_RADIUS * CLICK_RADIUS;
+  // Search front-to-back for nearest
+  for (let i = projected.length - 1; i >= 0; i--) {
+    const p = projected[i];
+    const dx = p.sx - mx, dy = p.sy - my;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestDist) {
+      bestDist = d2;
+      best = p.idx;
+    }
+  }
+  return best;
+}
+
+// --- Word checking ---
+function checkWord(chain) {
+  if (chain.length < 2) return null;
+  const text = chain.map(i => stars[i].char).join('');
+
+  // Check hidden phrases
+  for (const phrase of HIDDEN_PHRASES) {
+    const stripped = phrase.replace(/ /g, '');
+    if (text === stripped) return phrase;
+  }
+
+  // Check dictionary
+  if (text.length >= 2 && DICTIONARY.has(text)) return text;
+  return null;
+}
+
+function finalizeChain() {
+  if (activeChain.length < 2) {
+    activeChain = [];
+    activeChainSet.clear();
+    return;
+  }
+
+  // Always save the constellation (lines persist)
+  const word = checkWord(activeChain);
+  const constellation = {
+    chain: [...activeChain],
+    starSet: new Set(activeChain),
+    word: word,
+    startTime: now
+  };
+  completedConstellations.push(constellation);
+
+  if (word && !foundWordsSet.has(word)) {
+    foundWordsSet.add(word);
+    updateFoundWordsUI();
+  }
+
+  activeChain = [];
+  activeChainSet.clear();
+}
+
+// --- UI ---
+function updateFoundWordsUI() {
+  const container = document.getElementById('foundWords');
+  if (foundWordsSet.size === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  let html = '<div class="found-label">FOUND</div>';
+  completedConstellations.filter(con => con.word).forEach(con => {
+    const n = con.chain.length;
+    // Mini constellation SVG
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      pts.push({ x: 3 + (22 / (n - 1 || 1)) * i, y: 9 + Math.sin(i * 1.8) * 5 });
+    }
+    let lines = '';
+    for (let i = 0; i < n - 1; i++) {
+      lines += `<line x1="${pts[i].x}" y1="${pts[i].y}" x2="${pts[i+1].x}" y2="${pts[i+1].y}"/>`;
+    }
+    let circles = pts.map(p => `<circle cx="${p.x}" cy="${p.y}" r="1.5"/>`).join('');
+    html += `<div class="found-word">
+      <svg class="mini-constellation" viewBox="0 0 28 18">${lines}${circles}</svg>
+      <span>${con.word}</span>
+    </div>`;
+  });
+  container.innerHTML = html;
+}
+
+// --- Input ---
+canvas.addEventListener('mousedown', e => {
+  if (e.button === 0) {
+    cam.isDragging = true;
+    cam.dragStartX = e.clientX;
+    cam.dragStartY = e.clientY;
+    cam.dragStartYaw = cam.targetYaw;
+    cam.dragStartPitch = cam.targetPitch;
+    cam.lastInteraction = now;
+    cam.wasDragged = false;
+  }
+});
+
+window.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+
+  if (cam.isDragging) {
+    const dx = e.clientX - cam.dragStartX;
+    const dy = e.clientY - cam.dragStartY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) cam.wasDragged = true;
+    cam.targetYaw = cam.dragStartYaw + dx * 0.005;
+    cam.targetPitch = cam.dragStartPitch + dy * 0.005;
+    // Clamp pitch
+    cam.targetPitch = Math.max(-Math.PI * 0.45, Math.min(Math.PI * 0.45, cam.targetPitch));
+    cam.lastInteraction = now;
+  }
+});
+
+window.addEventListener('mouseup', e => {
+  if (e.button === 0) {
+    if (!cam.wasDragged) {
+      // This was a click, not a drag
+      handleClick(e.clientX, e.clientY);
+    }
+    cam.isDragging = false;
+  }
+});
+
+canvas.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  undoLastStar();
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  cam.targetDist += e.deltaY * 0.5;
+  cam.targetDist = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, cam.targetDist));
+  cam.lastInteraction = now;
+}, { passive: false });
+
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    finalizeChain();
+  } else if (e.key === 'Delete' || e.key === 'Backspace') {
+    undoLastStar();
+  } else if (e.key === 'r' || e.key === 'R') {
+    resetAll();
+  } else if (e.key === 'c' || e.key === 'C') {
+    clearConnections();
+  } else if (e.key === 'e' || e.key === 'E') {
+    exportPNG();
+  } else if (e.key === ' ') {
+    e.preventDefault();
+    cam.autoRotate = !cam.autoRotate;
+  }
+});
+
+let lastClickTime = 0;
+let lastClickStar = -1;
+const DBLCLICK_MS = 400;
+
+function handleClick(mx, my) {
+  const idx = findNearestStar(mx, my);
+  const clickTime = performance.now();
+
+  // Double-click detection (on any star or empty space)
+  if (clickTime - lastClickTime < DBLCLICK_MS) {
+    lastClickTime = 0;
+    lastClickStar = -1;
+    if (activeChain.length >= 2) finalizeChain();
+    return;
+  }
+
+  lastClickTime = clickTime;
+  lastClickStar = idx;
+
+  if (idx < 0) return;
+
+  // Don't add the same star twice
+  if (activeChainSet.has(idx)) return;
+
+  activeChain.push(idx);
+  activeChainSet.add(idx);
+}
+
+function undoLastStar() {
+  if (activeChain.length > 0) {
+    const removed = activeChain.pop();
+    activeChainSet.delete(removed);
+  }
+}
+
+function resetAll() {
+  activeChain = [];
+  activeChainSet.clear();
+  completedConstellations = [];
+  foundWordsSet.clear();
+  updateFoundWordsUI();
+  cam.targetYaw = 0;
+  cam.targetPitch = 0;
+  cam.targetDist = CAM_DIST_DEFAULT;
+  cam.autoRotate = true;
+}
+
+function clearConnections() {
+  activeChain = [];
+  activeChainSet.clear();
+  completedConstellations = [];
+  foundWordsSet.clear();
+  updateFoundWordsUI();
+}
+
+// --- Scene draw (shared by the live loop and the export grab) ---
+function drawScene() {
+  // Clear
+  ctx.fillStyle = '#05070C';
+  ctx.fillRect(0, 0, W, H);
+  // Draw nebulae
+  drawNebulae();
+  // Project and sort stars
+  projectAllStars();
+  // Draw dust
+  drawDust();
+  // Draw connections behind stars
+  drawConnections();
+  // Draw stars
+  drawStars();
+}
+
+// --- Main loop ---
+function frame(timestamp) {
+  if (exporting) { requestAnimationFrame(frame); return; }   // hold the canvas still during the export grab
+  now = timestamp;
+
+  // Smooth camera lerp
+  cam.yaw += (cam.targetYaw - cam.yaw) * LERP_SPEED;
+  cam.pitch += (cam.targetPitch - cam.pitch) * LERP_SPEED;
+  cam.dist += (cam.targetDist - cam.dist) * LERP_SPEED;
+
+  // Auto-rotation
+  if (cam.autoRotate && !cam.isDragging && (now - cam.lastInteraction > AUTO_ROT_RESUME_DELAY)) {
+    cam.targetYaw += AUTO_ROT_SPEED;
+  }
+
+  // Hover detection
+  if (!cam.isDragging) {
+    hoveredStar = findNearestStar(mouse.x, mouse.y);
+  } else {
+    hoveredStar = -1;
+  }
+
+  drawScene();
+
+  requestAnimationFrame(frame);
+}
+
+// --- Export: grab the current view as a clean 2x PNG ---
+let exporting = false;
+function exportPNG() {
+  if (exporting) return;
+  ui.hide();
+  exporting = true;
+  canvas.width = W * 2;
+  canvas.height = H * 2;
+  ctx.setTransform(2, 0, 0, 2, 0, 0);
+  drawScene();
+  canvas.toBlob(blob => {
+    exporting = false;
+    resize();            // restore the dpr-correct canvas, transform and focal length
+    ui.show();
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'constellations.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }, 'image/png');
+}
+
+// --- Init ---
+function init() {
+  createBloomSprite();
+  resize();
+  generateStars();
+  requestAnimationFrame(frame);
+}
+
+window.addEventListener('resize', resize);
+init();
+</script>
+</body>
+</html>
