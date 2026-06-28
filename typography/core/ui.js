@@ -38,7 +38,7 @@
       ".adui-div{opacity:.4;margin:0 10px;}",   /* '·' - same divider as the legend */
       ".adui-title{font-size:12px;font-weight:500;letter-spacing:.01em;opacity:.62;}",   /* sentence case - no text-transform */
       // bottom legend - WRAPS, never overflows
-      ".adui-lg{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);max-width:min(760px,calc(100vw - 24px));}",
+      ".adui-lg{position:absolute;bottom:14px;left:0;right:0;margin:0 auto;width:fit-content;max-width:min(760px,calc(100vw - 24px));}",
       ".adui-pill{padding:8px 16px;font-size:9px;letter-spacing:.02em;line-height:1.5;",
         "display:flex;flex-wrap:wrap;justify-content:center;align-items:center;}",
       ".adui-pill:empty{display:none;}",
@@ -53,7 +53,7 @@
         ".adui-bar{padding:6px 13px;}",
         ".adui-mark,.adui-title{font-size:11px;}",
         ".adui-div{margin:0 8px;}",
-        ".adui-lg{left:12px;right:12px;bottom:12px;transform:none;max-width:none;}",
+        ".adui-lg{left:12px;right:12px;bottom:12px;width:auto;max-width:none;}",
         ".adui-pill{width:100%;font-size:9px;padding:8px 12px;}",
       "}",
     ].join('');
