@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<!--
+  Kern - drag-to-kern wordmark tool
+  Type a word and kern it by dragging the gaps between letters, with live weight, tracking, size, and stylistic treatments, rendered on canvas.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · http://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. All rights reserved.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Kern - drag-to-kern wordmark tool</title>
+<meta name="description" content="An interactive logotype tool: type a word and kern it by dragging the gaps between letters, with live weight, tracking, size, and stylistic treatments, rendered on canvas.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="http://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph (minimal) -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Kern - drag-to-kern wordmark tool">
+<meta property="og:description" content="Type a word and kern it by dragging the gaps between letters, rendered on canvas.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Kern",
+  "applicationCategory": "DesignApplication",
+  "description": "An interactive logotype tool: type a word and kern it by dragging the gaps between letters, with live weight, tracking, size, and stylistic treatments, rendered on canvas.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "kerning, typography, logotype, wordmark, letter-spacing, type design, lettering, generative, canvas",
+  "license": "All rights reserved",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "http://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "http://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #FAFAFA; touch-action: none; -webkit-tap-highlight-color: transparent; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c">Kern, a drag-to-kern wordmark tool. Requires JavaScript and an HTML5 canvas.</canvas>
+<script src="./core/ui.js"></script>
+<script>
+/**
+ * KERN - drag-to-kern wordmark tool
+ * Type a word and sculpt it into a logotype: per-character kerning
+ * (drag the gaps between letters), variable weight, tracking, size,
+ * and stylistic treatments. Export at 2x.
+ *
+ * Adi Dizdarevic · AD& · http://adidizdarevic.com/  ·  part of NUI.
+ */
+
+const FONT = 'DM Sans';
+const MONO = 'IBM Plex Mono';
+
+// ─── PALETTES ──────────────────────────────────────────────────
+
+const TEXT_COLORS = [
+  { name: 'Black',  hex: '#0A0A0A' },
+  { name: 'Orange', hex: '#E8642D' },
+  { name: 'Blue',   hex: '#5A78FF' },
+  { name: 'Red',    hex: '#CC2233' },
+  { name: 'Forest', hex: '#2C4A32' },
+  { name: 'Navy',   hex: '#1A2744' },
+  { name: 'White',  hex: '#FAFAFA' },
+];
+
+const BGS = [
+  { name: 'White',      hex: '#FAFAFA', light: true },
+  { name: 'Cream',      hex: '#F0EBE1', light: true },
+  { name: 'Light Gray', hex: '#E8E8E8', light: true },
+  { name: 'Black',      hex: '#0A0A0A', light: false },
+  { name: 'Navy',       hex: '#0E1525', light: false },
+  { name: 'Charcoal',   hex: '#1A1A1A', light: false },
+];
+
+const TREATMENTS = ['SOLID', 'OUTLINE', 'SHADOW', 'STENCIL', 'UNDERLINE'];
+
+// ─── STATE ─────────────────────────────────────────────────────
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+let W, H, dpr;
+
+let text = 'Studio';
+let weight = 400;
+let tracking = 0;        // global letter-spacing in px (at reference size)
+let fontSize = 200;       // will be auto-calculated
+let autoSize = true;      // auto-size to fill viewport
+let bgIndex = 0;
+let colorIndex = 0;
+let treatmentIndex = 0;
+let outlineWeight = 2;    // 1, 2, or 3
+let uppercase = false;
+let showUI = true;
+let dirty = true;
+let exporting = false;
+
+// Per-character kerning: kernPairs[i] = pixel offset between char i and i+1
+let kernPairs = [];
+
+// Cached character layout
+let charLayout = []; // [{char, x, y, width, height}]
+let totalWidth = 0;
+let baselineY = 0;
+
+// Gap hit zones for kerning drag
+let gapZones = []; // [{x, top, bottom, index}]
+
+// Drag state
+let dragging = false;
+let dragGapIndex = -1;
+let dragStartX = 0;
+let dragStartKern = 0;
+let hoverGapIndex = -1;
+
+// ─── UI PANEL ──────────────────────────────────────────────────
+
+const ui = PT.ui({
+  title: 'Kern',
+  hints: 'Drag kern · Scroll weight · Shift tracking · Alt size · T text · S style · C color · B bg · U caps · K reset · E export',
+  theme: 'light',
+});
+
+// ─── HELPERS ───────────────────────────────────────────────────
+
+function isDarkBg() { return !BGS[bgIndex].light; }
+
+function textColor() { return TEXT_COLORS[colorIndex].hex; }
+
+function shadowColor() {
+  const hex = textColor();
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},0.2)`;
+}
+
+function displayText() {
+  return uppercase ? text.toUpperCase() : text;
+}
+
+function initKernPairs() {
+  const len = displayText().length;
+  const newPairs = new Array(Math.max(0, len - 1)).fill(0);
+  kernPairs = newPairs;
+}
+
+// ─── CANVAS SETUP ──────────────────────────────────────────────
+
+let resizeTimer = null;
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  computeLayout();
+  dirty = true;
+}
+
+function debouncedResize() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(resize, 100);
+}
+
+window.addEventListener('resize', debouncedResize);
+
+// ─── LAYOUT COMPUTATION ────────────────────────────────────────
+
+function computeLayout() {
+  const str = displayText();
+  if (str.length === 0) {
+    charLayout = [];
+    gapZones = [];
+    totalWidth = 0;
+    return;
+  }
+
+  // Auto-size: compute font size so text fills ~70% of viewport width
+  // Use weight 400 as stable reference so size doesn't jump with weight changes
+  if (autoSize) {
+    const refFont = `400 200px '${FONT}'`;
+    ctx.font = refFont;
+    // Measure total width at reference size 200px (tracking excluded from auto-size)
+    let refW = 0;
+    for (let i = 0; i < str.length; i++) {
+      refW += ctx.measureText(str[i]).width;
+    }
+    if (refW > 0) {
+      const targetW = W * 0.7;
+      fontSize = Math.min(Math.floor((targetW / refW) * 200), H * 0.6);
+      fontSize = Math.max(fontSize, 40);
+    }
+  }
+
+  // Now measure at actual weight but with computed fontSize
+  // Use reference weight 400 for width measurement to keep layout stable
+  const measureFont = `400 ${fontSize}px '${FONT}'`;
+  ctx.font = measureFont;
+
+  charLayout = [];
+  let curX = 0;
+
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    const m = ctx.measureText(ch);
+    const w = m.width;
+    charLayout.push({
+      char: ch,
+      x: curX,
+      width: w,
+    });
+    curX += w;
+    if (i < str.length - 1) {
+      curX += tracking;
+      if (i < kernPairs.length) {
+        curX += kernPairs[i];
+      }
+    }
+  }
+
+  totalWidth = curX;
+
+  // Center horizontally and vertically
+  const offsetX = (W - totalWidth) / 2;
+  baselineY = H / 2 + fontSize * 0.32; // approximate baseline centering
+
+  for (let i = 0; i < charLayout.length; i++) {
+    charLayout[i].x += offsetX;
+    charLayout[i].y = baselineY;
+  }
+
+  // Build gap zones for kerning interaction
+  gapZones = [];
+  for (let i = 0; i < charLayout.length - 1; i++) {
+    const left = charLayout[i];
+    const right = charLayout[i + 1];
+    const gapLeft = left.x + left.width;
+    const gapRight = right.x;
+    const gapCenter = (gapLeft + gapRight) / 2;
+    // Expand hit zone to include edges of adjacent characters
+    const hitLeft = gapCenter - Math.max(20, (gapRight - gapLeft) / 2 + 15);
+    const hitRight = gapCenter + Math.max(20, (gapRight - gapLeft) / 2 + 15);
+    gapZones.push({
+      x: gapCenter,
+      left: hitLeft,
+      right: hitRight,
+      top: baselineY - fontSize,
+      bottom: baselineY + fontSize * 0.3,
+      index: i,
+    });
+  }
+}
+
+// ─── DRAWING ───────────────────────────────────────────────────
+
+function draw() {
+  if (!dirty && !exporting) return;
+  dirty = false;
+
+  const scale = exporting ? 2 : dpr;
+  const cw = (exporting ? W * 2 : W * dpr);
+  const ch = (exporting ? H * 2 : H * dpr);
+
+  if (exporting) {
+    canvas.width = cw;
+    canvas.height = ch;
+  }
+
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+
+  // Background
+  ctx.fillStyle = BGS[bgIndex].hex;
+  ctx.fillRect(0, 0, W, H);
+
+  const str = displayText();
+  if (str.length === 0) return;
+
+  const col = textColor();
+  const treatment = TREATMENTS[treatmentIndex];
+  const drawFont = `${weight} ${fontSize}px '${FONT}'`;
+
+  ctx.textBaseline = 'alphabetic';
+
+  // Draw based on treatment
+  switch (treatment) {
+    case 'SOLID':
+      drawSolid(drawFont, col);
+      break;
+    case 'OUTLINE':
+      drawOutline(drawFont, col);
+      break;
+    case 'SHADOW':
+      drawShadow(drawFont, col);
+      break;
+    case 'STENCIL':
+      drawStencil(drawFont, col);
+      break;
+    case 'UNDERLINE':
+      drawUnderline(drawFont, col);
+      break;
+  }
+
+  // Draw kerning indicators (only when UI visible, not exporting)
+  if (showUI && !exporting) {
+    drawKernIndicators(col);
+  }
+}
+
+function drawSolid(font, col) {
+  ctx.font = font;
+  ctx.fillStyle = col;
+  for (let i = 0; i < charLayout.length; i++) {
+    const c = charLayout[i];
+    ctx.fillText(c.char, c.x, c.y);
+  }
+}
+
+function drawOutline(font, col) {
+  ctx.font = font;
+  ctx.strokeStyle = col;
+  ctx.lineWidth = outlineWeight;
+  ctx.lineJoin = 'round';
+  for (let i = 0; i < charLayout.length; i++) {
+    const c = charLayout[i];
+    ctx.strokeText(c.char, c.x, c.y);
+  }
+}
+
+function drawShadow(font, col) {
+  ctx.font = font;
+  const offset = Math.max(3, fontSize * 0.03);
+  // Shadow layer
+  ctx.fillStyle = shadowColor();
+  for (let i = 0; i < charLayout.length; i++) {
+    const c = charLayout[i];
+    ctx.fillText(c.char, c.x + offset, c.y + offset);
+  }
+  // Main layer
+  ctx.fillStyle = col;
+  for (let i = 0; i < charLayout.length; i++) {
+    const c = charLayout[i];
+    ctx.fillText(c.char, c.x, c.y);
+  }
+}
+
+function drawStencil(font, col) {
+  ctx.font = font;
+  ctx.fillStyle = col;
+  // Classic stencil: horizontal cut through the visual center of text
+  ctx.save();
+
+  const stripH = Math.max(2, fontSize * 0.035);
+  const midY = baselineY - fontSize * 0.32; // visual center of text
+
+  // Clip to everything EXCEPT the center strip (even-odd rule)
+  ctx.beginPath();
+  ctx.rect(0, 0, W, H);
+  ctx.rect(0, midY - stripH / 2, W, stripH);
+  ctx.clip('evenodd');
+
+  for (let i = 0; i < charLayout.length; i++) {
+    const c = charLayout[i];
+    ctx.fillText(c.char, c.x, c.y);
+  }
+
+  ctx.restore();
+}
+
+function drawUnderline(font, col) {
+  ctx.font = font;
+  ctx.fillStyle = col;
+  for (let i = 0; i < charLayout.length; i++) {
+    const c = charLayout[i];
+    ctx.fillText(c.char, c.x, c.y);
+  }
+  // Thick underline bar
+  const barH = Math.max(3, fontSize * 0.06);
+  const barY = baselineY + fontSize * 0.12;
+  const firstX = charLayout[0].x;
+  const lastC = charLayout[charLayout.length - 1];
+  const barW = (lastC.x + lastC.width) - firstX;
+  ctx.fillStyle = col;
+  ctx.fillRect(firstX, barY, barW, barH);
+}
+
+function drawKernIndicators(col) {
+  // Show hover highlight and kern values
+  for (let i = 0; i < gapZones.length; i++) {
+    const gap = gapZones[i];
+    const kernVal = i < kernPairs.length ? kernPairs[i] : 0;
+
+    // Hover highlight
+    if (i === hoverGapIndex || i === dragGapIndex) {
+      const alpha = i === dragGapIndex ? 0.35 : 0.15;
+      const isLight = BGS[bgIndex].light;
+      ctx.fillStyle = isLight
+        ? `rgba(0,0,0,${alpha})`
+        : `rgba(255,255,255,${alpha})`;
+      const gx = gap.left;
+      const gw = gap.right - gap.left;
+      ctx.fillRect(gx, gap.top, gw, gap.bottom - gap.top);
+
+      // Vertical center line
+      ctx.strokeStyle = isLight
+        ? `rgba(0,0,0,${alpha + 0.1})`
+        : `rgba(255,255,255,${alpha + 0.1})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(gap.x, gap.top);
+      ctx.lineTo(gap.x, gap.bottom);
+      ctx.stroke();
+    }
+
+    // Kern value label (always show if non-zero, or if hovering)
+    if (kernVal !== 0 || i === hoverGapIndex || i === dragGapIndex) {
+      const label = kernVal === 0 ? '0' : (kernVal > 0 ? '+' + kernVal.toFixed(0) : kernVal.toFixed(0));
+      const labelFont = `500 ${Math.max(9, fontSize * 0.06)}px '${MONO}'`;
+      ctx.font = labelFont;
+      const isLight = BGS[bgIndex].light;
+      ctx.fillStyle = isLight ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(label, gap.x, gap.top - 4);
+      ctx.textAlign = 'start';
+      ctx.textBaseline = 'alphabetic';
+    }
+  }
+}
+
+// ─── INTERACTION ───────────────────────────────────────────────
+
+function hitTestGap(px, py) {
+  for (let i = 0; i < gapZones.length; i++) {
+    const g = gapZones[i];
+    if (px >= g.left && px <= g.right && py >= g.top && py <= g.bottom) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+canvas.addEventListener('pointerdown', function(e) {
+  e.preventDefault();
+  const px = e.clientX;
+  const py = e.clientY;
+  const gapIdx = hitTestGap(px, py);
+  if (gapIdx >= 0) {
+    dragging = true;
+    dragGapIndex = gapIdx;
+    dragStartX = px;
+    dragStartKern = kernPairs[gapIdx] || 0;
+    canvas.setPointerCapture(e.pointerId);
+    dirty = true;
+  }
+});
+
+canvas.addEventListener('pointermove', function(e) {
+  if (dragging) {
+    const dx = e.clientX - dragStartX;
+    kernPairs[dragGapIndex] = Math.round(dragStartKern + dx);
+    computeLayout();
+    dirty = true;
+    return;
+  }
+
+  const newHover = hitTestGap(e.clientX, e.clientY);
+  if (newHover !== hoverGapIndex) {
+    hoverGapIndex = newHover;
+    canvas.style.cursor = newHover >= 0 ? 'col-resize' : 'default';
+    dirty = true;
+  }
+});
+
+canvas.addEventListener('pointerup', function(e) {
+  if (dragging) {
+    dragging = false;
+    dragGapIndex = -1;
+    dirty = true;
+  }
+});
+
+canvas.addEventListener('pointerleave', function() {
+  if (!dragging) {
+    hoverGapIndex = -1;
+    canvas.style.cursor = 'default';
+    dirty = true;
+  }
+});
+
+// Scroll: weight / tracking / size
+canvas.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 1 : -1;
+
+  if (e.altKey) {
+    // Alt+Scroll: font size
+    autoSize = false;
+    fontSize = Math.max(20, Math.min(800, fontSize + delta * -5));
+    computeLayout();
+    dirty = true;
+  } else if (e.shiftKey) {
+    // Shift+Scroll: tracking
+    tracking = Math.max(-30, Math.min(80, tracking + delta * -1));
+    computeLayout();
+    dirty = true;
+  } else {
+    // Scroll: weight
+    weight = Math.max(100, Math.min(900, weight + delta * -10));
+    dirty = true;
+  }
+}, { passive: false });
+
+// ─── KEYBOARD ──────────────────────────────────────────────────
+
+document.addEventListener('keydown', function(e) {
+  const key = e.key.toLowerCase();
+
+  if (key === 'h') {
+    showUI = !showUI;
+    dirty = true;
+  } else if (key === 's') {
+    treatmentIndex = (treatmentIndex + 1) % TREATMENTS.length;
+    dirty = true;
+  } else if (key === 't') {
+    const val = prompt('Enter wordmark text:', text);
+    if (val !== null && val.trim().length > 0) {
+      text = val.trim();
+      autoSize = true;
+      initKernPairs();
+      computeLayout();
+      dirty = true;
+    }
+  } else if (key === 'c') {
+    colorIndex = (colorIndex + 1) % TEXT_COLORS.length;
+    dirty = true;
+  } else if (key === 'b') {
+    bgIndex = (bgIndex + 1) % BGS.length;
+    // Auto-switch text color for dark/light bg
+    if (isDarkBg() && TEXT_COLORS[colorIndex].name === 'Black') {
+      colorIndex = TEXT_COLORS.length - 1; // White
+    } else if (!isDarkBg() && TEXT_COLORS[colorIndex].name === 'White') {
+      colorIndex = 0; // Black
+    }
+    document.body.style.background = BGS[bgIndex].hex;
+    dirty = true;
+  } else if (key === 'u') {
+    uppercase = !uppercase;
+    initKernPairs();
+    computeLayout();
+    dirty = true;
+  } else if (key === 'o') {
+    outlineWeight = outlineWeight >= 3 ? 1 : outlineWeight + 1;
+    dirty = true;
+  } else if (key === 'e') {
+    exportPNG();
+  } else if (key === 'r') {
+    resetAll();
+  } else if (key === 'k') {
+    // Reset kerning only
+    initKernPairs();
+    computeLayout();
+    dirty = true;
+  }
+});
+
+// ─── EXPORT ────────────────────────────────────────────────────
+
+function exportPNG() {
+  const wasUI = showUI;
+  showUI = false;
+  ui.hide();
+  exporting = true;
+
+  // Render at 2x; the canvas stays enlarged until we restore it in the callback below.
+  draw();
+
+  canvas.toBlob(function(blob) {
+    // Restore the live canvas first, regardless of success.
+    exporting = false;
+    showUI = wasUI;
+    if (wasUI) ui.show();
+    resize();
+
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'kern-' + displayText().toLowerCase().replace(/[^a-z0-9]/g, '') + '.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
+  }, 'image/png');
+}
+
+// ─── RESET ─────────────────────────────────────────────────────
+
+function resetAll() {
+  text = 'Studio';
+  weight = 400;
+  tracking = 0;
+  autoSize = true;
+  bgIndex = 0;
+  colorIndex = 0;
+  treatmentIndex = 0;
+  outlineWeight = 2;
+  uppercase = false;
+  document.body.style.background = BGS[0].hex;
+  initKernPairs();
+  computeLayout();
+  dirty = true;
+}
+
+// ─── RENDER LOOP ───────────────────────────────────────────────
+
+function frame() {
+  draw();
+  requestAnimationFrame(frame);
+}
+
+// ─── INIT ──────────────────────────────────────────────────────
+
+resize();
+initKernPairs();
+computeLayout();
+
+// Render immediately, re-render when fonts load
+dirty = true;
+frame();
+
+const fontTimeout = setTimeout(function() {
+  computeLayout();
+  dirty = true;
+}, 3000);
+
+document.fonts.ready.then(function() {
+  clearTimeout(fontTimeout);
+  computeLayout();
+  dirty = true;
+});
+
+</script>
+</body>
+</html>
