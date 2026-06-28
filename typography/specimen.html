@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<!--
+  Specimen - foundry-style type specimen generator
+  Annotated glyph anatomy · weight & size ramps · character sets · seamless motifs, live on canvas.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · http://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. All rights reserved.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Specimen - foundry-style type specimen generator</title>
+<meta name="description" content="A foundry-style type specimen generator: annotated glyph anatomy, weight and size ramps, full character sets, and seamless motifs, rendered live on an HTML canvas.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="http://adidizdarevic.com/">
+<meta name="theme-color" content="#F0EBE1">
+
+<!-- Open Graph (minimal) -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Specimen - foundry-style type specimen generator">
+<meta property="og:description" content="Glyph anatomy, weight & size ramps, character sets, and seamless motifs, live on canvas.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Specimen",
+  "applicationCategory": "DesignApplication",
+  "description": "A foundry-style type specimen generator: annotated glyph anatomy, weight and size ramps, full character sets, and seamless motifs, rendered live on an HTML canvas.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "type specimen, typography, glyph anatomy, type design, weight ramp, size ramp, character set, motif, generative, canvas",
+  "license": "All rights reserved",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "http://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "http://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #F0EBE1; touch-action: none; -webkit-tap-highlight-color: transparent; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c">Specimen, an interactive foundry-style type specimen generator. Requires JavaScript and an HTML5 canvas.</canvas>
+<script src="./core/ui.js"></script>
+<script>
+/**
+ * SPECIMEN - foundry-style type specimen generator
+ * Annotated glyph anatomy, weight & size ramps, character-set grids, and seamless motifs.
+ * Five layout modes, keys 1–5, or cycle with M.
+ *
+ * Adi Dizdarevic · AD& · http://adidizdarevic.com/  ·  part of NUI.
+ */
+
+const FONT = 'DM Sans';
+const MONO = 'IBM Plex Mono';
+
+const BGS = [
+  { name: 'Cream',      bg: '#F0EBE1', light: true },
+  { name: 'White',      bg: '#FAFAFA', light: true },
+  { name: 'Light Gray', bg: '#E8E8E8', light: true },
+  { name: 'Black',      bg: '#0A0A0A', light: false },
+  { name: 'Navy',       bg: '#0E1525', light: false },
+];
+
+const MODE_NAMES = ['GLYPH DETAIL', 'WEIGHT RAMP', 'SIZE RAMP', 'CHARACTER SET', 'MOTIF'];
+const WEIGHT_PRESETS = [100, 300, 400, 500, 700, 900];
+const WEIGHT_RAMP = [100, 200, 300, 400, 500, 600, 700, 800, 900];
+const SIZE_RAMP = [120, 96, 72, 48, 36, 24, 18, 14, 11, 9];
+
+// ─── STATE ──────────────────────────────────────────────────────
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+let W, H, dpr;
+
+let displayGlyph = 'A';
+let sampleText = 'Hamburgefontsiv';
+let weight = 400;
+let tracking = 0;
+let bgIndex = 0;
+let modeIndex = 0;
+let weightPresetIdx = 2;
+let dirty = true;
+
+// Motif state
+let motifCell = 72;
+let motifGlyphScale = 0.75;
+let motifSymmetry = 0; // 0=translate, 1=reflect, 2=rotate, 3=diamond
+let motifPanX = 0, motifPanY = 0;
+let motifDragging = false, motifDragSX = 0, motifDragSY = 0, motifPanSX = 0, motifPanSY = 0;
+let motifGlyphCache = null; // {normal, flipped, size}
+let motifGlyphKey = '';     // glyph atlases rebuild only when these inputs change
+const SYMMETRY_NAMES = ['Translate', 'Reflect', 'Rotate', 'Diamond'];
+
+// ─── UI PANEL ───────────────────────────────────────────────────
+
+const ui = PT.ui({
+  title: 'Specimen',
+  hints: '1–5 mode · Scroll weight · Shift+scroll tracking · T text · W preset · F symmetry · Drag pan · B bg · E export · R reset',
+  theme: 'light'
+});
+
+// ─── COLORS ─────────────────────────────────────────────────────
+
+function col() {
+  const lt = BGS[bgIndex].light;
+  return {
+    bg:      BGS[bgIndex].bg,
+    text:    lt ? 'rgba(0,0,0,0.85)'   : 'rgba(255,255,255,0.85)',
+    line:    lt ? 'rgba(0,0,0,0.12)'    : 'rgba(255,255,255,0.08)',
+    label:   lt ? 'rgba(0,0,0,0.35)'    : 'rgba(255,255,255,0.3)',
+    grid:    lt ? 'rgba(0,0,0,0.05)'    : 'rgba(255,255,255,0.03)',
+    gridMaj: lt ? 'rgba(0,0,0,0.09)'    : 'rgba(255,255,255,0.06)',
+    muted:   lt ? 'rgba(0,0,0,0.45)'    : 'rgba(255,255,255,0.45)',
+    accent:  lt ? 'rgba(0,0,0,0.18)'    : 'rgba(255,255,255,0.12)',
+  };
+}
+
+// ─── RESIZE ─────────────────────────────────────────────────────
+
+let resizeTimer;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  dirty = true;
+}
+window.addEventListener('resize', function() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(resize, 100);
+});
+resize();
+
+// ─── FONT LOADING ───────────────────────────────────────────────
+
+let fontTO = setTimeout(function() { dirty = true; }, 3000);
+document.fonts.ready.then(function() {
+  clearTimeout(fontTO);
+  dirty = true;
+});
+
+// ─── DRAW HELPERS ───────────────────────────────────────────────
+
+function setF(sz, wt) {
+  ctx.font = (wt || weight) + ' ' + sz + "px '" + FONT + "'";
+}
+
+function setM(sz) {
+  ctx.font = '400 ' + sz + "px '" + MONO + "'";
+}
+
+function clearBg(c) {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = c.bg;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawTextTracked(text, x, y, sz, wt) {
+  var trackPx = tracking * sz;
+  setF(sz, wt);
+  if (Math.abs(trackPx) < 0.5) {
+    ctx.fillText(text, x, y);
+    return;
+  }
+  var xx = x;
+  for (var i = 0; i < text.length; i++) {
+    ctx.fillText(text[i], xx, y);
+    xx += ctx.measureText(text[i]).width + trackPx;
+  }
+}
+
+function trackedWidth(text, sz, wt) {
+  setF(sz, wt);
+  var trackPx = tracking * sz;
+  var w = 0;
+  for (var i = 0; i < text.length; i++) {
+    w += ctx.measureText(text[i]).width;
+    if (i < text.length - 1) w += trackPx;
+  }
+  return w;
+}
+
+// ─── GRID (engineering paper) ───────────────────────────────────
+
+function drawGrid(c) {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  var s = 20;
+
+  // Minor lines
+  ctx.strokeStyle = c.grid;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  for (var x = s; x < W; x += s) {
+    if (x % (s * 5) === 0) continue;
+    ctx.moveTo(x, 0); ctx.lineTo(x, H);
+  }
+  for (var y = s; y < H; y += s) {
+    if (y % (s * 5) === 0) continue;
+    ctx.moveTo(0, y); ctx.lineTo(W, y);
+  }
+  ctx.stroke();
+
+  // Major lines every 5
+  ctx.strokeStyle = c.gridMaj;
+  ctx.beginPath();
+  for (var x2 = 0; x2 <= W; x2 += s * 5) {
+    ctx.moveTo(x2, 0); ctx.lineTo(x2, H);
+  }
+  for (var y2 = 0; y2 <= H; y2 += s * 5) {
+    ctx.moveTo(0, y2); ctx.lineTo(W, y2);
+  }
+  ctx.stroke();
+}
+
+// ─── MODE 1: GLYPH DETAIL ──────────────────────────────────────
+
+function drawGlyphDetail() {
+  var c = col();
+  clearBg(c);
+  drawGrid(c);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // Size the glyph to fill ~52% of the smaller dimension
+  var glyphSize = Math.min(H * 0.52, W * 0.5);
+  setF(glyphSize, weight);
+  var m = ctx.measureText(displayGlyph);
+
+  // Use real metrics from the browser
+  var fontAsc = m.fontBoundingBoxAscent;
+  var fontDesc = m.fontBoundingBoxDescent;
+  var glyphW = m.width;
+
+  // Actual bounding box of this specific glyph
+  var glyphTop = m.actualBoundingBoxAscent || fontAsc;
+  var glyphBot = m.actualBoundingBoxDescent || fontDesc;
+
+  // Font-level metric lines (these are font-wide, not glyph-specific)
+  var ascH = fontAsc;
+  var descH = fontDesc;
+  // Cap height and x-height from actual glyph measurement when possible
+  // For uppercase: actualBoundingBoxAscent ≈ cap height
+  // We measure 'H' for cap height and 'x' for x-height
+  setF(glyphSize, weight);
+  var mH = ctx.measureText('H');
+  var mX = ctx.measureText('x');
+  var capH = mH.actualBoundingBoxAscent || glyphSize * 0.715;
+  var xH = mX.actualBoundingBoxAscent || glyphSize * 0.52;
+
+  // True vertical center: place baseline so the glyph's visual center is at H/2
+  // Visual top = baselineY - glyphTop, visual bottom = baselineY + glyphBot
+  // Center = baselineY - (glyphTop - glyphBot)/2 = H/2
+  var cx = W / 2;
+  var baselineY = H / 2 + (glyphTop - glyphBot) / 2;
+
+  // Draw the glyph
+  ctx.fillStyle = c.text;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  setF(glyphSize, weight);
+
+  if (displayGlyph.length <= 1 || Math.abs(tracking) < 0.001) {
+    ctx.fillText(displayGlyph, cx, baselineY);
+  } else {
+    ctx.textAlign = 'left';
+    var tw = trackedWidth(displayGlyph, glyphSize, weight);
+    drawTextTracked(displayGlyph, cx - tw / 2, baselineY, glyphSize, weight);
+    ctx.textAlign = 'center';
+  }
+
+  // ─── Measurement guide lines ───
+  var lineL = cx - glyphW / 2 - 80;
+  var lineR = cx + glyphW / 2 + 80;
+  var labelX = lineL - 10;
+  var valueX = lineR + 12;
+
+  ctx.lineWidth = 0.5;
+  ctx.textBaseline = 'middle';
+
+  // Snap to half-pixel for crisp 0.5px lines
+  var snap = function(v) { return Math.round(v) + 0.5; };
+
+  var guides = [
+    { y: snap(baselineY - ascH),  name: 'ascender',   val: Math.round(ascH) },
+    { y: snap(baselineY - capH),  name: 'cap height',  val: Math.round(capH) },
+    { y: snap(baselineY - xH),    name: 'x-height',    val: Math.round(xH) },
+    { y: snap(baselineY),          name: 'baseline',    val: 0 },
+    { y: snap(baselineY + descH),  name: 'descender',  val: -Math.round(descH) },
+  ];
+
+  for (var gi = 0; gi < guides.length; gi++) {
+    var g = guides[gi];
+
+    // Horizontal rule
+    ctx.strokeStyle = c.line;
+    ctx.beginPath();
+    ctx.moveTo(lineL, g.y);
+    ctx.lineTo(lineR, g.y);
+    ctx.stroke();
+
+    // Small ticks at ends
+    ctx.beginPath();
+    ctx.moveTo(lineL, g.y - 3); ctx.lineTo(lineL, g.y + 3);
+    ctx.moveTo(lineR, g.y - 3); ctx.lineTo(lineR, g.y + 3);
+    ctx.stroke();
+
+    // Label left
+    setM(9);
+    ctx.fillStyle = c.label;
+    ctx.textAlign = 'right';
+    ctx.fillText(g.name, labelX, g.y);
+
+    // Value right
+    ctx.textAlign = 'left';
+    ctx.fillText(String(g.val), valueX, g.y);
+  }
+
+  // ─── Vertical dimension bracket (cap height) ───
+  var dimX = Math.round(lineR + 56) + 0.5;
+  var dimTop = snap(baselineY - capH);
+  var dimBot = snap(baselineY);
+  ctx.strokeStyle = c.accent;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(dimX, dimTop);
+  ctx.lineTo(dimX, dimBot);
+  ctx.stroke();
+  // Ticks
+  ctx.beginPath();
+  ctx.moveTo(dimX - 4, dimTop);
+  ctx.lineTo(dimX + 4, dimTop);
+  ctx.moveTo(dimX - 4, dimBot);
+  ctx.lineTo(dimX + 4, dimBot);
+  ctx.stroke();
+
+  setM(9);
+  ctx.fillStyle = c.label;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(Math.round(capH) + ' units', dimX + 8, (dimTop + dimBot) / 2);
+
+  // ─── Width dimension below glyph ───
+  var widthY = baselineY + descH + 32;
+  ctx.strokeStyle = c.accent;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - glyphW / 2, widthY);
+  ctx.lineTo(cx + glyphW / 2, widthY);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx - glyphW / 2, widthY - 4);
+  ctx.lineTo(cx - glyphW / 2, widthY + 4);
+  ctx.moveTo(cx + glyphW / 2, widthY - 4);
+  ctx.lineTo(cx + glyphW / 2, widthY + 4);
+  ctx.stroke();
+
+  setM(9);
+  ctx.fillStyle = c.label;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('width: ' + Math.round(glyphW), cx, widthY + 7);
+
+  // ─── Info bar ───
+  setM(10);
+  ctx.fillStyle = c.muted;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(FONT + '  ·  Weight ' + weight + '  ·  ' + Math.round(glyphSize) + 'px  ·  Tracking ' + tracking.toFixed(2) + 'em', cx, H - 50);
+}
+
+// ─── MODE 2: WEIGHT RAMP ───────────────────────────────────────
+
+function drawWeightRamp() {
+  var c = col();
+  clearBg(c);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  var text = sampleText;
+  // Scale text to fit width
+  var maxTextW = W - 200;
+  var rampSize = 44;
+  setF(rampSize, 900);
+  var tw = ctx.measureText(text).width;
+  if (tw > maxTextW) rampSize = Math.floor(rampSize * maxTextW / tw);
+  rampSize = Math.max(16, Math.min(52, rampSize));
+
+  var lineH = rampSize * 1.65;
+  var totalH = WEIGHT_RAMP.length * lineH;
+  var startY = (H - totalH) / 2 + rampSize * 0.8;
+
+  var labelX = 64;
+  var textX = 110;
+
+  // Section header
+  setM(9);
+  ctx.fillStyle = c.label;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText('WEIGHT AXIS  100–1000', textX, startY - lineH * 0.7);
+
+  // Thin separator
+  ctx.strokeStyle = c.line;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(textX, startY - lineH * 0.45);
+  ctx.lineTo(W - 64, startY - lineH * 0.45);
+  ctx.stroke();
+
+  for (var i = 0; i < WEIGHT_RAMP.length; i++) {
+    var wt = WEIGHT_RAMP[i];
+    var y = startY + i * lineH;
+    var isCurrent = Math.abs(wt - weight) < 50;
+
+    // Weight label
+    setM(9);
+    ctx.fillStyle = isCurrent ? c.text : c.label;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(String(wt), labelX, y);
+
+    // Current weight marker
+    if (isCurrent) {
+      ctx.fillStyle = c.accent;
+      ctx.fillRect(labelX + 6, y - rampSize * 0.3, 2, rampSize * 0.38);
+    }
+
+    // Sample text
+    ctx.fillStyle = c.text;
+    ctx.textAlign = 'left';
+    drawTextTracked(text, textX, y, rampSize, wt);
+
+    // Subtle baseline rule
+    ctx.strokeStyle = c.grid;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(textX, y + 5);
+    ctx.lineTo(W - 64, y + 5);
+    ctx.stroke();
+  }
+
+  // Footer
+  setM(9);
+  ctx.fillStyle = c.label;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(FONT + '  ·  Tracking ' + tracking.toFixed(2) + 'em', W / 2, H - 50);
+}
+
+// ─── MODE 3: SIZE RAMP ─────────────────────────────────────────
+
+function drawSizeRamp() {
+  var c = col();
+  clearBg(c);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  var text = sampleText;
+  var labelX = 64;
+  var textX = 110;
+
+  // Calculate vertical layout
+  var totalH = 0;
+  var gaps = [];
+  for (var i = 0; i < SIZE_RAMP.length; i++) {
+    var g = Math.max(SIZE_RAMP[i] * 1.45, 22);
+    gaps.push(g);
+    totalH += g;
+  }
+
+  var y = (H - totalH) / 2 + SIZE_RAMP[0] * 0.8;
+
+  // Section header
+  setM(9);
+  ctx.fillStyle = c.label;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(FONT + '  ·  Weight ' + weight + '  ·  Tracking ' + tracking.toFixed(2) + 'em', textX, y - SIZE_RAMP[0] * 0.7);
+
+  // Separator
+  ctx.strokeStyle = c.line;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(textX, y - SIZE_RAMP[0] * 0.35);
+  ctx.lineTo(W - 64, y - SIZE_RAMP[0] * 0.35);
+  ctx.stroke();
+
+  for (var j = 0; j < SIZE_RAMP.length; j++) {
+    var sz = SIZE_RAMP[j];
+
+    // Size label
+    setM(9);
+    ctx.fillStyle = c.label;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(sz + 'px', labelX, y);
+
+    // Sample text
+    ctx.fillStyle = c.text;
+    ctx.textAlign = 'left';
+    drawTextTracked(text, textX, y, sz, weight);
+
+    // Baseline rule
+    ctx.strokeStyle = c.grid;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(textX, y + 4);
+    ctx.lineTo(W - 64, y + 4);
+    ctx.stroke();
+
+    y += gaps[j];
+  }
+}
+
+// ─── MODE 4: CHARACTER SET ──────────────────────────────────────
+
+function drawCharacterSet() {
+  var c = col();
+  clearBg(c);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  var upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  var lower = 'abcdefghijklmnopqrstuvwxyz';
+  var digits = '0123456789';
+  var punct = '.,;:’“”!?@#$%&*()-—/';
+
+  var sections = [
+    { label: 'UPPERCASE', chars: upper },
+    { label: 'LOWERCASE', chars: lower },
+    { label: 'NUMERALS',  chars: digits },
+    { label: 'PUNCTUATION', chars: punct },
+  ];
+
+  var margin = 64;
+  var avail = W - margin * 2;
+  var maxCols = Math.min(26, Math.floor(avail / 44));
+  var cellSz = Math.min(56, avail / maxCols);
+  var charSz = cellSz * 0.52;
+  var gridL = margin;
+
+  // Total height for vertical centering
+  var totalH = 0;
+  for (var si = 0; si < sections.length; si++) {
+    var rows = Math.ceil(sections[si].chars.length / maxCols);
+    totalH += 22 + rows * cellSz + 16;
+  }
+
+  var y = Math.max(48, (H - totalH) / 2);
+
+  for (var si2 = 0; si2 < sections.length; si2++) {
+    var section = sections[si2];
+
+    // Section label
+    setM(9);
+    ctx.fillStyle = c.label;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(section.label, gridL, y + 12);
+    y += 22;
+
+    var nrows = Math.ceil(section.chars.length / maxCols);
+
+    for (var r = 0; r < nrows; r++) {
+      for (var cl = 0; cl < maxCols; cl++) {
+        var idx = r * maxCols + cl;
+        if (idx >= section.chars.length) break;
+
+        var cellX = gridL + cl * cellSz;
+        var cellY = y + r * cellSz;
+
+        // Cell border
+        ctx.strokeStyle = c.line;
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(cellX, cellY, cellSz, cellSz);
+
+        // Character
+        setF(charSz, weight);
+        ctx.fillStyle = c.text;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(section.chars[idx], cellX + cellSz / 2, cellY + cellSz / 2 + 1);
+      }
+    }
+
+    y += nrows * cellSz + 16;
+  }
+
+  // Footer
+  setM(9);
+  ctx.fillStyle = c.label;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  var total = upper.length + lower.length + digits.length + punct.length;
+  ctx.fillText(FONT + '  ·  Weight ' + weight + '  ·  ' + total + ' glyphs', W / 2, H - 40);
+}
+
+// ─── MODE 5: MOTIF ─────────────────────────────────────────────
+
+// Cache key for the offscreen glyph atlases: rebuild only when an input that
+// affects the rendered glyph changes (panning, which only moves the tiling
+// origin, deliberately does NOT appear here).
+function motifKey() {
+  return [motifCell, dpr, motifGlyphScale.toFixed(3), weight, displayGlyph, bgIndex].join('|');
+}
+
+function buildMotifGlyph() {
+  var c = col();
+  var size = Math.round(motifCell * dpr);
+  var fontSize = Math.round(size * motifGlyphScale);
+
+  var nc = document.createElement('canvas');
+  nc.width = size; nc.height = size;
+  var nctx = nc.getContext('2d');
+  nctx.font = weight + ' ' + fontSize + "px '" + FONT + "'";
+  nctx.fillStyle = c.text;
+  nctx.textAlign = 'center';
+  nctx.textBaseline = 'middle';
+  nctx.fillText(displayGlyph, size / 2, size / 2);
+
+  var fc = document.createElement('canvas');
+  fc.width = size; fc.height = size;
+  var fctx = fc.getContext('2d');
+  fctx.translate(size, 0);
+  fctx.scale(-1, 1);
+  fctx.drawImage(nc, 0, 0);
+
+  motifGlyphCache = { normal: nc, flipped: fc, size: size };
+  motifGlyphKey = motifKey();
+}
+
+function motifRotMatrix(rot, cx, cy, sz) {
+  switch (rot % 4) {
+    case 0: return [1, 0, 0, 1, cx - sz/2, cy - sz/2];
+    case 1: return [0, 1, -1, 0, cx + sz/2, cy - sz/2];
+    case 2: return [-1, 0, 0, -1, cx + sz/2, cy + sz/2];
+    case 3: return [0, -1, 1, 0, cx - sz/2, cy + sz/2];
+  }
+}
+
+function drawMotif() {
+  var c = col();
+  clearBg(c);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  if (!motifGlyphCache || motifGlyphKey !== motifKey()) buildMotifGlyph();
+  var cell = motifCell;
+  var step = cell;
+  var size = motifGlyphCache.size;
+
+  var ox = ((motifPanX % step) + step) % step;
+  var oy = ((motifPanY % step) + step) % step;
+
+  var startCol = -2;
+  var startRow = -2;
+  var endCol = Math.ceil(W / step) + 2;
+  var endRow = Math.ceil(H / step) + 2;
+
+  for (var r = startRow; r <= endRow; r++) {
+    for (var cl = startCol; cl <= endCol; cl++) {
+      var px = ox + cl * step;
+      var py = oy + r * step;
+
+      if (px + cell < 0 || px > W || py + cell < 0 || py > H) continue;
+
+      var useFlipped = false;
+      var rot = 0;
+      var cpx = px;
+
+      switch (motifSymmetry) {
+        case 0: break; // translate
+        case 1: // reflect
+          if (((cl % 2) + 2) % 2 !== 0) useFlipped = true;
+          break;
+        case 2: // rotate 2x2
+          var sc = (((cl % 2) + 2) % 2);
+          var sr = (((r % 2) + 2) % 2);
+          rot = (sr * 2 + sc) % 4;
+          break;
+        case 3: // diamond
+          if (((r % 2) + 2) % 2 !== 0) cpx += step / 2;
+          if (((cl + r) % 2 + 2) % 2 !== 0) { useFlipped = true; rot = 2; }
+          break;
+      }
+
+      var img = useFlipped ? motifGlyphCache.flipped : motifGlyphCache.normal;
+      var cx = cpx * dpr + cell * dpr / 2;
+      var cy = py * dpr + cell * dpr / 2;
+      var m = motifRotMatrix(rot, cx, cy, size);
+
+      ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
+      ctx.drawImage(img, 0, 0);
+    }
+  }
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // Footer
+  setM(9);
+  ctx.fillStyle = c.label;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(FONT + '  ·  Weight ' + weight + '  ·  "' + displayGlyph + '"  ·  ' + SYMMETRY_NAMES[motifSymmetry] + '  ·  ' + motifCell + 'px cell', W / 2, H - 40);
+}
+
+// ─── RENDER ─────────────────────────────────────────────────────
+
+function render() {
+  if (!dirty) return;
+  dirty = false;
+
+  switch (modeIndex) {
+    case 0: drawGlyphDetail(); break;
+    case 1: drawWeightRamp(); break;
+    case 2: drawSizeRamp(); break;
+    case 3: drawCharacterSet(); break;
+    case 4: drawMotif(); break;
+  }
+}
+
+// ─── INPUT ──────────────────────────────────────────────────────
+
+window.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  if (modeIndex === 4) {
+    // Motif mode: scroll = cell size, shift = weight, alt = glyph scale
+    if (e.shiftKey) {
+      weight += e.deltaY > 0 ? -50 : 50;
+      weight = Math.max(100, Math.min(1000, weight));
+    } else if (e.altKey) {
+      motifGlyphScale += e.deltaY > 0 ? -0.05 : 0.05;
+      motifGlyphScale = Math.max(0.3, Math.min(1.0, motifGlyphScale));
+    } else {
+      motifCell += e.deltaY > 0 ? -4 : 4;
+      motifCell = Math.max(24, Math.min(200, motifCell));
+    }
+  } else if (e.shiftKey) {
+    tracking += e.deltaY > 0 ? 0.01 : -0.01;
+    tracking = Math.round(Math.max(-0.2, Math.min(0.5, tracking)) * 100) / 100;
+  } else {
+    weight += e.deltaY > 0 ? 10 : -10;
+    weight = Math.max(100, Math.min(1000, weight));
+  }
+  dirty = true;
+}, { passive: false });
+
+window.addEventListener('keydown', function(e) {
+  if (e.metaKey || e.ctrlKey) return;
+  var k = e.key;
+
+  // Number keys for direct mode selection
+  if (k >= '1' && k <= '5') {
+    var idx = parseInt(k) - 1;
+    if (idx < MODE_NAMES.length) {
+      modeIndex = idx;
+      dirty = true;
+    }
+    return;
+  }
+
+  k = k.toLowerCase();
+
+  switch (k) {
+    case 'm':
+      modeIndex = (modeIndex + 1) % MODE_NAMES.length;
+      dirty = true;
+      return;
+
+    case 't':
+      var cur = (modeIndex === 0 || modeIndex === 4) ? displayGlyph : sampleText;
+      var v = prompt(modeIndex === 4 ? 'Enter a character:' : 'Display text:', cur);
+      if (v !== null && v.length > 0) {
+        if (modeIndex === 0 || modeIndex === 4) displayGlyph = modeIndex === 4 ? v.charAt(0) : v;
+        else sampleText = v;
+        dirty = true;
+      }
+      return;
+
+    case 'f':
+      if (modeIndex === 4) {
+        motifSymmetry = (motifSymmetry + 1) % SYMMETRY_NAMES.length;
+        dirty = true;
+      }
+      return;
+
+    case 'w':
+      weightPresetIdx = (weightPresetIdx + 1) % WEIGHT_PRESETS.length;
+      weight = WEIGHT_PRESETS[weightPresetIdx];
+      dirty = true;
+      return;
+
+    case 'b':
+      bgIndex = (bgIndex + 1) % BGS.length;
+      document.body.style.background = BGS[bgIndex].bg;
+      dirty = true;
+      return;
+
+    case 'e':
+      exportPNG();
+      return;
+
+    case 'r':
+      displayGlyph = 'A';
+      sampleText = 'Hamburgefontsiv';
+      weight = 400;
+      tracking = 0;
+      bgIndex = 0;
+      modeIndex = 0;
+      weightPresetIdx = 2;
+      ui.show();
+      motifCell = 72;
+      motifGlyphScale = 0.75;
+      motifSymmetry = 0;
+      motifPanX = 0; motifPanY = 0;
+      document.body.style.background = BGS[0].bg;
+      dirty = true;
+      return;
+  }
+});
+
+// ─── MOTIF POINTER EVENTS ──────────────────────────────────────
+
+canvas.addEventListener('pointerdown', function(e) {
+  if (modeIndex !== 4) return;
+  motifDragging = true;
+  motifDragSX = e.clientX;
+  motifDragSY = e.clientY;
+  motifPanSX = motifPanX;
+  motifPanSY = motifPanY;
+  canvas.setPointerCapture(e.pointerId);
+});
+
+canvas.addEventListener('pointermove', function(e) {
+  if (!motifDragging) return;
+  motifPanX = motifPanSX + (e.clientX - motifDragSX);
+  motifPanY = motifPanSY + (e.clientY - motifDragSY);
+  dirty = true;
+});
+
+canvas.addEventListener('pointerup', function() { motifDragging = false; });
+canvas.addEventListener('pointercancel', function() { motifDragging = false; });
+
+// ─── EXPORT ─────────────────────────────────────────────────────
+
+function exportPNG() {
+  var savedDpr = dpr;
+
+  // Render at 2x, hide UI
+  dpr = 2;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ui.hide();
+
+  dirty = true;
+  render();
+
+  canvas.toBlob(function(blob) {
+    if (!blob) {
+      console.error('Export failed: null blob');
+      restore();
+      return;
+    }
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'specimen-' + MODE_NAMES[modeIndex].toLowerCase().replace(/\s/g, '-') + '-w' + weight + '.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
+    restore();
+  });
+
+  function restore() {
+    dpr = savedDpr;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ui.show();
+    dirty = true;
+  }
+}
+
+// ─── LOOP ───────────────────────────────────────────────────────
+
+function loop() {
+  render();
+  requestAnimationFrame(loop);
+}
+loop();
+
+</script>
+</body>
+</html>
