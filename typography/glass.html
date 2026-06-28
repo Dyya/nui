@@ -1,0 +1,641 @@
+<!doctype html>
+<!--
+  Glass - refractive glass type
+  Type seen through glass, a WebGL refraction and chromatic-dispersion lens drifting over set text, rendered live.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · http://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. All rights reserved.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Glass - refractive glass type</title>
+<meta name="description" content="Type seen through glass, a WebGL refraction and chromatic-dispersion lens drifting over set text, rendered live.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="http://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph (minimal) -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Glass - refractive glass type">
+<meta property="og:description" content="A WebGL refraction and chromatic-dispersion lens drifting over set text, rendered live.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Glass",
+  "applicationCategory": "DesignApplication",
+  "description": "Type seen through glass, a WebGL refraction and chromatic-dispersion lens drifting over set text, rendered live.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and WebGL",
+  "inLanguage": "en",
+  "keywords": "typography, webgl, refraction, glass, shader, dispersion, generative",
+  "license": "All rights reserved",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "http://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "http://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;height:100%;background:#FAFAFA;overflow:hidden;font-family:'DM Sans',sans-serif;}
+  #gl{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:crosshair;}
+</style>
+</head>
+<body>
+<canvas id="gl">Glass, refractive glass type. Requires JavaScript and WebGL.</canvas>
+
+<script src="./core/shader.js"></script>
+<script src="./core/exporters.js"></script>
+<script src="./core/ui.js"></script>
+<script>
+const { createGL, createProgram, createFullscreenQuad, createTexture, uploadCanvasTexture, FULLSCREEN_VS, resizeCanvasToDisplaySize, pngExport } = PT;
+
+const canvas = document.getElementById('gl');
+const gl = createGL(canvas);
+
+// Background editorial typography rendered to an offscreen 2D canvas, uploaded as texture.
+const bgCanvas = document.createElement('canvas');
+const bgCtx = bgCanvas.getContext('2d');
+const bgTex = createTexture(gl, { filter: gl.LINEAR });
+
+const BG_PALETTES = [
+  { bg: '#FAFAFA', ink: '#0A0A0A', accent: '#E8642D', name: 'OFF-WHITE' },
+  { bg: '#F0EBE1', ink: '#1A2744', accent: '#8B3A1A', name: 'WARM CREAM' },
+  { bg: '#0A0A0A', ink: '#FAFAFA', accent: '#E8642D', name: 'NEAR-BLACK' },
+  { bg: '#1A2744', ink: '#F0EBE1', accent: '#3ECF8E', name: 'NAVY' },
+];
+let bgIndex = 0;
+
+const COMPOSITIONS = [
+  drawComposition_Headline,
+  drawComposition_Manifesto,
+  drawComposition_Spread,
+  drawComposition_Verse,
+];
+let compIndex = 0;
+
+const fs = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 outColor;
+
+uniform sampler2D u_bg;
+uniform vec2 u_res;
+uniform float u_dpr;
+uniform int u_tileCount;
+uniform vec4 u_tiles[16];   // xy = center (px), zw = halfSize (px)
+uniform vec4 u_tileParams[16]; // x = radius, y = shape (0 rrect, 1 circle, 2 pill, 3 squircle), z = thickness scale, w = unused
+uniform float u_refraction;
+uniform float u_frost;
+uniform float u_chroma;
+uniform float u_bevel;
+uniform float u_inkDark; // 1 if ink-on-light bg (Fresnel + spec lighter), 0 if dark bg
+
+float sdRoundBox(vec2 p, vec2 b, float r){
+  vec2 q = abs(p) - b + r;
+  return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+}
+float sdCircle(vec2 p, float r){
+  return length(p) - r;
+}
+float sdSquircle(vec2 p, vec2 b, float k){
+  vec2 q = abs(p) / b;
+  float d = pow(pow(q.x, k) + pow(q.y, k), 1.0/k);
+  return (d - 1.0) * min(b.x, b.y);
+}
+
+float tileSDF(vec2 px, int i){
+  vec4 t = u_tiles[i];
+  vec4 p = u_tileParams[i];
+  vec2 local = px - t.xy;
+  int shape = int(p.y + 0.5);
+  if(shape == 1){
+    return sdCircle(local, min(t.z, t.w));
+  } else if(shape == 2){
+    float r = min(t.z, t.w);
+    return sdRoundBox(local, t.zw, r);
+  } else if(shape == 3){
+    return sdSquircle(local, t.zw, 4.0);
+  }
+  return sdRoundBox(local, t.zw, p.x);
+}
+
+// Closest tile SDF + which.
+vec2 sceneSDF(vec2 px){
+  float best = 1e9;
+  float idx = -1.0;
+  for(int i = 0; i < 16; i++){
+    if(i >= u_tileCount) break;
+    float d = tileSDF(px, i);
+    if(d < best){ best = d; idx = float(i); }
+  }
+  return vec2(best, idx);
+}
+
+vec3 sampleBlur(sampler2D tex, vec2 uv, float radius){
+  if(radius < 0.5){ return texture(tex, uv).rgb; }
+  vec3 acc = vec3(0.0);
+  float total = 0.0;
+  vec2 px = radius / u_res;
+  const int N = 12;
+  for(int i = 0; i < N; i++){
+    float a = float(i) / float(N) * 6.2831853;
+    vec2 off = vec2(cos(a), sin(a)) * px;
+    // two-ring poisson-ish sampling
+    acc += texture(tex, uv + off).rgb;
+    acc += texture(tex, uv + off * 0.55).rgb;
+    total += 2.0;
+  }
+  return acc / total;
+}
+
+void main(){
+  vec2 px = v_uv * u_res;
+  vec2 uv = v_uv;
+  vec2 sd = sceneSDF(px);
+  float d = sd.x;
+  int idx = int(sd.y + 0.5);
+
+  // Drop shadow for pixels outside any tile.
+  float shadow = 0.0;
+  if(d > 0.0){
+    // two-tap shadow: tight contact + soft ambient.
+    vec2 contactOff = vec2(3.0, -5.0) * u_dpr;
+    vec2 softOff = vec2(8.0, -16.0) * u_dpr;
+    float contactDist = sceneSDF(px - contactOff).x;
+    float softDist = sceneSDF(px - softOff).x;
+    contactDist = max(contactDist, 0.0);
+    softDist = max(softDist, 0.0);
+    float contact = exp(-contactDist / (10.0 * u_dpr)) * 0.18;
+    float soft = exp(-softDist / (40.0 * u_dpr)) * 0.10;
+    shadow = contact + soft;
+  }
+
+  vec3 bg = texture(u_bg, uv).rgb;
+  // Coverage alpha for edge anti-aliasing: 1 inside, 0 outside, smooth across 1.5 px.
+  float aa = 1.5 * u_dpr;
+  float cov = 1.0 - smoothstep(-aa, aa, d);
+  float shadowAlpha = shadow * (0.85 + 0.4 * u_inkDark);
+  vec3 outsideCol = mix(bg, vec3(0.0), shadowAlpha);
+  if(cov < 0.001){
+    outColor = vec4(outsideCol, 1.0);
+    return;
+  }
+
+  // Inside a glass tile. Compute height field with bevel falloff at edges.
+  // Clamp bevel against half the smaller tile dimension so small tiles don't get washed out.
+  float halfMin = min(u_tiles[idx].z, u_tiles[idx].w);
+  float bevel = min(u_bevel * u_dpr, halfMin * 0.6);
+  float h0 = smoothstep(0.0, bevel, -d);
+  // 2D gradient of h via SDF gradient - wider sampling step reduces aliasing.
+  float e = 2.0 * u_dpr;
+  float dx = (smoothstep(0.0, bevel, -tileSDF(px + vec2(e, 0.0), idx))
+            - smoothstep(0.0, bevel, -tileSDF(px - vec2(e, 0.0), idx))) * 0.5;
+  float dy = (smoothstep(0.0, bevel, -tileSDF(px + vec2(0.0, e), idx))
+            - smoothstep(0.0, bevel, -tileSDF(px - vec2(0.0, e), idx))) * 0.5;
+  vec2 grad = vec2(dx, dy); // points uphill (into glass)
+  // Refraction displaces uv against the gradient - bends the view ray.
+  float strength = u_refraction * u_tileParams[idx].z * u_dpr / u_res.x;
+
+  // Chromatic dispersion proportional to (1 - h0) - strongest at edges, vanishing in center.
+  // Blue has higher refractive index → bigger offset; red has lower.
+  float chromaAmt = u_chroma * (1.0 - h0);
+  vec2 cR = -grad * (strength * (1.0 - chromaAmt));
+  vec2 cG = -grad * (strength * 1.0);
+  vec2 cB = -grad * (strength * (1.0 + chromaAmt));
+  // Frost: blur amount mixes with sharp sample; mostly uniform inside glass with slight edge boost.
+  float frostR = u_frost * (0.6 + 0.4 * (1.0 - h0));
+  vec3 sharp = vec3(
+    texture(u_bg, uv + cR).r,
+    texture(u_bg, uv + cG).g,
+    texture(u_bg, uv + cB).b
+  );
+  vec3 blurred = sampleBlur(u_bg, uv + cG, frostR);
+  vec3 refr = mix(sharp, blurred, smoothstep(0.0, 1.0, u_frost / 12.0));
+
+  // Fresnel-ish edge whitening based on bg tone.
+  float fres = pow(1.0 - h0, 3.0);
+  vec3 edgeTint = vec3(1.0);
+  // For dark backgrounds we want bright edges; for light backgrounds we want gentle edges.
+  float edgeStrength = mix(0.35, 0.55, 1.0 - u_inkDark);
+  vec3 col = mix(refr, edgeTint, fres * edgeStrength);
+
+  // Specular arc along the upper-left edge: where grad aligns with lightDir.
+  vec2 lightDir = normalize(vec2(-0.55, 0.78));
+  float gradLen = length(grad) + 1e-5;
+  vec2 gradN = grad / gradLen;
+  float specBand = max(0.0, dot(gradN, lightDir));
+  float bevelMask = smoothstep(0.0, 0.6, 1.0 - h0) * smoothstep(1.0, 0.5, 1.0 - h0);
+  float gradMag = smoothstep(0.0, 0.05, gradLen);  // only where bevel actually slopes
+  float spec = pow(specBand, 5.0) * bevelMask * gradMag;
+  col += vec3(spec) * 0.9;
+
+  // Inner darkening on the opposite edge for the contact feel.
+  float darkside = pow(max(0.0, dot(gradN, -lightDir)), 4.0) * bevelMask * gradMag * 0.16;
+  col -= vec3(darkside);
+
+  // Outer rim of the glass: hairline highlight at the very edge for clean separation.
+  float rim = smoothstep(2.0, 0.0, -d) * smoothstep(0.0, 1.5, -d);
+  col = mix(col, vec3(1.0), rim * 0.18);
+
+  // Glass tinted ever so slightly cool.
+  col = mix(col, col * vec3(0.985, 0.99, 1.01), 0.5);
+
+  // Blend inside-color over outside-color (with shadow) via coverage for AA edge.
+  outColor = vec4(mix(outsideCol, col, cov), 1.0);
+}`;
+
+const prog = createProgram(gl, FULLSCREEN_VS, fs);
+const quad = createFullscreenQuad(gl);
+
+// Tile state.
+const tiles = [];
+const MAX_TILES = 16;
+function addTile(x, y, w = 280, h = 160, shape = 0){
+  if(tiles.length >= MAX_TILES) return null;
+  const radius = shape === 0 ? Math.min(w, h) * 0.25 : 0;
+  const t = { x, y, w, h, shape, radius, thickness: 1.0 };
+  tiles.push(t);
+  return t;
+}
+
+let refraction = 420;
+let frost = 6.0;
+let chroma = 0.14;
+let bevel = 42;
+let activeTile = null;
+let dragOffset = null;
+let interactMode = null;
+
+// Render.
+function resize(){
+  const dpr = window.devicePixelRatio || 1;
+  resizeCanvasToDisplaySize(canvas, dpr);
+  bgCanvas.width = canvas.width;
+  bgCanvas.height = canvas.height;
+  drawBackground();
+  uploadCanvasTexture(gl, bgTex, bgCanvas);
+  render();
+}
+
+function drawBackground(){
+  const W = bgCanvas.width, H = bgCanvas.height;
+  const pal = BG_PALETTES[bgIndex];
+  bgCtx.save();
+  bgCtx.fillStyle = pal.bg;
+  bgCtx.fillRect(0, 0, W, H);
+  bgCtx.fillStyle = pal.ink;
+  COMPOSITIONS[compIndex](bgCtx, W, H, pal);
+  bgCtx.restore();
+}
+
+function drawComposition_Headline(ctx, W, H, pal){
+  const dpr = window.devicePixelRatio || 1;
+  const m = Math.max(24 * dpr, Math.min(72 * dpr, W * 0.06));
+  const avail = W - 2 * m;
+  const availCss = avail / dpr;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+
+  // Headline, shrunk so the widest line fits the measure.
+  const h1 = 'TYPOGRAPHY', h2 = 'UNDER GLASS.';
+  let headlineSize = Math.min(W * 0.16, H * 0.30);
+  headlineSize = fitSize(ctx, h1, 900, "'DM Sans', sans-serif", avail, headlineSize);
+  headlineSize = fitSize(ctx, h2, 900, "'DM Sans', sans-serif", avail, headlineSize);
+  ctx.font = `900 ${headlineSize}px 'DM Sans', sans-serif`;
+  ctx.fillStyle = pal.ink;
+  const baseline = m + headlineSize;
+  ctx.fillText(h1, m, baseline);
+  ctx.fillText(h2, m, baseline + headlineSize * 0.95);
+
+  // Deck, wrapped to the measure.
+  const deckSize = Math.max(15, Math.min(28, availCss * 0.035)) * dpr;
+  ctx.font = `400 ${deckSize}px 'DM Sans', sans-serif`;
+  ctx.fillStyle = pal.ink + 'cc';
+  const deckY = baseline + headlineSize * 0.95 + deckSize * 2.2;
+  const deckEnd = wrapText(ctx, 'Refractive editorial surfaces. Drag the slabs to read the text through a real-time GPU-shaded sheet of glass.', m, deckY, avail, deckSize * 1.35);
+
+  // Body, flowed into a responsive column count.
+  const bodySize = Math.max(13, Math.min(15, availCss * 0.02)) * dpr;
+  ctx.font = `400 ${bodySize}px 'DM Sans', sans-serif`;
+  ctx.fillStyle = pal.ink + 'bb';
+  const nCols = availCss >= 960 ? 3 : availCss >= 520 ? 2 : 1;
+  const gap = 32 * dpr;
+  const colWidth = (avail - (nCols - 1) * gap) / nCols;
+  const colY = deckEnd + bodySize * 2.6;
+  flowColumns(ctx, bodyCopy.replace(/\n/g, ' '), m, colY, colWidth, gap, bodySize * 1.55, nCols, H - m);
+}
+
+function drawComposition_Manifesto(ctx, W, H, pal){
+  const dpr = window.devicePixelRatio || 1;
+  const m = Math.max(24 * dpr, Math.min(72 * dpr, W * 0.06));
+  const avail = W - 2 * m;
+  const lines = [
+    { t: 'A SLAB OF GLASS', w: 900 },
+    { t: 'IS A LENS', w: 400 },
+    { t: 'AND A LENS', w: 400 },
+    { t: 'IS AN OPINION.', w: 900 },
+  ];
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  // One size for the whole stack, shrunk so the widest line fits the measure.
+  let size = Math.min(W * 0.16, H * 0.22);
+  for(const l of lines) size = fitSize(ctx, l.t, l.w, "'DM Sans', sans-serif", avail, size);
+  const lh = size * 1.05;
+  let y = Math.max(m + size, (H - lh * lines.length) / 2 + size);
+  for(let i = 0; i < lines.length; i++){
+    const l = lines[i];
+    ctx.font = `${l.w} ${size}px 'DM Sans', sans-serif`;
+    ctx.fillStyle = i === 1 || i === 2 ? pal.accent : pal.ink;
+    ctx.fillText(l.t, m, y);
+    y += lh;
+  }
+  ctx.font = `500 ${12 * dpr}px 'IBM Plex Mono', monospace`;
+  ctx.fillStyle = pal.ink + '99';
+  ctx.fillText('- A GLASS MANIFESTO', m, H - m);
+}
+
+function drawComposition_Spread(ctx, W, H, pal){
+  const dpr = window.devicePixelRatio || 1;
+  const m = Math.max(24 * dpr, Math.min(72 * dpr, W * 0.06));
+  const avail = W - 2 * m;
+  const availCss = avail / dpr;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  const twoCol = availCss > 700;
+  const gap = 56 * dpr;
+  const colW = twoCol ? (avail - gap) / 2 : avail;
+
+  const quoteSize = Math.max(22 * dpr, Math.min(W * 0.052, H * 0.085));
+  const bodySize = Math.max(14 * dpr, Math.min(16 * dpr, avail * 0.02));
+  const attrSize = Math.min(14 * dpr, Math.max(11 * dpr, avail * 0.02));
+
+  // Pull quote: left column, or top on narrow screens.
+  ctx.font = `300 ${quoteSize}px 'DM Sans', sans-serif`;
+  ctx.fillStyle = pal.ink;
+  const quoteEnd = wrapText(ctx, '"The clearest letterform is the one you must look through to see."', m, m + quoteSize, colW, quoteSize * 1.15);
+
+  // Attribution.
+  ctx.font = `500 ${attrSize}px 'IBM Plex Mono', monospace`;
+  ctx.fillStyle = pal.accent;
+  const attrY = twoCol ? H - m : quoteEnd + quoteSize * 1.3;
+  ctx.fillText('- ON THE OPACITY OF LANGUAGE', m, attrY);
+
+  // Dense body: right column, or below the quote on narrow screens.
+  ctx.font = `400 ${bodySize}px 'DM Sans', sans-serif`;
+  ctx.fillStyle = pal.ink + 'cc';
+  const bx = twoCol ? m + colW + gap : m;
+  const by = twoCol ? m + bodySize : attrY + bodySize * 2.6;
+  wrapText(ctx, bodyCopy.replace(/\n/g, ' '), bx, by, colW, bodySize * 1.65);
+}
+
+function drawComposition_Verse(ctx, W, H, pal){
+  const dpr = window.devicePixelRatio || 1;
+  const m = Math.max(24 * dpr, Math.min(72 * dpr, W * 0.06));
+  const avail = W - 2 * m;
+  const verses = [
+    'a slab of nothing',
+    'pulls the lines below',
+    'the way a thumb',
+    'on a wet page',
+    'makes the ink',
+    'remember.',
+  ];
+  let sz = Math.min(W * 0.055, H * 0.10);
+  for(const v of verses) sz = fitSize(ctx, v, 200, "'DM Sans', sans-serif", avail, sz);
+  ctx.font = `200 ${sz}px 'DM Sans', sans-serif`;
+  ctx.fillStyle = pal.ink;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  const lh = sz * 1.35;
+  let y = Math.max(m + sz, (H - lh * verses.length) / 2 + sz);
+  for(const v of verses){
+    ctx.fillText(v, W / 2, y);
+    y += lh;
+  }
+  ctx.textAlign = 'left';
+  ctx.font = `500 ${12 * dpr}px 'IBM Plex Mono', monospace`;
+  ctx.fillStyle = pal.ink + '88';
+  ctx.fillText('GLASS - A SHORT VERSE', m, H - m);
+}
+
+// Greedy wrap to maxWidth; returns the baseline y of the last line drawn.
+function wrapText(ctx, text, x, y, maxWidth, lineHeight){
+  const words = text.split(/\s+/).filter(Boolean);
+  let line = '';
+  let cy = y;
+  for(const w of words){
+    const test = line ? line + ' ' + w : w;
+    if(ctx.measureText(test).width > maxWidth && line){
+      ctx.fillText(line, x, cy);
+      line = w;
+      cy += lineHeight;
+    } else { line = test; }
+  }
+  if(line) ctx.fillText(line, x, cy);
+  return cy;
+}
+
+// Largest font size (capped at idealSize) at which text fits maxWidth, measured live.
+function fitSize(ctx, text, weight, family, maxWidth, idealSize){
+  ctx.font = `${weight} 100px ${family}`;
+  const w = ctx.measureText(text).width || 1;
+  return Math.min(idealSize, 100 * maxWidth / w);
+}
+
+// Flow continuous text across n equal columns, wrapping at colWidth and
+// spilling into the next column when a column reaches maxY.
+function flowColumns(ctx, text, x0, y0, colWidth, gap, lineHeight, nCols, maxY){
+  const words = text.split(/\s+/).filter(Boolean);
+  let col = 0, y = y0, line = '';
+  for(const w of words){
+    const test = line ? line + ' ' + w : w;
+    if(ctx.measureText(test).width > colWidth && line){
+      ctx.fillText(line, x0 + col * (colWidth + gap), y);
+      line = w;
+      y += lineHeight;
+      if(y > maxY){ col++; y = y0; if(col >= nCols) return; }
+    } else { line = test; }
+  }
+  if(line && col < nCols) ctx.fillText(line, x0 + col * (colWidth + gap), y);
+}
+
+const bodyCopy = `The glass behaves as a slab with rounded edges, a quiet imposition on the page. Most refraction happens at the edges, where curvature concentrates; the centre stays mostly clear. Fresnel highlights catch the upper-left, drop shadows fall to the lower-right, and the text - set in DM Sans 900 over a body of DM Sans 400 - stays itself, only briefly re-shaped by the optic floating above it.
+A lens does not add meaning so much as redistribute it. What sits dead-centre reads plainly, while the margins bend, split into colour, and gather the light. Reading becomes an act of moving the instrument until the line you want settles into focus.
+Treat the words as a substrate and the glass as the thing that re-presents them. Move the slabs, resize them, change their shape, and keep the text legible only where, and only when, you choose.`;
+
+// Render.
+function render(){
+  const W = canvas.width, H = canvas.height;
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(prog);
+
+  // Tiles → uniforms.
+  const tilesData = new Float32Array(MAX_TILES * 4);
+  const paramsData = new Float32Array(MAX_TILES * 4);
+  for(let i = 0; i < tiles.length; i++){
+    const t = tiles[i];
+    tilesData[i*4+0] = t.x;
+    tilesData[i*4+1] = H - t.y; // flip Y for shader (we sample with flipped texture)
+    tilesData[i*4+2] = t.w * 0.5;
+    tilesData[i*4+3] = t.h * 0.5;
+    paramsData[i*4+0] = t.radius;
+    paramsData[i*4+1] = t.shape;
+    paramsData[i*4+2] = t.thickness;
+    paramsData[i*4+3] = 0;
+  }
+  gl.uniform4fv(gl.getUniformLocation(prog, 'u_tiles'), tilesData);
+  gl.uniform4fv(gl.getUniformLocation(prog, 'u_tileParams'), paramsData);
+  gl.uniform1i(gl.getUniformLocation(prog, 'u_tileCount'), tiles.length);
+  gl.uniform2f(gl.getUniformLocation(prog, 'u_res'), W, H);
+  gl.uniform1f(gl.getUniformLocation(prog, 'u_dpr'), window.devicePixelRatio || 1);
+  gl.uniform1f(gl.getUniformLocation(prog, 'u_refraction'), refraction);
+  gl.uniform1f(gl.getUniformLocation(prog, 'u_frost'), frost);
+  gl.uniform1f(gl.getUniformLocation(prog, 'u_chroma'), chroma);
+  gl.uniform1f(gl.getUniformLocation(prog, 'u_bevel'), bevel);
+  gl.uniform1f(gl.getUniformLocation(prog, 'u_inkDark'), bgIndex >= 2 ? 0.0 : 1.0);
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, bgTex);
+  gl.uniform1i(gl.getUniformLocation(prog, 'u_bg'), 0);
+
+  quad.draw();
+}
+
+// Interaction.
+function pointFromEvent(e){
+  const r = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  return { x: (e.clientX - r.left) * dpr, y: (e.clientY - r.top) * dpr };
+}
+function hitTest(p){
+  for(let i = tiles.length - 1; i >= 0; i--){
+    const t = tiles[i];
+    const dx = Math.abs(p.x - t.x), dy = Math.abs(p.y - t.y);
+    if(dx <= t.w * 0.5 && dy <= t.h * 0.5) return t;
+  }
+  return null;
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  const p = pointFromEvent(e);
+  const hit = hitTest(p);
+  if(hit){
+    if(e.shiftKey){
+      const i = tiles.indexOf(hit);
+      tiles.splice(i, 1);
+      activeTile = null;
+      render();
+      return;
+    }
+    activeTile = hit;
+    dragOffset = { x: p.x - hit.x, y: p.y - hit.y };
+    interactMode = 'drag';
+    canvas.setPointerCapture(e.pointerId);
+  } else {
+    const t = addTile(p.x, p.y);
+    if(t){
+      activeTile = t;
+      dragOffset = { x: 0, y: 0 };
+      interactMode = 'drag';
+      canvas.setPointerCapture(e.pointerId);
+    }
+    render();
+  }
+});
+canvas.addEventListener('pointermove', (e) => {
+  if(interactMode === 'drag' && activeTile){
+    const p = pointFromEvent(e);
+    activeTile.x = p.x - dragOffset.x;
+    activeTile.y = p.y - dragOffset.y;
+    render();
+  }
+});
+canvas.addEventListener('pointerup', (e) => {
+  if(interactMode){ canvas.releasePointerCapture(e.pointerId); interactMode = null; }
+});
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const p = pointFromEvent(e);
+  const t = hitTest(p) || activeTile;
+  if(t){
+    const delta = -e.deltaY * 0.6;
+    if(e.shiftKey){
+      t.thickness = Math.max(0.2, Math.min(3.5, t.thickness + delta * 0.003));
+    } else {
+      t.w = Math.max(60, t.w + delta);
+      t.h = Math.max(40, t.h + delta * 0.65);
+      if(t.shape === 1){ t.h = t.w; }
+      if(t.shape === 0){ t.radius = Math.min(t.w, t.h) * 0.25; }
+    }
+    render();
+  } else {
+    refraction = Math.min(1600, Math.max(0, refraction - e.deltaY * 0.3));
+    render();
+  }
+}, { passive: false });
+
+window.addEventListener('keydown', (e) => {
+  if(e.target && e.target.tagName === 'INPUT') return;
+  const k = e.key.toLowerCase();
+  if(k === 'e'){ exportPNG(); return; }
+  if(k === 'r'){ tiles.length = 0; addTile(canvas.width*0.32, canvas.height*0.45, 380, 220); addTile(canvas.width*0.62, canvas.height*0.6, 220, 220, 1); render(); return; }
+  if(k === 'b'){ bgIndex = (bgIndex + 1) % BG_PALETTES.length; drawBackground(); uploadCanvasTexture(gl, bgTex, bgCanvas); render(); return; }
+  if(k === 'c'){ compIndex = (compIndex + 1) % COMPOSITIONS.length; drawBackground(); uploadCanvasTexture(gl, bgTex, bgCanvas); render(); return; }
+  if(k >= '1' && k <= '4' && activeTile){
+    activeTile.shape = parseInt(k) - 1;
+    if(activeTile.shape === 1){ activeTile.h = activeTile.w; }
+    if(activeTile.shape === 0){ activeTile.radius = Math.min(activeTile.w, activeTile.h) * 0.25; }
+    render(); return;
+  }
+  if(k === 'arrowright'){ refraction = Math.min(1600, refraction + 24); render(); return; }
+  if(k === 'arrowleft'){ refraction = Math.max(0, refraction - 24); render(); return; }
+  if(k === 'arrowup'){ frost = Math.min(48, frost + 0.8); render(); return; }
+  if(k === 'arrowdown'){ frost = Math.max(0, frost - 0.8); render(); return; }
+});
+
+async function exportPNG(){
+  ui.hide();
+  await new Promise(r => requestAnimationFrame(r));
+  // The GL context preserves its drawing buffer, so the live canvas copies
+  // straight into the 2x export. Re-render once to guarantee a fresh frame.
+  render();
+  await pngExport(canvas, { scale: 2, filename: `glass-${Date.now()}.png` });
+  ui.show();
+}
+
+// Universal glassmorphic panel (top-center masthead + bottom legend, owns the H key).
+const ui = PT.ui({
+  title: 'Glass',
+  hints: 'Click add · Drag move · Shift-click delete · Scroll resize · 1–4 shape · ←→ refraction · B bg · C layout · E export',
+  theme: 'light',
+});
+
+// Init.
+function init(){
+  resize();
+  addTile(canvas.width * 0.32, canvas.height * 0.45, 420, 240, 0);
+  addTile(canvas.width * 0.66, canvas.height * 0.62, 240, 240, 1);
+  addTile(canvas.width * 0.78, canvas.height * 0.32, 280, 110, 2);
+  render();
+}
+init();
+
+window.addEventListener('resize', () => { resize(); });
+document.fonts && document.fonts.ready.then(() => {
+  drawBackground();
+  uploadCanvasTexture(gl, bgTex, bgCanvas);
+  render();
+});
+setTimeout(() => { drawBackground(); uploadCanvasTexture(gl, bgTex, bgCanvas); render(); }, 3000);
+</script>
+</body>
+</html>
