@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<!--
+  Measure - live line-break solve
+  A column re-typeset every frame against a living measure: carve the river on either edge and the words re-break line by line, faster than the eye can follow, with zero DOM reflow. Pretext-powered, rendered live on canvas.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · http://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. All rights reserved.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Measure - live line-break solve</title>
+<meta name="description" content="A column re-typeset every frame against a living measure: carve the river on either edge and the words re-break line by line, with zero DOM reflow. The typesetting solve is the animation. Pretext-powered, live on canvas.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="http://adidizdarevic.com/">
+<meta name="theme-color" content="#0A0A0A">
+
+<!-- Open Graph (minimal) -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Measure - live line-break solve">
+<meta property="og:description" content="Carve the river on either edge and the words re-break line by line, the typesetting solved again on every frame. Pretext-powered, live on canvas.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Measure",
+  "applicationCategory": "DesignApplication",
+  "description": "A column re-typeset every frame against a living measure: carve the river on either edge and the words re-break line by line, faster than the eye can follow, with zero DOM reflow. The line-break solve itself is the animation. Pretext-powered, rendered live on canvas.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "typography, typesetting, pretext, line-breaking, measure, justification, reflow, kinetic, generative, canvas",
+  "license": "All rights reserved",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "http://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "http://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#0A0A0A; --ink:#FAFAFA; --accent:#E8642D; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ height:100%; background:var(--bg); overflow:hidden; }
+  canvas{ display:block; touch-action:none; cursor:crosshair; }
+</style>
+</head>
+<body>
+<canvas id="c">Measure, a live line-break solve. Requires JavaScript and an HTML5 canvas.</canvas>
+
+<script src="./core/ui.js"></script>
+<script type="module">
+import { prepareWithSegments, layoutNextLineRange, materializeLineRange }
+  from 'https://esm.sh/@chenglou/pretext@0.0.7';
+
+const TEXT =
+  "The measure is the length of a line - the distance the eye travels before it turns back. " +
+  "Set it too wide and the reader loses the way home; too narrow and the rhythm shatters into fragments. " +
+  "For five centuries the measure held still, fixed by the frame of the page. Here it does not. " +
+  "The boundary is yours to draw - carve the river on either edge and the words must answer, " +
+  "re-breaking line by line, faster than the eye can follow, yet never once touching the page beneath. " +
+  "What you see is not an animation laid over the text. It is the typesetting itself, solved again on every frame: " +
+  "reading made visible as the act it has always been, a negotiation between the word and the space it is given.";
+
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d', { alpha:false });
+const ui = window.PT.ui({
+  title:'Measure',
+  hints:'Drag carves the river · L R B edge · J justify · Space play · E export · 0 reset',
+  theme:'dark',
+});
+
+let DPR=1, W=0, H=0;
+let fontSize=30, lineHeight=40, font='30px "DM Sans"';
+let prepared=null;
+const wordW = new Map();
+let spaceW = 0;
+
+// ---- column geometry ----
+let colX=0, colTop=0, colW=600, colWBase=600, MIN_W=200, maxInset=240, widthScale=1;
+function computeColumn(){
+  fontSize = Math.max(22, Math.min(34, Math.round(H*0.034)));
+  lineHeight = Math.round(fontSize*1.36);
+  font = `${fontSize}px "DM Sans"`;
+  colWBase = Math.min(760, Math.round(W*0.62));
+  colW = colWBase * widthScale;
+  colX = Math.round((W - colW)/2);
+  colTop = Math.round(H*0.15);
+  maxInset = colW*0.40;
+  MIN_W = colW*0.18;
+}
+function reprepare(){
+  ctx.font = font;
+  prepared = prepareWithSegments(TEXT, font, { whiteSpace:'normal' });
+  wordW.clear();
+  for(const w of TEXT.split(/\s+/)){ if(w && !wordW.has(w)) wordW.set(w, ctx.measureText(w).width); }
+  spaceW = ctx.measureText(' ').width;
+}
+
+// ---- the measure: two hand-sculpted boundary profiles (the "rivers") ----
+const BINS = 200;
+const leftInset  = new Float32Array(BINS);   // px pulled in from the LEFT edge, per y-bin
+const rightInset = new Float32Array(BINS);   // px pulled in from the RIGHT edge, per y-bin
+function binOfY(y){ const f=(y-colTop)/Math.max(1,H-colTop); return Math.max(0,Math.min(BINS-1, f*BINS)); }
+function sample(arr, y){
+  const b = binOfY(y), i = b|0, f = b-i, j = Math.min(BINS-1, i+1);
+  return arr[i]*(1-f) + arr[j]*f;
+}
+
+// state
+let playing=false;                 // autonomous breathing of the boundary (off = calm/usable)
+let editEdge='right';              // 'left' | 'right' | 'both'  - which river the pointer sculpts
+let justifyMode=0;                 // 0 justified · 1 flush-left · 2 flush-right
+let t=0, breath=18;
+let exporting=false;               // true during the PNG grab: clean type-only still, no rivers/glow
+
+function rightInsetAt(y){ let v=sample(rightInset,y); if(playing) v+=(Math.sin(y*0.014 - t*1.05)*0.5+0.5)*breath; return Math.min(maxInset,v); }
+function leftInsetAt(y){  let v=sample(leftInset,y);  if(playing) v+=(Math.sin(y*0.016 + t*0.9)*0.5+0.5)*breath*0.7; return Math.min(maxInset,v); }
+function geomAt(y){
+  const li=leftInsetAt(y), ri=rightInsetAt(y);
+  const w=Math.max(MIN_W, colW - li - ri);
+  return { x: colX+li, w };
+}
+
+// ---- reflow heat (glow where a break just moved) ----
+let prevEnds=[], heat=[];
+const keyOf = c => c.segmentIndex*100000 + c.graphemeIndex;
+
+function drawLine(text, x, y, maxW, isLast, glow){
+  const g = Math.min(0.55, glow);
+  ctx.fillStyle = g>0.01
+    ? `rgb(${(250+(232-250)*g)|0},${(250+(100-250)*g)|0},${(250+(45-250)*g)|0})`
+    : '#FAFAFA';
+  const words = text.split(/\s+/).filter(Boolean);
+  let sum=0; const ws=[];
+  for(const w of words){ let ww=wordW.get(w); if(ww===undefined){ ww=ctx.measureText(w).width; wordW.set(w,ww); } ws.push(ww); sum+=ww; }
+  const naturalW = sum + Math.max(0,words.length-1)*spaceW;
+  if(justifyMode===0 && !isLast && words.length>1 && naturalW < maxW){
+    const gap=(maxW-sum)/(words.length-1); let cx=x;
+    for(let i2=0;i2<words.length;i2++){ ctx.fillText(words[i2], cx, y); cx += ws[i2] + gap; }
+    return;
+  }
+  if(justifyMode===2){ ctx.fillText(text, x + Math.max(0, maxW - naturalW), y); return; }
+  ctx.fillText(text, x, y);
+}
+
+const dt=0.016;
+function frame(){
+  if(!prepared || exporting){ requestAnimationFrame(frame); return; }   // hold the canvas still during the export grab
+  if(playing) t+=dt;
+  renderScene();
+  requestAnimationFrame(frame);
+}
+
+function renderScene(){
+  ctx.fillStyle='#0A0A0A'; ctx.fillRect(0,0,W,H);
+  ctx.textBaseline='alphabetic'; ctx.font=font;
+
+  // --- THE SOLVE: re-typeset the whole column against the live measure, every frame ---
+  let cursor={segmentIndex:0,graphemeIndex:0};
+  let y=colTop+fontSize;
+  const lines=[];
+  while(true){
+    const g=geomAt(y);
+    const range=layoutNextLineRange(prepared, cursor, g.w);
+    if(range===null) break;
+    const line=materializeLineRange(prepared, range);
+    lines.push({ text:line.text, x:g.x, maxW:g.w, y, key:keyOf(range.end) });
+    cursor=range.end; y+=lineHeight;
+    if(lines.length>240) break;
+  }
+
+  // draw lines + accumulate reflow heat
+  const ends=[];
+  for(let i=0;i<lines.length;i++){
+    const L=lines[i];
+    if(prevEnds[i]!==undefined && prevEnds[i]!==L.key){ heat[i]=1; }
+    else if(heat[i]===undefined) heat[i]=0;
+    drawLine(L.text, L.x, L.y, L.maxW, i===lines.length-1, exporting?0:(heat[i]||0));
+    heat[i]=Math.max(0,(heat[i]||0)-dt*3.2);
+    ends[i]=L.key;
+  }
+  if(!exporting) prevEnds=ends;
+
+  // --- draw the two rivers (boundaries), active edge brighter ---
+  if(!exporting && lines.length){
+    const yTop=lines[0].y - fontSize*0.78, yBot=lines[lines.length-1].y + fontSize*0.28;
+    const drawEdge=(side, on)=>{
+      ctx.beginPath();
+      for(let yy=yTop; yy<=yBot; yy+=4){
+        const x = side==='L' ? colX+leftInsetAt(yy) : colX+colW-rightInsetAt(yy);
+        if(yy===yTop) ctx.moveTo(x,yy); else ctx.lineTo(x,yy);
+      }
+      ctx.strokeStyle = on ? 'rgba(232,100,45,0.55)' : 'rgba(232,100,45,0.16)';
+      ctx.lineWidth = on ? 1.5 : 1; ctx.stroke();
+    };
+    drawEdge('L', editEdge==='left'||editEdge==='both');
+    drawEdge('R', editEdge==='right'||editEdge==='both');
+  }
+}
+
+// ---- export: grab the strongest frame as a clean 2x PNG (type only, no rivers) ----
+function exportPNG(){
+  if(exporting || !prepared) return;
+  ui.hide();
+  exporting=true;
+  cv.width=Math.round(W*2); cv.height=Math.round(H*2);
+  ctx.setTransform(2,0,0,2,0,0);
+  renderScene();
+  cv.toBlob(blob=>{
+    exporting=false;
+    resize();            // restore live canvas size, DPR transform and re-prepare
+    ui.show();
+    if(!blob) return;
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download='measure.png';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
+  },'image/png');
+}
+
+// ---- sculpting input ----
+let dragging=false;
+function paint(e){
+  const x=e.clientX, y=e.clientY;
+  const depthR=Math.max(0,Math.min(maxInset,(colX+colW)-x));
+  const depthL=Math.max(0,Math.min(maxInset, x-colX));
+  const c=binOfY(y)|0, brush=7;
+  for(let b=c-brush;b<=c+brush;b++){
+    if(b<0||b>=BINS) continue;
+    const f=1-Math.abs(b-c)/(brush+1);
+    if(editEdge==='right'){ rightInset[b]=rightInset[b]+(depthR-rightInset[b])*f; }
+    else if(editEdge==='left'){ leftInset[b]=leftInset[b]+(depthL-leftInset[b])*f; }
+    else { rightInset[b]=rightInset[b]+(depthR-rightInset[b])*f; leftInset[b]=leftInset[b]+(depthR-leftInset[b])*f; }
+  }
+}
+cv.addEventListener('pointerdown', e=>{ dragging=true; cv.setPointerCapture?.(e.pointerId); paint(e); });
+cv.addEventListener('pointermove', e=>{ if(dragging) paint(e); });
+cv.addEventListener('pointerup',   ()=>{ dragging=false; });
+cv.addEventListener('pointerleave',()=>{ dragging=false; });
+window.addEventListener('wheel', e=>{ widthScale=Math.max(0.5,Math.min(1.25, widthScale - e.deltaY*0.0006)); computeColumn(); }, {passive:true});
+window.addEventListener('keydown', e=>{
+  if(!e.key) return;
+  const k=e.key.toLowerCase();
+  if(e.key===' '){ e.preventDefault(); playing=!playing; }
+  else if(k==='l') editEdge='left';
+  else if(k==='r') editEdge='right';
+  else if(k==='b') editEdge='both';
+  else if(k==='j') justifyMode=(justifyMode+1)%3;
+  else if(k==='e'){ exportPNG(); }
+  else if(e.key==='Escape'||k==='0'){ leftInset.fill(0); rightInset.fill(0); widthScale=1; playing=false; computeColumn(); }   // reset: rivers + width + play
+});
+
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth; H=window.innerHeight;
+  cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px'; cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  computeColumn();
+  if(prepared) reprepare();
+}
+window.addEventListener('resize', resize);
+
+async function boot(){
+  resize();
+  ctx.fillStyle='#0A0A0A'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(250,250,250,0.35)'; ctx.font='12px "IBM Plex Mono",monospace';
+  ctx.fillText('typesetting…', colX, colTop+fontSize);
+  try{
+    await Promise.race([
+      Promise.all([
+        document.fonts.load(`300 ${fontSize}px "DM Sans"`),
+        document.fonts.load(`400 ${fontSize}px "DM Sans"`),
+        document.fonts.load(`500 ${fontSize}px "DM Sans"`),
+        document.fonts.ready,
+      ]),
+      new Promise(r=>setTimeout(r,3000)),
+    ]);
+  }catch(_){}
+  computeColumn(); reprepare();
+}
+requestAnimationFrame(frame);
+boot();
+</script>
+</body>
+</html>
