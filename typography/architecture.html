@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<!--
+  Architecture - type-as-skyline study
+  Each wall is a paragraph that found its own height: line-count drives the tower, so the skyline is a side effect of how the text breaks across a narrow measure. Pretext-powered, rendered live on canvas.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · http://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. All rights reserved.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Architecture - type as skyline</title>
+<meta name="description" content="A city set, not drawn: each tower is a paragraph whose own line-breaks decide its height. Pretext lays the type, the skyline is the side effect. Live on canvas.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="http://adidizdarevic.com/">
+<meta name="theme-color" content="#efe9da">
+
+<!-- Open Graph (minimal) -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Architecture - type as skyline">
+<meta property="og:description" content="Each tower is a paragraph that found its own height: layout is the form. Pretext-powered, rendered live on canvas.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Architecture",
+  "applicationCategory": "DesignApplication",
+  "description": "A city set, not drawn: each tower is a paragraph whose own line-breaks decide its height. Pretext lays the type; the skyline is the side effect. Edit the copy and the city reshapes live.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "typography, typesetting, pretext, line-breaking, skyline, architecture, generative, canvas",
+  "license": "All rights reserved",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "http://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "http://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,500&family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#efe9da;
+    --paper-deep:#e7e0ce;
+    --ink:#1a1813;
+    --ink-soft:#6a6453;
+    --rule:#1a181333;
+    --hair:#1a18131f;
+    --dock-b:clamp(16px,3vh,26px);
+  }
+  body.theme-warm{  --paper:#efe9da; --ink:#1a1813; --ink-soft:#6a6453; --hair:#1a18131f; }
+  body.theme-white{ --paper:#ffffff; --ink:#141414; --ink-soft:#8a8a8a; --hair:#11111122; }
+  body.theme-black{ --paper:#0e0e0e; --ink:#f2f2f2; --ink-soft:#8c8c8c; --hair:#ffffff22; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; }
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"DM Sans",sans-serif;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+    transition:background .25s ease;
+  }
+  /* paper grain (warm only) */
+  body::after{
+    content:"";
+    position:fixed; inset:0; pointer-events:none; z-index:50; opacity:.045;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    background-size:180px 180px;
+    mix-blend-mode:multiply;
+  }
+  body.theme-white::after, body.theme-black::after{ opacity:0; }
+  #stage{ position:fixed; inset:0; }
+  canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+
+  /* ---- floating glass control dock (bottom-center, above the legend) ---- */
+  .dock{
+    position:fixed; z-index:40;
+    left:50%; bottom:var(--dock-b); transform:translateX(-50%);
+    display:flex; flex-direction:column; align-items:center; gap:9px;
+    padding:11px 16px 9px;
+    background:color-mix(in srgb, var(--paper) 62%, transparent);
+    -webkit-backdrop-filter:blur(16px) saturate(1.25);
+    backdrop-filter:blur(16px) saturate(1.25);
+    border:1px solid var(--hair); border-radius:16px;
+    box-shadow:0 12px 38px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.22);
+    font-family:"IBM Plex Mono",ui-monospace,monospace;
+    max-width:calc(100vw - 24px);
+    transition:opacity .25s ease, transform .25s ease, visibility .25s;
+  }
+  .dock-row{ display:flex; align-items:center; gap:18px; }
+  .dock-sep{ width:1px; align-self:stretch; min-height:30px; background:var(--hair); }
+  .dock-hint{ font-size:9px; letter-spacing:.03em; line-height:1.4; text-align:center; color:var(--ink-soft); }
+  .dock-hint b{ color:var(--ink); font-weight:600; }
+  .dock-hint .d{ opacity:.4; margin:0 6px; }
+  body.ui-hidden .dock,
+  body.ui-hidden .editor{ opacity:0; visibility:hidden; pointer-events:none; transform:translateX(-50%) translateY(8px); }
+
+  .swatches{ display:flex; gap:7px; }
+  .sw{ width:16px; height:16px; border-radius:4px; border:0; padding:0; cursor:pointer; outline:none;
+    box-shadow:inset 0 0 0 1px rgba(128,128,128,.30); transition:transform .12s ease; }
+  .sw:hover{ transform:translateY(-1px); }
+  .sw[aria-pressed="true"]{ box-shadow:inset 0 0 0 1.5px var(--ink); }
+  .sw.warm{  background:linear-gradient(135deg,#efe9da 0 50%,#3a352a 50% 100%); }
+  .sw.white{ background:linear-gradient(135deg,#ffffff 0 50%,#141414 50% 100%); }
+  .sw.black{ background:linear-gradient(135deg,#0e0e0e 0 50%,#f0f0f0 50% 100%); }
+
+  .seg{ display:flex; gap:14px; font-size:10px; letter-spacing:.12em; text-transform:uppercase; }
+  .opt{ background:none; border:0; padding:0 0 2px; cursor:pointer; color:var(--ink-soft); border-bottom:1px solid transparent; transition:color .12s; }
+  .opt:hover{ color:var(--ink); }
+  .opt[aria-pressed="true"]{ color:var(--ink); border-bottom-color:var(--ink); }
+
+  .field{ display:flex; flex-direction:column; gap:6px; min-width:118px; }
+  .lbl{ display:flex; justify-content:space-between; align-items:baseline; font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-soft); }
+  .lbl .val{ color:var(--ink); font-weight:500; }
+  input[type=range]{
+    -webkit-appearance:none; appearance:none; width:100%; height:1px; background:var(--ink);
+    outline:none; opacity:.85; cursor:ew-resize;
+  }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:12px; height:12px; border-radius:50%; background:var(--paper); border:1.4px solid var(--ink); }
+  input[type=range]::-moz-range-thumb{ width:12px; height:12px; border-radius:50%; background:var(--paper); border:1.4px solid var(--ink); }
+
+  .edit-btn{
+    display:flex; align-items:center; gap:7px;
+    background:none; border:0; padding:0; cursor:pointer;
+    font-family:inherit; font-size:10px; letter-spacing:.12em; text-transform:uppercase; white-space:nowrap;
+    color:var(--ink-soft); transition:color .12s;
+  }
+  .edit-btn:hover{ color:var(--ink); }
+  .edit-btn[aria-pressed="true"]{ color:var(--ink); }
+  .edit-btn .dot{ width:6px; height:6px; border-radius:50%; border:1.4px solid currentColor; transition:background .15s; }
+  .edit-btn[aria-pressed="true"] .dot{ background:#E8642D; border-color:#E8642D; }
+
+  /* ---- edit-text panel (glass card above the dock) ---- */
+  .editor{
+    position:fixed; z-index:39;
+    left:50%; bottom:calc(var(--dock-b) + 90px); transform:translateX(-50%);
+    width:min(560px, calc(100vw - 24px));
+    padding:14px 15px 13px;
+    background:color-mix(in srgb, var(--paper) 70%, transparent);
+    -webkit-backdrop-filter:blur(18px) saturate(1.2);
+    backdrop-filter:blur(18px) saturate(1.2);
+    border:1px solid var(--hair); border-radius:14px;
+    box-shadow:0 14px 40px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.22);
+    font-family:"IBM Plex Mono",ui-monospace,monospace;
+    opacity:0; visibility:hidden; transform:translateX(-50%) translateY(8px);
+    transition:opacity .2s ease, transform .2s ease, visibility .2s;
+  }
+  .editor.open{ opacity:1; visibility:visible; transform:translateX(-50%) translateY(0); }
+  .editor-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:9px; }
+  .editor-head .t{ font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-soft); }
+  .editor-head .reset{ background:none; border:0; padding:0; cursor:pointer; font-family:inherit; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-soft); border-bottom:1px solid transparent; transition:color .12s,border-color .12s; }
+  .editor-head .reset:hover{ color:var(--ink); border-bottom-color:var(--ink); }
+  #editText{
+    width:100%; height:110px; resize:none;
+    background:transparent; border:0; outline:none;
+    color:var(--ink); caret-color:#E8642D;
+    font-family:"DM Sans",sans-serif; font-size:13px; line-height:1.55;
+  }
+  #editText::placeholder{ color:var(--ink-soft); opacity:.7; }
+
+  @media (max-width:640px){
+    .dock-row{ gap:13px; flex-wrap:wrap; justify-content:center; }
+    .dock{ padding:10px 13px 8px; }
+    .dock-sep{ display:none; }
+    .field{ min-width:96px; }
+  }
+</style>
+</head>
+<body class="theme-warm">
+  <div id="stage"><canvas id="c"></canvas></div>
+
+  <!-- edit-text panel -->
+  <div class="editor" id="editor">
+    <div class="editor-head">
+      <span class="t">Your copy fills every tower</span>
+      <button class="reset" id="editReset" type="button">Reset to default</button>
+    </div>
+    <textarea id="editText" spellcheck="false" placeholder="Type to pour your own copy into the city. The skyline reshapes to how your text breaks across the measure - smaller type climbs, larger settles."></textarea>
+  </div>
+
+  <!-- single floating glass control bar -->
+  <div class="dock" id="dock">
+    <div class="dock-row">
+      <div class="swatches" role="group" aria-label="Color">
+        <button class="sw warm"  data-theme="warm"  aria-pressed="true"  title="Warm paper"></button>
+        <button class="sw white" data-theme="white" aria-pressed="false" title="White"></button>
+        <button class="sw black" data-theme="black" aria-pressed="false" title="Black"></button>
+      </div>
+      <div class="dock-sep"></div>
+      <div class="seg" role="group" aria-label="Surface">
+        <button class="opt" data-fill="on"  aria-pressed="true">Solid</button>
+        <button class="opt" data-fill="off" aria-pressed="false">Text</button>
+      </div>
+      <div class="dock-sep"></div>
+      <div class="field">
+        <div class="lbl"><span>Towers</span><span class="val" id="tv">5</span></div>
+        <input id="count" type="range" min="1" max="9" step="1" value="5">
+      </div>
+      <div class="field">
+        <div class="lbl"><span>Type size</span><span class="val" id="sv">11 px</span></div>
+        <input id="size" type="range" min="9" max="22" step="1" value="11">
+      </div>
+      <div class="dock-sep"></div>
+      <button class="edit-btn" id="editBtn" type="button" aria-pressed="false"><span class="dot"></span>Edit</button>
+    </div>
+    <div class="dock-hint"><b>Drag</b> a tower to resize<span class="d">·</span><b>1-9</b> set towers<span class="d">·</span><b>H</b> hide</div>
+  </div>
+
+  <script src="./core/ui.js"></script>
+<script type="module">
+import { prepareWithSegments, layoutWithLines } from "https://esm.sh/@chenglou/pretext@0.0.7";
+
+const ui = window.PT.ui({
+  title: "Architecture",
+  theme: "light",   // legend lives in the single bottom bar; masthead only up top
+});
+
+const COPY = {
+  apex:"A facade is set, not drawn. Each wall is a paragraph that found its own height: the lines accrue, the leading multiplies, and the tower rises exactly as far as the text demands and not a pixel further. Nothing here is ornament. The building is the body copy; the silhouette is only a side effect of how a sentence happens to break across a narrow measure. Set the type smaller and the city climbs. Set it larger and the skyline settles back down. The shape is an argument about reading, made in stone.",
+  bowl:"Geometry first, paint second. Every line break is arithmetic over cached glyph widths, resolved before a single element is appended anywhere. Nothing is measured against the live document and nothing reflows. The skyline you are reading was solved in a fraction of a millisecond and then projected onto oblique walls with one transform per face. Speed is not the headline here; determinism is. The same input yields the same wall, on every frame, for as long as you care to look.",
+  serif:"Read the front, then the flank. The front face is true to scale. The flank recedes along a fixed depth axis, foreshortened but never perspectival, so the verticals stay vertical and the text on the side reads as a wall rather than a vanishing trick toward some far horizon. Two readable planes meet at one hard edge, and a third, the roof, catches the light. Type is asked to behave like masonry and it obliges without any complaint at all.",
+  foot:"Type is the material. Stack it, shear it, and let the roofline crop the final line clean. The grey of a far district is only weight and density doing the quiet work that light would do in a photograph. Pack the measure tighter and the column darkens; loosen it and the wall turns pale. Tone is typesetting. There is no texture anywhere in this image, only letters standing close enough together to read as poured concrete.",
+  spur:"Distance is a translation along the depth axis. The same letters are lifted and slid back, drawn first so the nearer towers can paint cleanly over their trailing edges. A set-back block hazes gently into the paper and the eye agrees to read it as far away. No fog, no gradient, only the order of operations. The back of the city is the front of the city, moved.",
+  spine:"Behind the row, a quieter mass. It carries less text and so it sits lower, content deciding form and form confessing content. A short paragraph cannot pretend to be a skyscraper, and this one does not try to.",
+  link:"A link is the slender bridge between two bowls, the hairline that admits these two strokes are one letter. Hold the measure narrow and even a single long word becomes a column. The bridge between two thoughts is only a line break deferred, then deferred again, until the sentence stands upright and calls itself a building.",
+  bar:"The bar is the horizontal that crosses a stem and changes everything: an l becomes a t, a plain vertical becomes a junction that carries load. Structure, in the end, is mostly a question of where you decide to put the crossing, and how much of the weight above you are willing to let it bear.",
+  tail:"A tail is the descender that drops below the baseline and refuses to be contained by it. The shortest paragraph still throws the longest shadow once you set it in the dark, where weight reads as mass and a single sentence can anchor the corner of a whole block.",
+};
+
+const BUILDINGS = [
+  { key:"serif", title:"Serif", wFrac:.112, depthFrac:.132, wzFrac:.000, value:"mid",   weight:400, gapFrac:.058, front:COPY.serif, side:COPY.foot,  maxLines:19 },
+  { key:"bowl",  title:"Bowl",  wFrac:.120, depthFrac:.120, wzFrac:.000, value:"light", weight:400, gapFrac:.058, front:COPY.bowl,  side:COPY.apex,  maxLines:27 },
+  { key:"apex",  title:"Apex",  wFrac:.128, depthFrac:.128, wzFrac:.000, value:"light", weight:500, gapFrac:.056, front:COPY.apex,  side:COPY.bowl,  maxLines:34 },
+  { key:"stem",  title:"Stem",  wFrac:.084, depthFrac:.100, wzFrac:.000, value:"dark",  weight:700, gapFrac:.058, mode:"glyph", glyph:"a", sizeScale:1.10, maxLines:29 },
+  { key:"foot",  title:"Foot",  wFrac:.100, depthFrac:.122, wzFrac:.000, value:"light", weight:500, gapFrac:.058, front:COPY.foot,  side:COPY.spur,  maxLines:16 },
+  { key:"spine", title:"Spine", wFrac:.112, depthFrac:.122, wzFrac:.045, value:"dark",  weight:500, gapFrac:.058, front:COPY.spine, side:COPY.serif, maxLines:11 },
+  { key:"link",  title:"Link",  wFrac:.096, depthFrac:.114, wzFrac:.000, value:"mid",   weight:400, gapFrac:.058, front:COPY.link,  side:COPY.bar,   maxLines:21 },
+  { key:"bar",   title:"Bar",   wFrac:.120, depthFrac:.120, wzFrac:.000, value:"light", weight:500, gapFrac:.058, front:COPY.bar,   side:COPY.apex,  maxLines:27 },
+  { key:"tail",  title:"Tail",  wFrac:.106, depthFrac:.116, wzFrac:.045, value:"dark",  weight:600, gapFrac:0,    front:COPY.tail,  side:COPY.spur,  maxLines:13 },
+];
+
+const THEMES = {
+  warm: {
+    page:["#f1ebdc","#e7e0ce"], fg:"#1a1813", fgSide:"#1a181396",
+    values:{
+      light:{ front:{bg:"#ece5d4", fg:"#1c1a14"}, side:{bg:"#d6cdb8", fg:"#26241c"}, top:{bg:"#f4eee0"}, edge:"#1a181333" },
+      mid:  { front:{bg:"#cac1aa", fg:"#262318"}, side:{bg:"#a59a83", fg:"#f1ebdc"}, top:{bg:"#d8d0bc"}, edge:"#1a18133a" },
+      dark: { front:{bg:"#23211b", fg:"#d8d0bd"}, side:{bg:"#16140f", fg:"#a39a86"}, top:{bg:"#322f27"}, edge:"#cdc6b21f" },
+    },
+  },
+  white: {
+    page:["#ffffff","#ffffff"], fg:"#141414", fgSide:"#14141496",
+    values:{
+      light:{ front:{bg:"#efefef", fg:"#141414"}, side:{bg:"#d6d6d6", fg:"#141414"}, top:{bg:"#f7f7f7"}, edge:"#11111133" },
+      mid:  { front:{bg:"#c7c7c7", fg:"#141414"}, side:{bg:"#a3a3a3", fg:"#141414"}, top:{bg:"#d6d6d6"}, edge:"#1111113a" },
+      dark: { front:{bg:"#1b1b1b", fg:"#f0f0f0"}, side:{bg:"#0c0c0c", fg:"#c9c9c9"}, top:{bg:"#2a2a2a"}, edge:"#ffffff1f" },
+    },
+  },
+  black: {
+    page:["#0e0e0e","#0e0e0e"], fg:"#f2f2f2", fgSide:"#f2f2f29e",
+    values:{
+      light:{ front:{bg:"#e8e8e8", fg:"#111111"}, side:{bg:"#bfbfbf", fg:"#111111"}, top:{bg:"#f4f4f4"}, edge:"#00000040" },
+      mid:  { front:{bg:"#8f8f8f", fg:"#111111"}, side:{bg:"#666666", fg:"#f4f4f4"}, top:{bg:"#a0a0a0"}, edge:"#00000040" },
+      dark: { front:{bg:"#1a1a1a", fg:"#e8e8e8"}, side:{bg:"#0b0b0b", fg:"#bdbdbd"}, top:{bg:"#272727"}, edge:"#ffffff24" },
+    },
+  },
+};
+let theme = "warm";
+let fillsOff = false;     // Solid <-> Text toggle, orthogonal to color
+let count = 5;            // number of towers, 1..9 (keys 1-9)
+let textOverride = null;  // when set, this copy fills every tower (Edit text)
+let VALUES = THEMES[theme].values;
+
+const CAM = { angleDeg:30, depthScale:.55 };
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+let stageW=0, stageH=0, dpr=1, bodySize=11;
+const floorOverrides={};      // key -> floors, set by dragging a tower
+let drawOrder=null, drag=null;
+
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const depthVec=()=>{ const a=CAM.angleDeg*Math.PI/180; return { x:Math.cos(a)*CAM.depthScale, y:-Math.sin(a)*CAM.depthScale }; };
+
+function resize(){
+  dpr = Math.min(window.devicePixelRatio||1, 2);
+  stageW = window.innerWidth; stageH = window.innerHeight;
+  canvas.width = Math.round(stageW*dpr); canvas.height = Math.round(stageH*dpr);
+  draw();
+}
+
+function project(x,y,z,ox,baseY,D){ return { x: ox + x + z*D.x, y: baseY - y + z*D.y }; }
+
+function buildScene(){
+  const D = depthVec();
+  const lh = Math.max(11, Math.round(bodySize*1.34));
+  const skyW = Math.min(stageW*0.86, 1000);
+  const baseY = Math.round(stageH*0.85);
+  const ceiling = Math.round(stageH*0.115);           // tallest a tower may reach
+  const active = BUILDINGS.slice(0, clamp(count,1,BUILDINGS.length));
+
+  // adaptive horizontal scale so any 1..9 towers fit the frame (shrink only when needed)
+  let sumW=0, sumGap=0;
+  active.forEach((b,i)=>{ sumW+=b.wFrac; if(i<active.length-1) sumGap+=(b.gapFrac??0); });
+  const scale = skyW * Math.min(1, (stageW*0.90)/(((sumW+sumGap)*skyW)||1));
+
+  let cursorX = 0;
+  const items=[];
+  for(const b of active){
+    const size = Math.round(bodySize*(b.sizeScale||1));
+    const blh  = Math.max(11, Math.round(size*1.34));
+    const w = Math.round(b.wFrac*scale);
+    const depth = Math.round(b.depthFrac*scale);
+    const wz = Math.round((b.wzFrac||0)*scale);
+    const font = `${b.weight} ${size}px 'DM Sans'`;
+    const padX = Math.max(6, Math.round(size*0.62));
+    const padY = Math.max(5, Math.round(size*0.55));
+    const titleH = b.title ? Math.round(size*2.5) : 0;  // cleared band at the top of the front face
+    const faceWfront = Math.max(8, w - padX*2);
+
+    // text editing: when the user supplies copy, it fills every tower (glyph walls included)
+    const useGlyph = b.mode==="glyph" && !textOverride;
+    const frontSrc = useGlyph ? b.glyph.repeat(900) : (textOverride || b.front);
+    const sideSrc  = useGlyph ? b.glyph.repeat(900) : (textOverride || b.side || b.front);
+
+    let H, frontLines, defFloors, maxFloors;
+    const minFloors = b.minLines || 3;
+    const ceilFloors = Math.max(minFloors, Math.floor((baseY-ceiling - padY*2 - titleH)/blh));
+    if(useGlyph){
+      frontLines = layoutWithLines(prepareWithSegments(frontSrc, font), faceWfront, blh).lines;
+      defFloors = b.maxLines||20;
+      maxFloors = ceilFloors;                                  // glyph wall is unbounded; sky is the only limit
+    } else {
+      const res = layoutWithLines(prepareWithSegments(frontSrc, font), faceWfront, blh);
+      frontLines = res.lines;
+      defFloors = clamp(res.lines.length, minFloors, b.maxLines||40);
+      maxFloors = Math.min(ceilFloors, res.lines.length);      // a tower can be no taller than its own text
+    }
+    const ov = floorOverrides[b.key];
+    const floors = clamp(ov!=null ? ov : defFloors, minFloors, maxFloors);
+    H = clamp(floors*blh + padY*2 + titleH, 3*blh, baseY-ceiling);
+
+    const sideLen = depth*Math.hypot(D.x,D.y);
+    const faceWside = Math.max(8, sideLen - padX*0.8);
+    const sideLines = layoutWithLines(prepareWithSegments(sideSrc, font), faceWside, blh).lines;
+
+    items.push({ ...b, size, blh, w, depth, wz, font, padX, padY, titleH, H, floors, minFloors, maxFloors, faceWfront, faceWside, frontLines, sideLines, x:cursorX, glyphMode:useGlyph });
+    cursorX += w + Math.round((b.gapFrac??0)*scale);
+  }
+
+  // center the footprint, then nudge left so the up-right depth stays on canvas
+  const footprint = cursorX - Math.round((active[active.length-1].gapFrac??0)*scale);
+  const maxDepthX = Math.max(...items.map(b=>b.depth*D.x));
+  const ox = Math.round((stageW - footprint - maxDepthX)/2);
+  return { items, ox, baseY, D, lh, skyW };
+}
+
+function quad(p0,p1,p2,p3){ ctx.beginPath(); ctx.moveTo(p0.x,p0.y); ctx.lineTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.lineTo(p3.x,p3.y); ctx.closePath(); }
+
+function drawJustifiedLine(text,y,faceW,fg,justify,isLast){
+  ctx.fillStyle=fg;
+  if(!justify||isLast){ ctx.fillText(text,0,y); return; }
+  const parts=text.split(" ").filter(s=>s.length);
+  if(parts.length<2){ ctx.fillText(text,0,y); return; }
+  let wsum=0; const ww=parts.map(p=>{ const m=ctx.measureText(p).width; wsum+=m; return m; });
+  const gaps=parts.length-1;
+  const gap=(faceW-wsum)/gaps;
+  const nat=ctx.measureText(" ").width;
+  if(gap<nat*0.85 || gap>nat*3.2){ ctx.fillText(text,0,y); return; }   // avoid rivers / overstretch
+  let x=0;
+  for(let i=0;i<parts.length;i++){ ctx.fillText(parts[i],x,y); x+=ww[i]+gap; }
+}
+
+function drawTextFace(O,R,Dn,faceW,faceH,lines,blh,padX,padY,fg,justify,yOff){
+  yOff = yOff||0;
+  ctx.save();
+  // clip to the face polygon (screen space, base transform)
+  quad(O, add(O,scale(R,faceW+padX*2)), add(add(O,scale(R,faceW+padX*2)),scale(Dn,faceH)), add(O,scale(Dn,faceH)));
+  // (the polygon above is the inset-origin face; good enough as a clip)
+  ctx.clip();
+  ctx.transform(R.x,R.y,Dn.x,Dn.y,O.x,O.y);
+  ctx.textBaseline="top";
+  const maxRows = Math.floor((faceH - padY - yOff)/blh);
+  const rows = Math.min(lines.length, Math.max(0,maxRows));
+  for(let i=0;i<rows;i++){
+    const last = (i===lines.length-1);
+    drawJustifiedLine(lines[i].text, yOff + i*blh, faceW, fg, justify, last);
+  }
+  ctx.restore();
+}
+
+const add=(a,b)=>({x:a.x+b.x,y:a.y+b.y});
+const scale=(a,s)=>({x:a.x*s,y:a.y*s});
+const unit=(a)=>{ const l=Math.hypot(a.x,a.y)||1; return {x:a.x/l,y:a.y/l}; };
+
+function drawBuilding(b,ox,baseY,D){
+  const th=THEMES[theme], textOnly=fillsOff;
+  const v=VALUES[b.value];
+  const x=b.x, w=b.w, H=b.H, depth=b.depth, wz=b.wz;
+  // world corners -> screen
+  const Dd=project(x,     H,wz,        ox,baseY,D);   // front top-left
+  const C =project(x+w,   H,wz,        ox,baseY,D);   // front top-right
+  const A =project(x,     0,wz,        ox,baseY,D);   // front bottom-left
+  const B =project(x+w,   0,wz,        ox,baseY,D);   // front bottom-right
+  const G =project(x+w,   H,wz+depth,  ox,baseY,D);   // back top-right
+  const Hh=project(x,     H,wz+depth,  ox,baseY,D);   // back top-left
+  const F =project(x+w,   0,wz+depth,  ox,baseY,D);   // back bottom-right
+
+  const Rx={x:1,y:0}, Dn={x:0,y:1};                   // front basis (unskewed)
+  const Rz=unit(D);                                   // side basis (sheared)
+
+  b._front=[Dd,C,B,A]; b._side=[C,G,F,B]; b._top=[Dd,C,G,Hh];   // hit regions
+
+  const frontFg = textOnly ? th.fg     : v.front.fg;
+  const sideFg  = textOnly ? th.fgSide : v.side.fg;
+  const titleFg = textOnly ? th.fg     : v.front.fg;
+
+  // ---- TOP (roof) ----
+  if(!textOnly){ quad(Dd,C,G,Hh); ctx.fillStyle=v.top.bg; ctx.fill(); }
+  // ---- SIDE (right, receding) ----
+  if(!textOnly){ quad(C,G,F,B); ctx.fillStyle=v.side.bg; ctx.fill(); }
+  drawTextFace(add(add(C,scale(Rz,b.padX)),scale(Dn,b.padY)), Rz, Dn, b.faceWside, H, b.sideLines, b.blh, b.padX, b.padY, sideFg, true, 0);
+  // ---- FRONT (true) ----
+  if(!textOnly){ quad(Dd,C,B,A); ctx.fillStyle=v.front.bg; ctx.fill(); }
+  drawTextFace(add(add(Dd,scale(Rx,b.padX)),scale(Dn,b.padY)), Rx, Dn, b.faceWfront, H, b.frontLines, b.blh, b.padX, b.padY, frontFg, !b.glyphMode, b.titleH);
+
+  // ---- display title in the cleared top band (Instrument Serif italic), fitted to face width ----
+  if(b.title && b.titleH){
+    ctx.save();
+    quad(Dd,C,B,A); ctx.clip();
+    let ts = clamp(Math.round(b.titleH*0.86), 14, 60);
+    ctx.font = `italic 400 ${ts}px 'Instrument Serif'`;
+    const avail = b.faceWfront + b.padX*0.4;
+    let tw = ctx.measureText(b.title).width;
+    if(tw>avail){ ts = Math.max(12, Math.floor(ts*avail/tw)); ctx.font = `italic 400 ${ts}px 'Instrument Serif'`; }
+    ctx.textBaseline="alphabetic";
+    const tx = Dd.x + b.padX;
+    const ty = Dd.y + b.padY + b.titleH*0.62;
+    ctx.fillStyle = titleFg; ctx.fillText(b.title, tx, ty);
+    if(!textOnly){   // thin baseline rule under the title, like a cornice
+      ctx.strokeStyle = v.front.fg; ctx.globalAlpha=0.28; ctx.lineWidth=0.8;
+      ctx.beginPath(); ctx.moveTo(tx, Dd.y+b.padY+b.titleH-2); ctx.lineTo(tx+b.faceWfront, Dd.y+b.padY+b.titleH-2); ctx.stroke();
+      ctx.globalAlpha=1;
+    }
+    ctx.restore();
+  }
+
+  // ---- hairline edges ----
+  if(!textOnly){
+    ctx.lineWidth=0.8; ctx.strokeStyle=v.edge;
+    quad(Dd,C,B,A); ctx.stroke();
+    quad(C,G,F,B); ctx.stroke();
+    quad(Dd,C,G,Hh); ctx.stroke();
+  }
+}
+
+function draw(){
+  if(!stageW) return;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,stageW,stageH);
+  // subtle paper wash
+  const g=ctx.createLinearGradient(0,0,0,stageH);
+  g.addColorStop(0,THEMES[theme].page[0]); g.addColorStop(1,THEMES[theme].page[1]);
+  ctx.fillStyle=g; ctx.fillRect(0,0,stageW,stageH);
+
+  const scene=buildScene();
+  const { items, ox, baseY, D }=scene;
+
+  // painter's order: far (large wz) first, then left->right
+  drawOrder=[...items].sort((a,b)=> (b.wz-a.wz) || (a.x-b.x));
+  for(const b of drawOrder) drawBuilding(b,ox,baseY,D);
+
+  window.__ready=true;
+}
+
+// ---- controls ----
+const sizeEl=document.getElementById("size"), sv=document.getElementById("sv");
+sizeEl.addEventListener("input",()=>{ bodySize=+sizeEl.value; sv.textContent=bodySize+" px"; draw(); });
+
+const countEl=document.getElementById("count"), tv=document.getElementById("tv");
+function setCount(n){
+  n=clamp(Math.round(n),1,9);
+  if(n===count) return;
+  count=n; countEl.value=String(n); tv.textContent=String(n);
+  draw();
+}
+countEl.addEventListener("input",()=>setCount(+countEl.value));
+
+// keyboard: 1-9 set tower count · H hides the whole UI (masthead handled by PT.ui)
+window.addEventListener("keydown",e=>{
+  if(e.metaKey||e.ctrlKey||e.altKey) return;
+  const tag=(e.target&&e.target.tagName)||"";
+  if(tag==="TEXTAREA"||tag==="INPUT") return;
+  if(e.key && e.key.toLowerCase()==="h"){ document.body.classList.toggle("ui-hidden"); return; }
+  if(e.key>="1" && e.key<="9"){ setCount(+e.key); }
+});
+
+window.addEventListener("resize",resize);
+
+// ---- color theme ----
+function applyTheme(name){
+  if(!THEMES[name]) return;
+  theme=name; VALUES=THEMES[name].values||VALUES;
+  document.body.className="theme-"+name;
+  document.querySelectorAll(".sw").forEach(b=>b.setAttribute("aria-pressed", String(b.dataset.theme===name)));
+  ui.theme(name==="black" ? "dark" : "light");
+  document.querySelector('meta[name="theme-color"]').setAttribute("content", THEMES[name].page[0]);
+  draw();
+}
+document.querySelectorAll(".sw").forEach(b=> b.addEventListener("click",()=>applyTheme(b.dataset.theme)) );
+
+function applyFill(off){
+  fillsOff=off;
+  document.querySelectorAll(".opt").forEach(b=>b.setAttribute("aria-pressed", String((b.dataset.fill==="off")===off)));
+  draw();
+}
+document.querySelectorAll(".opt").forEach(b=> b.addEventListener("click",()=>applyFill(b.dataset.fill==="off")) );
+
+// ---- edit text: pour your own copy into every tower ----
+const editor=document.getElementById("editor"), editBtn=document.getElementById("editBtn");
+const editText=document.getElementById("editText"), editReset=document.getElementById("editReset");
+function setEditOpen(open){
+  editor.classList.toggle("open", open);
+  editBtn.setAttribute("aria-pressed", String(open));
+  if(open) editText.focus();
+}
+editBtn.addEventListener("click",()=> setEditOpen(!editor.classList.contains("open")) );
+editText.addEventListener("input",()=>{
+  const v=editText.value.trim();
+  textOverride = v.length ? editText.value : null;
+  draw();
+});
+editReset.addEventListener("click",()=>{ editText.value=""; textOverride=null; draw(); editText.focus(); });
+editText.addEventListener("keydown",e=>{ if(e.key==="Escape"){ setEditOpen(false); } });
+
+// ---- direct manipulation: grab a tower, drag up to add floors, down to remove ----
+function relPt(e){ const r=canvas.getBoundingClientRect(); return { x:e.clientX-r.left, y:e.clientY-r.top }; }
+function pointInPoly(px,py,poly){
+  let inside=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const xi=poly[i].x, yi=poly[i].y, xj=poly[j].x, yj=poly[j].y;
+    if(((yi>py)!==(yj>py)) && (px < (xj-xi)*(py-yi)/((yj-yi)||1e-9)+xi)) inside=!inside;
+  }
+  return inside;
+}
+function pick(x,y){
+  if(!drawOrder) return null;
+  for(let i=drawOrder.length-1;i>=0;i--){           // front-most (drawn last) wins
+    const b=drawOrder[i];
+    if(b._front && (pointInPoly(x,y,b._front)||pointInPoly(x,y,b._side)||pointInPoly(x,y,b._top))) return b;
+  }
+  return null;
+}
+canvas.addEventListener("pointerdown",e=>{
+  const p=relPt(e), b=pick(p.x,p.y);
+  if(!b) return;
+  drag={ key:b.key, startY:p.y, startFloors:b.floors, blh:b.blh, min:b.minFloors, max:b.maxFloors };
+  canvas.setPointerCapture(e.pointerId);
+  canvas.style.cursor="grabbing";
+  e.preventDefault();
+});
+canvas.addEventListener("pointermove",e=>{
+  const p=relPt(e);
+  if(drag){
+    const dFloors=Math.round((drag.startY-p.y)/drag.blh);    // drag up = taller
+    floorOverrides[drag.key]=clamp(drag.startFloors+dFloors, drag.min, drag.max);
+    draw();
+  } else {
+    canvas.style.cursor = pick(p.x,p.y) ? "ns-resize" : "default";
+  }
+});
+function endDrag(){ if(drag){ drag=null; canvas.style.cursor="default"; } }
+canvas.addEventListener("pointerup",endDrag);
+canvas.addEventListener("pointercancel",endDrag);
+
+// gate on fonts so Pretext measures the real glyphs, not fallbacks
+async function boot(){
+  try{
+    await Promise.all([
+      document.fonts.load("300 14px 'DM Sans'"),
+      document.fonts.load("400 14px 'DM Sans'"),
+      document.fonts.load("500 14px 'DM Sans'"),
+      document.fonts.load("600 14px 'DM Sans'"),
+      document.fonts.load("700 14px 'DM Sans'"),
+      document.fonts.load("italic 400 40px 'Instrument Serif'"),
+      document.fonts.load("500 12px 'IBM Plex Mono'"),
+    ]);
+    await document.fonts.ready;
+  }catch(e){ /* render anyway */ }
+  resize();
+}
+boot();
+</script>
+</body>
+</html>
