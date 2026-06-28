@@ -1,12 +1,7 @@
 ### License & Usage
 
-© 2024-6 Adi Dizdarevic - All rights reserved.
+© 2024–2026 Adi Dizdarevic. Licensed under [CC BY-NC 4.0](LICENSE).
 
-This repository is publicly visible for **preview and demonstration purposes only**.
+NUI is a collection of experiments in interface design and interaction. You're welcome to explore, study, and build on this work for non-commercial purposes.
 
-No permission is granted to:
-- use the code in personal or commercial projects  
-- modify, copy, or redistribute any part of this repository  
-- integrate any assets, logic, or interaction concepts into other software  
-
-All work in this repository. Visual, interactive, or conceptual, remains proprietary to the author.
+For commercial use, or to license a specific project, please get in touch: https://adidizdarevic.com
