@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<!--
+  Sediment - objects that settle as they age
+  Objects sink toward the floor and desaturate as they age, and float back up the moment you touch them.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Sediment - objects that settle as they age</title>
+<meta name="description" content="Objects sink toward the floor and desaturate as they age, and float back up the moment you touch them.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Sediment - objects that settle as they age">
+<meta property="og:description" content="Objects sink toward the floor and desaturate as they age, and float back up the moment you touch them.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Sediment",
+  "applicationCategory": "DesignApplication",
+  "description": "Objects sink toward the floor and desaturate as they age, and float back up the moment you touch them.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "sediment, interaction design, recency, aging, settling, desaturation, time, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg: #0a0a0c; --fg: rgba(255,255,255,0.92); --fg-dim: rgba(255,255,255,0.45); --fg-faint: rgba(255,255,255,0.18);
+    --grid: rgba(255,255,255,0.018); --chrome-bg: rgba(20,20,24,0.85); --chrome-bd: rgba(255,255,255,0.08);
+    --obj: rgb(132,137,148);
+  }
+  body.light { --bg: #FAFAFA; --fg: rgba(0,0,0,0.88); --fg-dim: rgba(0,0,0,0.45); --fg-faint: rgba(0,0,0,0.15); --grid: rgba(0,0,0,0.03); --chrome-bg: rgba(255,255,255,0.88); --chrome-bd: rgba(0,0,0,0.08); --obj: rgb(98,103,113); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s; }
+  canvas { position: fixed; inset: 0; display: block; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+  #cursor { position: fixed; left: 0; top: 0; width: 20px; height: 20px; border: 1.5px solid var(--fg); border-radius: 50%; pointer-events: none; z-index: 100; transform: translate(-50%, -50%); transition: border-color 0.2s, width 0.15s, height 0.15s; }
+  #cursor::before, #cursor::after { content: ''; position: absolute; background: var(--fg); }
+  #cursor::before { top: 50%; left: -3px; right: -3px; height: 1px; transform: translateY(-50%); }
+  #cursor::after { left: 50%; top: -3px; bottom: -3px; width: 1px; transform: translateX(-50%); }
+  #cursor.drag { border-color: var(--fg); }
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <div id="toggle" title="Toggle theme"></div>
+  <div id="cursor"></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const cursor = document.getElementById('cursor');
+const readout = { set innerHTML(v){}, set textContent(v){} };
+const ui = PT.ui({ title: 'Sediment', hints: 'Click drop shape · Drag move · Space fast-forward · R reset', theme: 'light' });
+const toggle = document.getElementById('toggle');
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); document.body.classList.toggle('light', !dark); ui.theme(dark ? 'dark' : 'light'); });
+
+// state BEFORE resize
+let W = 0, H = 0;
+let shapes = [];
+let drag = null;
+let mx = -100, my = -100;
+let hoverId = null;
+let fastForward = false;
+let startTime = 0;
+let virtualTime = 0; // advances at 1x, or 20x when space held
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() {
+  if (shapes.length === 0) seed();
+}
+resize();
+window.addEventListener('resize', resize);
+
+startTime = performance.now();
+
+function mulberry32(s) { return function() { let t = (s += 0x6D2B79F5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function makeShape(x, y, t) {
+  return {
+    id: Date.now() + Math.random(),
+    x, y,
+    baseY: y,
+    settledOffset: 0, // how far it has fallen from baseY
+    size: 22 + Math.random() * 20,
+    birthTime: t,
+    lastTouched: t, // when the shape was last edited/moved
+  };
+}
+
+function seed() {
+  const rng = mulberry32(626262);
+  const positions = [
+    [0.15, 0.22], [0.3, 0.35], [0.48, 0.25], [0.65, 0.38], [0.82, 0.28],
+    [0.22, 0.55], [0.4, 0.62], [0.58, 0.55], [0.75, 0.62],
+    [0.3, 0.8], [0.5, 0.78],
+  ];
+  for (let i = 0; i < positions.length; i++) {
+    const [nx, ny] = positions[i];
+    const t = -i * 1500; // pretend these were created at decreasing times in the past
+    const s = makeShape(nx * W, ny * H, t);
+    s.birthTime = t;
+    s.lastTouched = t;
+    shapes.push(s);
+  }
+}
+
+
+function drawTimelineAxis() {
+  // Left-edge axis showing 'now' at top, 'oldest' at bottom
+  X.save();
+  X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-faint');
+  X.lineWidth = 1;
+  X.setLineDash([2, 5]);
+  X.beginPath(); X.moveTo(36, 60); X.lineTo(36, H - 60); X.stroke();
+  X.setLineDash([]);
+  X.font = '9px "IBM Plex Mono", monospace';
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+  X.textAlign = 'left';
+  X.fillText('Now', 42, 66);
+  X.textBaseline = 'bottom';
+  X.fillText('Oldest', 42, H - 56);
+  X.restore();
+}
+
+function draw() {
+  // Time: virtualTime advances based on fast-forward state
+  const now = performance.now();
+  const baseNow = now - startTime;
+  virtualTime += fastForward ? 16 * 20 : 16;
+  const age = (s) => Math.max(0, virtualTime - s.lastTouched);
+  // Compute target sediment offset for each shape
+  // Max offset: a shape old enough falls toward the bottom of the canvas.
+  // Normalize age: 0s = 0 offset, 60s = reaches bottom
+  const TOP_MARGIN = 80;
+  const BOTTOM_MARGIN = 60;
+  const MAX_AGE_MS = 60000; // 60 seconds of staleness = full fall
+  X.clearRect(0, 0, W, H);
+  drawTimelineAxis();
+
+  // Ease each shape's actual position toward its sediment target
+  for (const s of shapes) {
+    const a = age(s);
+    const t = clamp(a / MAX_AGE_MS, 0, 1);
+    // ease-in-quad: old shapes fall faster as they age
+    const eased = t * t;
+    const targetY = TOP_MARGIN + eased * (H - TOP_MARGIN - BOTTOM_MARGIN - s.baseY);
+    // actually: target is baseY + (H - BOTTOM_MARGIN - baseY) * eased
+    const finalY = s.baseY + (H - BOTTOM_MARGIN - s.baseY) * eased;
+    s.x = s.x; // don't drift horizontally (stays in place)
+    if (drag && drag.id === s.id) {
+      // during drag, position is driven by cursor; don't sediment
+    } else {
+      const diff = finalY - s.y;
+      s.y += diff * 0.03; // slow settle
+    }
+    s.sedimentT = t;
+  }
+
+  // Stacking: if a shape lands on top of another near the bottom, bounce up
+  // Simple collision resolution from bottom up
+  const sortedByY = [...shapes].sort((a, b) => b.y - a.y);
+  for (let i = 0; i < sortedByY.length; i++) {
+    const s = sortedByY[i];
+    for (let j = i + 1; j < sortedByY.length; j++) {
+      const t = sortedByY[j];
+      const dx = s.x - t.x;
+      const dy = s.y - t.y;
+      const dist = Math.hypot(dx, dy);
+      const minDist = s.size + t.size;
+      if (dist < minDist && dist > 0.01) {
+        const push = (minDist - dist) * 0.3;
+        const nx = dx / dist, ny = dy / dist;
+        // push up the upper (t is below s because sorted by y desc means s is below).
+        // Actually sortedByY is descending: highest y first (bottom of canvas).
+        // So s is lower, t is higher. Push t up (away from s).
+        t.x -= nx * push * 0.3;
+        t.y -= ny * push * 0.9; // prioritize vertical resolution
+      }
+    }
+  }
+
+  // Draw shapes: opacity fades with age
+  for (const s of shapes) {
+    const t = s.sedimentT || 0;
+    const isDrag = drag && drag.id === s.id;
+    X.save();
+    // fade toward muted as it ages
+    X.globalAlpha = 1 - t * 0.35;
+    // the shape under the cursor (being dragged) is the one charged thing
+    X.fillStyle = isDrag ? '#FBF251' : getComputedStyle(document.body).getPropertyValue('--obj');
+    X.beginPath(); X.arc(s.x, s.y, s.size, 0, Math.PI * 2); X.fill();
+    // inner lightness band: recent shapes get a bright rim
+    if (t < 0.2) {
+      X.strokeStyle = '#fff';
+      X.globalAlpha = (0.2 - t) / 0.2 * 0.7;
+      X.lineWidth = 1;
+      X.beginPath(); X.arc(s.x, s.y, s.size + 1, 0, Math.PI * 2); X.stroke();
+    }
+    X.restore();
+    // age label
+    X.save();
+    X.font = '9px "IBM Plex Mono", monospace';
+    X.textAlign = 'center';
+    X.textBaseline = 'top';
+    X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+    X.globalAlpha = 0.8;
+    const ageSec = Math.max(0, (virtualTime - s.lastTouched) / 1000);
+    X.fillText(ageSec < 1 ? 'now' : `-${ageSec.toFixed(0)}s`, s.x, s.y + s.size + 4);
+    X.restore();
+  }
+
+  // Hover / drag outline
+  for (const s of shapes) {
+    const isHover = hoverId === s.id && !drag;
+    const isDrag = drag && drag.id === s.id;
+    if (isHover || isDrag) {
+      X.save();
+      X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+      X.lineWidth = 1;
+      X.setLineDash(isDrag ? [] : [3, 3]);
+      X.beginPath(); X.arc(s.x, s.y, s.size + 8, 0, Math.PI * 2); X.stroke();
+      X.restore();
+    }
+  }
+
+  // Chrome
+  const oldest = shapes.length ? Math.max(...shapes.map(s => (virtualTime - s.lastTouched))) / 1000 : 0;
+  readout.innerHTML = `Objects <b>${shapes.length}</b> · Oldest <b>${oldest.toFixed(0)}s</b>${fastForward ? ' · <b>Fast-forward 20×</b>' : ''}`;
+}
+
+function loop() { draw(); requestAnimationFrame(loop); }
+loop();
+
+function hit(x, y) {
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (Math.hypot(x - s.x, y - s.y) < s.size + 4) return s;
+  }
+  return null;
+}
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    if (s) {
+      s.x = mx - drag.offX;
+      s.y = my - drag.offY;
+      s.baseY = s.y;
+      s.lastTouched = virtualTime; // refresh recency
+    }
+  } else {
+    const h = hit(mx, my);
+    hoverId = h ? h.id : null;
+  }
+});
+window.addEventListener('pointerdown', e => {
+  const h = hit(e.clientX, e.clientY);
+  if (h) {
+    drag = { id: h.id, offX: e.clientX - h.x, offY: e.clientY - h.y, startX: h.x, startY: h.y };
+    cursor.classList.add('drag');
+  } else {
+    // Drop a new shape at the click position
+    const s = makeShape(e.clientX, e.clientY, virtualTime);
+    s.baseY = e.clientY;
+    shapes.push(s);
+  }
+});
+window.addEventListener('pointerup', (e) => {
+  if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    if (s) {
+      const moved = Math.hypot(s.x - drag.startX, s.y - drag.startY);
+      // lastTouched already refreshed during move; if user just clicked (no move), still refresh
+      if (moved < 4) s.lastTouched = virtualTime;
+    }
+  }
+  drag = null;
+  cursor.classList.remove('drag');
+});
+window.addEventListener('keydown', e => {
+  if (e.key === ' ') { fastForward = true; e.preventDefault(); }
+  else if (e.key === 'r' || e.key === 'R') {
+    shapes = [];
+    virtualTime = 0;
+    seed();
+  }
+});
+window.addEventListener('keyup', e => {
+  if (e.key === ' ') fastForward = false;
+});
+</script>
+</body>
+</html>

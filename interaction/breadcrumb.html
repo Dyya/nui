@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<!--
+  Breadcrumb - time-travel through edit history
+  Every edit drops a breadcrumb on the canvas: hover to ghost the scene as it was, click to jump back to that state.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Breadcrumb - time-travel through edit history</title>
+<meta name="description" content="Every edit drops a breadcrumb on the canvas: hover to ghost the scene as it was, click to jump back to that state.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Breadcrumb - time-travel through edit history">
+<meta property="og:description" content="Every edit drops a breadcrumb on the canvas: hover to ghost the scene as it was, click to jump back to that state.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Breadcrumb",
+  "applicationCategory": "DesignApplication",
+  "description": "Every edit drops a breadcrumb on the canvas: hover to ghost the scene as it was, click to jump back to that state.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "breadcrumb, interaction design, history, undo, time travel, states, provenance, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg: #0a0a0c; --fg: rgba(255,255,255,0.92); --fg-dim: rgba(255,255,255,0.45); --fg-faint: rgba(255,255,255,0.18);
+    --grid: rgba(255,255,255,0.018); --chrome-bg: rgba(20,20,24,0.85); --chrome-bd: rgba(255,255,255,0.08);
+    --orange: #E8642D; --blue: #5A78FF; --green: #3DDC84; --cyan: #28CFE0;
+  }
+  body.light { --bg: #FAFAFA; --fg: rgba(0,0,0,0.88); --fg-dim: rgba(0,0,0,0.45); --fg-faint: rgba(0,0,0,0.15); --grid: rgba(0,0,0,0.03); --chrome-bg: rgba(255,255,255,0.88); --chrome-bd: rgba(0,0,0,0.08); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s; }
+  canvas { position: fixed; inset: 0; display: block; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+  #cursor { position: fixed; left: 0; top: 0; width: 20px; height: 20px; border: 1.5px solid var(--fg); border-radius: 50%; pointer-events: none; z-index: 100; transform: translate(-50%, -50%); transition: border-color 0.2s, width 0.15s, height 0.15s; }
+  #cursor::before, #cursor::after { content: ''; position: absolute; background: var(--fg); }
+  #cursor::before { top: 50%; left: -3px; right: -3px; height: 1px; transform: translateY(-50%); }
+  #cursor::after { left: 50%; top: -3px; bottom: -3px; width: 1px; transform: translateX(-50%); }
+  #cursor.drag { border-color: var(--orange); transform: translate(-50%, -50%) scale(1.3); }
+  #cursor.crumb { border-color: var(--cyan); }
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <div id="toggle" title="Toggle theme"></div>
+  <div id="cursor"></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const cursor = document.getElementById('cursor');
+const readout = { set innerHTML(v){}, set textContent(v){} };
+const ui = PT.ui({ title: 'Breadcrumb trail', hints: 'Drag shape · Click recolor · Hover crumb preview · Click crumb jump · R reset', theme: 'light' });
+const toggle = document.getElementById('toggle');
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); document.body.classList.toggle('light', !dark); ui.theme(dark ? 'dark' : 'light'); });
+
+// state BEFORE resize
+let W = 0, H = 0;
+let seed = 323232;
+let shapes = [];
+let crumbs = []; // { id, type, at, shapeId, snapshot (full state), label }
+let drag = null;
+let mx = -100, my = -100;
+let hoverShapeId = null;
+let hoverCrumbId = null;
+let currentCrumbId = 0; // most recent
+let stepCounter = 0;
+
+const PALETTE = ['#45ED8C', '#33EBD7', '#29A5EA', '#2043E9', '#5016DF', '#D6409F'];
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() { if (shapes.length === 0) build(); }
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) { return function() { let t = (s += 0x6D2B79F5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+
+function build() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  const positions = [[0.22, 0.38], [0.5, 0.32], [0.78, 0.38], [0.32, 0.68], [0.68, 0.68]];
+  for (let i = 0; i < 5; i++) {
+    const [nx, ny] = positions[i];
+    shapes.push({
+      id: i + 1,
+      x: nx * W, y: ny * H,
+      size: 44 + rng() * 10,
+      color: PALETTE[i % PALETTE.length],
+      colorIdx: i % PALETTE.length,
+    });
+  }
+  crumbs = [];
+  stepCounter = 0;
+  // initial state crumb
+  recordCrumb('init', null, 'INIT', -1000, -1000);
+}
+
+function snapshot() {
+  return shapes.map(s => ({ id: s.id, x: s.x, y: s.y, size: s.size, color: s.color, colorIdx: s.colorIdx }));
+}
+function applySnapshot(snap) {
+  for (const st of snap) {
+    const s = shapes.find(x => x.id === st.id);
+    if (s) { s.x = st.x; s.y = st.y; s.size = st.size; s.color = st.color; s.colorIdx = st.colorIdx; }
+  }
+}
+
+function recordCrumb(type, shapeId, label, atX, atY) {
+  stepCounter++;
+  const id = stepCounter;
+  crumbs.push({
+    id,
+    type,
+    shapeId,
+    label,
+    at: { x: atX, y: atY },
+    snapshot: snapshot(),
+    t: Date.now(),
+  });
+  currentCrumbId = id;
+}
+
+
+function drawShape(s, alpha = 1, ghost = false) {
+  X.save();
+  X.globalAlpha = alpha;
+  if (ghost) {
+    X.strokeStyle = s.color;
+    X.lineWidth = 1;
+    X.setLineDash([3, 3]);
+    X.beginPath(); X.arc(s.x, s.y, s.size, 0, Math.PI * 2); X.stroke();
+  } else {
+    X.fillStyle = s.color;
+    X.beginPath(); X.arc(s.x, s.y, s.size, 0, Math.PI * 2); X.fill();
+  }
+  X.restore();
+}
+
+function drawCrumbs() {
+  // Line connecting crumbs in time order
+  const visibleCrumbs = crumbs.filter(c => c.at.x >= 0);
+  if (visibleCrumbs.length > 1) {
+    X.save();
+    X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+    X.globalAlpha = 0.25;
+    X.setLineDash([2, 4]);
+    X.lineWidth = 1;
+    X.beginPath();
+    X.moveTo(visibleCrumbs[0].at.x, visibleCrumbs[0].at.y);
+    for (let i = 1; i < visibleCrumbs.length; i++) X.lineTo(visibleCrumbs[i].at.x, visibleCrumbs[i].at.y);
+    X.stroke();
+    X.restore();
+  }
+  for (const c of crumbs) {
+    if (c.at.x < 0) continue;
+    const isHover = hoverCrumbId === c.id;
+    const isCurrent = currentCrumbId === c.id;
+    X.save();
+    // Outer ring
+    X.strokeStyle = isCurrent ? '#3DDC84' : (isHover ? '#E8642D' : getComputedStyle(document.body).getPropertyValue('--fg-dim'));
+    X.lineWidth = isCurrent || isHover ? 1.5 : 1;
+    X.globalAlpha = isHover || isCurrent ? 1 : 0.6;
+    X.beginPath(); X.arc(c.at.x, c.at.y, 8, 0, Math.PI * 2); X.stroke();
+    // Dot
+    X.fillStyle = c.type === 'move' ? '#5A78FF' : c.type === 'color' ? '#E85A8E' : '#E8B54D';
+    X.beginPath(); X.arc(c.at.x, c.at.y, 3, 0, Math.PI * 2); X.fill();
+    // Number
+    X.font = '9px "IBM Plex Mono", monospace';
+    X.textBaseline = 'middle';
+    X.textAlign = 'left';
+    X.fillStyle = isCurrent ? '#3DDC84' : (isHover ? '#E8642D' : getComputedStyle(document.body).getPropertyValue('--fg-dim'));
+    X.globalAlpha = isHover || isCurrent ? 1 : 0.75;
+    X.fillText(`${String(c.id).padStart(2, '0')}`, c.at.x + 12, c.at.y);
+    X.restore();
+  }
+}
+
+function drawCrumbPreview() {
+  if (hoverCrumbId == null) return;
+  const c = crumbs.find(x => x.id === hoverCrumbId);
+  if (!c) return;
+  // Draw ghost version of each shape at crumb's snapshot positions
+  X.save();
+  X.globalAlpha = 0.4;
+  for (const st of c.snapshot) {
+    X.fillStyle = st.color;
+    X.beginPath(); X.arc(st.x, st.y, st.size, 0, Math.PI * 2); X.fill();
+    X.strokeStyle = '#E8642D';
+    X.lineWidth = 1;
+    X.setLineDash([2, 2]);
+    X.globalAlpha = 0.8;
+    X.beginPath(); X.arc(st.x, st.y, st.size + 3, 0, Math.PI * 2); X.stroke();
+    X.setLineDash([]);
+    X.globalAlpha = 0.4;
+  }
+  X.restore();
+  // Label card near crumb
+  const label = c.label;
+  X.save();
+  X.font = '10px "IBM Plex Mono", monospace';
+  const tW = X.measureText(label).width;
+  const padX = 8, padY = 5;
+  const bw = tW + padX * 2;
+  const bh = 18;
+  let bx = c.at.x + 20, by = c.at.y - bh / 2;
+  if (bx + bw > W - 10) bx = c.at.x - 20 - bw;
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--chrome-bg');
+  X.fillRect(bx, by, bw, bh);
+  X.strokeStyle = '#E8642D';
+  X.lineWidth = 1;
+  X.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+  X.fillStyle = '#E8642D';
+  X.textBaseline = 'middle';
+  X.textAlign = 'left';
+  X.fillText(label, bx + padX, by + bh / 2 + 1);
+  X.restore();
+}
+
+function draw() {
+  X.clearRect(0, 0, W, H);
+  drawCrumbs();
+  for (const s of shapes) {
+    drawShape(s, 1);
+    const isHover = hoverShapeId === s.id;
+    const isDrag = drag && drag.id === s.id;
+    if (isHover || isDrag) {
+      X.save();
+      X.strokeStyle = isDrag ? '#E8642D' : getComputedStyle(document.body).getPropertyValue('--fg-dim');
+      X.lineWidth = 1;
+      X.beginPath(); X.arc(s.x, s.y, s.size + 8, 0, Math.PI * 2); X.stroke();
+      X.restore();
+    }
+  }
+  drawCrumbPreview();
+  // Update readout
+  const atIdx = crumbs.findIndex(c => c.id === currentCrumbId);
+  readout.innerHTML = `Shapes <b>${shapes.length}</b> · Trail <b>${crumbs.length - 1}</b> · At <b>${String(atIdx).padStart(2, '0')}/${String(crumbs.length - 1).padStart(2, '0')}</b>`;
+}
+
+function loop() { draw(); requestAnimationFrame(loop); }
+loop();
+
+function hitShape(x, y) {
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (Math.hypot(x - s.x, y - s.y) < s.size + 4) return s;
+  }
+  return null;
+}
+function hitCrumb(x, y) {
+  for (let i = crumbs.length - 1; i >= 0; i--) {
+    const c = crumbs[i];
+    if (c.at.x < 0) continue;
+    if (Math.hypot(x - c.at.x, y - c.at.y) < 14) return c;
+  }
+  return null;
+}
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    if (s) { s.x = mx - drag.offX; s.y = my - drag.offY; }
+  } else {
+    const cr = hitCrumb(mx, my);
+    hoverCrumbId = cr ? cr.id : null;
+    cursor.classList.toggle('crumb', !!cr);
+    if (!cr) {
+      const h = hitShape(mx, my);
+      hoverShapeId = h ? h.id : null;
+    } else {
+      hoverShapeId = null;
+    }
+  }
+});
+window.addEventListener('pointerdown', e => {
+  const cr = hitCrumb(e.clientX, e.clientY);
+  if (cr) {
+    // Jump to this crumb: apply snapshot
+    applySnapshot(cr.snapshot);
+    currentCrumbId = cr.id;
+    // We don't add a new crumb for a jump, it's traversal, not edit.
+    return;
+  }
+  const h = hitShape(e.clientX, e.clientY);
+  if (h) {
+    drag = { id: h.id, offX: e.clientX - h.x, offY: e.clientY - h.y, startX: h.x, startY: h.y, moved: false };
+    cursor.classList.add('drag');
+  }
+});
+window.addEventListener('pointerup', (e) => {
+  if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    if (s) {
+      const dx = s.x - drag.startX, dy = s.y - drag.startY;
+      if (Math.hypot(dx, dy) > 4) {
+        // Recorded as a move event
+        const label = `MOVE · S0${s.id} · Δ${Math.round(dx)},${Math.round(dy)}`;
+        recordCrumb('move', s.id, label, s.x, s.y - s.size - 28);
+      } else {
+        // treat as click: cycle color
+        s.colorIdx = (s.colorIdx + 1) % PALETTE.length;
+        s.color = PALETTE[s.colorIdx];
+        const label = `COLOR · S0${s.id} · ${s.color}`;
+        recordCrumb('color', s.id, label, s.x, s.y - s.size - 28);
+      }
+    }
+  }
+  drag = null;
+  cursor.classList.remove('drag');
+});
+window.addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R') {
+    build();
+  }
+});
+</script>
+</body>
+</html>

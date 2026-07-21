@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<!--
+  Caliper - gaps as live constraints
+  Measure the gap between two shapes and pin it as a live constraint that holds as they move.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Caliper - gaps as live constraints</title>
+<meta name="description" content="Measure the gap between two shapes and pin it as a live constraint that holds as they move.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Caliper - gaps as live constraints">
+<meta property="og:description" content="Measure the gap between two shapes and pin it as a live constraint that holds as they move.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Caliper",
+  "applicationCategory": "DesignApplication",
+  "description": "Measure the gap between two shapes and pin it as a live constraint that holds as they move.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "caliper, interaction design, constraint, measurement, dimension, spacing, gesture, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white:#FAFAFA; --c-grey:#8A8A8A; --c-black:#0A0A0A;
+  --bg: var(--c-white);
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.12);
+  --mid: rgba(10,10,10,0.30);
+  --active: rgba(10,10,10,0.60);
+  --glass: rgba(255,255,255,0.62);
+  --obj: rgb(98,103,113);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.12);
+  --mid: rgba(250,250,250,0.30);
+  --active: rgba(250,250,250,0.60);
+  --glass: rgba(20,20,24,0.55);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); color:var(--fg); font-family:'DM Sans',sans-serif; cursor:none; transition:background .4s var(--ease); touch-action:none; overscroll-behavior:none; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+#c { position:fixed; inset:0; z-index:1; }
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+.cursor{position:fixed;z-index:50;pointer-events:none;width:28px;height:28px;transform:translate(-50%,-50%);}
+.cursor .ring{position:absolute;inset:0;border:1px solid var(--c-grey);border-radius:50%;transition:transform .2s var(--ease),border-color .2s var(--ease),border-radius .2s var(--ease);}
+.cursor .cross{position:absolute;left:50%;top:50%;background:var(--c-grey);transform:translate(-50%,-50%);transition:background .2s var(--ease);}
+.cursor .cross.h{width:10px;height:1px;} .cursor .cross.v{width:1px;height:10px;}
+body.grabbing .cursor .ring{border-color:var(--fg);transform:scale(1.35);}
+body.grabbing .cursor .cross{background:var(--fg);}
+body.measuring .cursor .ring{border-color:var(--fg);transform:scale(0.55);}
+body.measuring .cursor .cross{background:var(--fg);}
+body.scrubbing .cursor .ring{border-color:var(--fg);border-radius:3px;transform:scaleY(0.4);}
+body.scrubbing .cursor .cross{background:var(--fg);}
+@media (hover:none) and (pointer:coarse){ html,body{cursor:auto;} .cursor{display:none;} }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+let W = 0, H = 0, prevW = 0, prevH = 0;
+
+const HINTS = 'Hold C or long-press a shape, drag to another to measure · Release pins it · Drag the label to set the gap · Double-click a label to remove · R reset';
+const ui = PT.ui({ title: 'Caliper', hints: HINTS, theme: 'light' });
+const pill = document.querySelector('.adui-pill');
+const seg = h => '<span class="adui-seg">' + h + '</span>';
+const key = t => '<b class="adui-key">' + t + '</b>';
+let barTimer = null, lastBar = '';
+function setBar(h){ clearTimeout(barTimer); if (pill && h !== lastBar){ pill.innerHTML = h; lastBar = h; } }
+function idleBar(){ clearTimeout(barTimer); lastBar = ''; ui.setHints(HINTS); }
+function flashBar(h, ms){ setBar(h); barTimer = setTimeout(() => { if (!busy()) idleBar(); }, ms); }
+function busy(){ return measure || dragObj || scrub; }
+
+const cursor = document.getElementById('cursor');
+const toggle = document.getElementById('toggle');
+
+let COL = {};
+function readTheme(){
+  const cs = getComputedStyle(document.body);
+  COL = { bg: cs.getPropertyValue('--bg').trim(), fg: cs.getPropertyValue('--fg').trim(),
+          dim: cs.getPropertyValue('--dim').trim(), mid: cs.getPropertyValue('--mid').trim(),
+          active: cs.getPropertyValue('--active').trim(), glass: cs.getPropertyValue('--glass').trim(),
+          obj: cs.getPropertyValue('--obj').trim() };
+}
+readTheme();
+
+const TYPES = ['circle', 'square', 'triangle'];
+
+let objs = [];       // { x, y, r, type, angle }
+let cons = [];       // { a, b, rest, flash, labelX, labelY }
+let measure = null;  // { a, x2, y2, over }
+let dragObj = null;  // { i, ox, oy }
+let scrub = null;    // { con, startX, startRest }
+let keyC = false;
+let mx = -100, my = -100;
+let press = null;    // pending long-press: { i, x, y, t }
+
+function resize(){
+  prevW = W || window.innerWidth; prevH = H || window.innerHeight;
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (objs.length && prevW && prevH){
+    const sx = W / prevW, sy = H / prevH, sr = Math.min(sx, sy);
+    for (const o of objs){ o.x *= sx; o.y *= sy; o.r *= sr; }
+    for (const c of cons) c.rest *= sr;
+  }
+}
+
+function seed(){
+  objs = []; cons = []; measure = null; scrub = null; dragObj = null;
+  const S = Math.min(W, H), n = 8, pad = S * 0.16;
+  for (let i = 0; i < n; i++){
+    let x, y, tries = 0, r = S * (0.032 + Math.random() * 0.03);
+    do { x = pad + Math.random() * (W - pad * 2); y = pad + Math.random() * (H - pad * 2); tries++; }
+    while (tries < 60 && objs.some(o => Math.hypot(o.x - x, o.y - y) < o.r + r + S * 0.09));
+    objs.push({ x, y, r, type: TYPES[i % TYPES.length], angle: (Math.random() - 0.5) * 0.5 });
+  }
+}
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function hitObject(x, y){ for (let i = objs.length - 1; i >= 0; i--){ if (Math.hypot(x - objs[i].x, y - objs[i].y) < objs[i].r + 8) return i; } return -1; }
+function hitLabel(x, y){ for (let i = cons.length - 1; i >= 0; i--){ const c = cons[i]; if (Math.abs(x - c.labelX) < 34 && Math.abs(y - c.labelY) < 14) return c; } return null; }
+
+function solve(){
+  const ITER = 6;
+  for (let it = 0; it < ITER; it++){
+    if (dragObj){ const o = objs[dragObj.i]; o.x += (mx - dragObj.ox - o.x) * 0.5; o.y += (my - dragObj.oy - o.y) * 0.5; }
+    for (const c of cons){
+      const A = objs[c.a], B = objs[c.b];
+      const dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy) || 1;
+      const err = d - c.rest, nx = dx / d, ny = dy / d;
+      let wa = 0.5, wb = 0.5;
+      if (dragObj && dragObj.i === c.a){ wa = 0; wb = 1; }
+      if (dragObj && dragObj.i === c.b){ wa = 1; wb = 0; }
+      A.x += nx * err * wa * 0.5; A.y += ny * err * wa * 0.5;
+      B.x -= nx * err * wb * 0.5; B.y -= ny * err * wb * 0.5;
+    }
+  }
+  for (const o of objs){ o.x = clamp(o.x, o.r + 16, W - o.r - 16); o.y = clamp(o.y, o.r + 60, H - o.r - 60); }
+}
+
+function shapePath(o){
+  X.beginPath();
+  if (o.type === 'square'){ const h = o.r * 0.88; X.rect(-h, -h, h * 2, h * 2); }
+  else if (o.type === 'triangle'){ const tr = o.r * 1.12; for (let i = 0; i < 3; i++){ const a = -Math.PI / 2 + i * (Math.PI * 2 / 3); const px = tr * Math.cos(a), py = tr * Math.sin(a); i ? X.lineTo(px, py) : X.moveTo(px, py); } X.closePath(); }
+  else X.arc(0, 0, o.r, 0, Math.PI * 2);
+}
+
+function drawObject(o, linked, active){
+  X.save();
+  X.translate(o.x, o.y);
+  if (o.type !== 'circle') X.rotate(o.angle);
+  if (active){                                     // the one charged shape (grabbed / measure source)
+    X.fillStyle = '#FBF251';
+    shapePath(o);
+    X.fill();
+  } else {
+    X.fillStyle = COL.obj;
+    shapePath(o);
+    X.fill();
+  }
+  if (linked){ X.rotate(o.type !== 'circle' ? -o.angle : 0); X.strokeStyle = COL.fg; X.globalAlpha = 0.55; X.lineWidth = 1; X.beginPath(); X.arc(0, 0, o.r + 5, 0, Math.PI * 2); X.stroke(); }
+  X.restore();
+}
+
+function drawArrow(x, y, nx, ny){
+  X.beginPath(); X.moveTo(x, y);
+  X.lineTo(x - nx * 8 - ny * 3.4, y - ny * 8 + nx * 3.4);
+  X.lineTo(x - nx * 8 + ny * 3.4, y - ny * 8 - nx * 3.4);
+  X.closePath(); X.fill();
+}
+
+function drawDimension(A, B, ra, rb, alpha, con){
+  const dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy) || 1;
+  const nx = dx / d, ny = dy / d;
+  const ax = A.x + nx * ra, ay = A.y + ny * ra, bx = B.x - nx * rb, by = B.y - ny * rb;
+  const gapPx = Math.max(0, Math.round(d - ra - rb));
+  X.save();
+  X.globalAlpha = alpha;
+  X.strokeStyle = COL.active; X.fillStyle = COL.active; X.lineWidth = 1.2;
+  X.beginPath(); X.moveTo(ax, ay); X.lineTo(bx, by); X.stroke();
+  X.beginPath();
+  X.moveTo(ax - ny * 7, ay + nx * 7); X.lineTo(ax + ny * 7, ay - nx * 7);
+  X.moveTo(bx - ny * 7, by + nx * 7); X.lineTo(bx + ny * 7, by - nx * 7);
+  X.stroke();
+  drawArrow(ax, ay, -nx, -ny); drawArrow(bx, by, nx, ny);
+  const midX = (ax + bx) / 2, midY = (ay + by) / 2;
+  const flash = con ? con.flash : 0;
+  X.fillStyle = COL.glass;
+  X.strokeStyle = flash > 0 ? COL.fg : COL.mid;
+  X.lineWidth = 1;
+  X.beginPath(); X.roundRect(midX - 30, midY - 11, 60, 22, 11); X.fill(); X.stroke();
+  X.fillStyle = COL.fg;
+  X.font = '600 10px "IBM Plex Mono", monospace';
+  X.textAlign = 'center'; X.textBaseline = 'middle';
+  X.fillText(gapPx + ' px', midX, midY + 0.5);
+  X.restore();
+  if (con){ con.labelX = midX; con.labelY = midY; }
+  return gapPx;
+}
+
+function draw(){
+  solve();
+  X.fillStyle = COL.bg; X.fillRect(0, 0, W, H);
+  const linked = new Set(); for (const c of cons){ linked.add(c.a); linked.add(c.b); }
+  const activeIdx = dragObj ? dragObj.i : (measure ? measure.a : -1);
+  for (let i = 0; i < objs.length; i++) drawObject(objs[i], linked.has(i), i === activeIdx);
+  for (const c of cons){ if (c.flash > 0) c.flash = Math.max(0, c.flash - 0.04); drawDimension(objs[c.a], objs[c.b], objs[c.a].r, objs[c.b].r, 0.9, c); }
+  if (measure){
+    const A = objs[measure.a];
+    const over = hitObject(measure.x2, measure.y2);
+    measure.over = (over >= 0 && over !== measure.a) ? over : -1;
+    const B = measure.over >= 0 ? objs[measure.over] : { x: measure.x2, y: measure.y2 };
+    const rb = measure.over >= 0 ? objs[measure.over].r : 0;
+    const g = drawDimension(A, B, A.r, rb, 1, null);
+    setBar(seg(key('Measuring')) + seg(g + ' px') + seg(measure.over >= 0 ? 'release to pin' : 'reach a shape'));
+  } else if (scrub){
+    const A = objs[scrub.con.a], B = objs[scrub.con.b];
+    setBar(seg(key('Gap')) + seg(Math.max(0, Math.round(scrub.con.rest - A.r - B.r)) + ' px'));
+  }
+  requestAnimationFrame(draw);
+}
+
+window.addEventListener('resize', resize);
+resize(); seed(); draw();
+
+function startMeasure(i){ measure = { a: i, x2: mx, y2: my, over: -1 }; document.body.classList.remove('grabbing'); document.body.classList.add('measuring'); press = null; }
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (press){ if (Math.hypot(mx - press.x, my - press.y) > 8){ /* became a drag */ press = null; } }
+  if (measure){ measure.x2 = mx; measure.y2 = my; return; }
+  if (scrub){ const A = objs[scrub.con.a], B = objs[scrub.con.b]; scrub.con.rest = clamp(scrub.startRest + (mx - scrub.startX), A.r + B.r + 6, Math.hypot(W, H)); return; }
+  if (!dragObj && !busy()) document.body.classList.toggle('scrubbing', !!hitLabel(mx, my) && !keyC);
+});
+
+window.addEventListener('pointerdown', e => {
+  if (e.target.closest('#toggle, .adui')) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  try { C.setPointerCapture(e.pointerId); } catch(_) {}
+  const label = hitLabel(mx, my);
+  if (label && !keyC){ scrub = { con: label, startX: mx, startRest: label.rest }; document.body.classList.add('scrubbing'); return; }
+  const i = hitObject(mx, my);
+  if (i < 0) return;
+  if (keyC){ startMeasure(i); return; }
+  // Ambiguous: hold in place -> measure; move -> drag. Long-press resolves it for touch too.
+  dragObj = { i, ox: mx - objs[i].x, oy: my - objs[i].y };
+  document.body.classList.add('grabbing');
+  const pi = i;
+  press = { i, x: mx, y: my };
+  setTimeout(() => { if (press && press.i === pi && dragObj && dragObj.i === pi){ dragObj = null; startMeasure(pi); } }, 300);
+});
+
+window.addEventListener('pointerup', () => {
+  press = null;
+  if (measure){
+    if (measure.over >= 0){
+      const exists = cons.some(c => (c.a === measure.a && c.b === measure.over) || (c.a === measure.over && c.b === measure.a));
+      if (!exists){ const A = objs[measure.a], B = objs[measure.over]; cons.push({ a: measure.a, b: measure.over, rest: Math.hypot(B.x - A.x, B.y - A.y), flash: 1, labelX: 0, labelY: 0 }); flashBar(seg(key('Pinned')) + seg('dimension ' + cons.length), 1400); }
+    } else idleBar();
+  } else if (scrub || dragObj) idleBar();
+  measure = null; dragObj = null; scrub = null;
+  document.body.classList.remove('measuring', 'grabbing', 'scrubbing');
+});
+window.addEventListener('pointercancel', () => { press = measure = dragObj = scrub = null; document.body.classList.remove('measuring', 'grabbing', 'scrubbing'); idleBar(); });
+
+window.addEventListener('dblclick', e => { const label = hitLabel(e.clientX, e.clientY); if (label){ cons = cons.filter(c => c !== label); flashBar(seg(key('Removed')) + seg('dimension'), 1200); } });
+
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); ui.theme(dark ? 'dark' : 'light'); readTheme(); });
+
+window.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'c' || e.key === 'C'){ keyC = true; if (!busy()) document.body.classList.add('measuring'); }
+  if ((e.key === 'r' || e.key === 'R') && !e.repeat){ seed(); idleBar(); }
+});
+window.addEventListener('keyup', e => { if (e.key === 'c' || e.key === 'C'){ keyC = false; if (!measure) document.body.classList.remove('measuring'); } });
+</script>
+</body>
+</html>

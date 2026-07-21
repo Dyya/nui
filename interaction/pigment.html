@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<!--
+  Pigment - mix color by overlap in OKLab
+  Drag paint droplets to overlap and the lens mixes their colors live in OKLab; double-click to draw the blend off as new pigment.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Pigment - mix color by overlap in OKLab</title>
+<meta name="description" content="Drag paint droplets to overlap and the lens mixes their colors live in OKLab; double-click to draw the blend off as new pigment.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Pigment - mix color by overlap in OKLab">
+<meta property="og:description" content="Drag paint droplets to overlap and the lens mixes their colors live in OKLab; double-click to draw the blend off as new pigment.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Pigment",
+  "applicationCategory": "DesignApplication",
+  "description": "Drag paint droplets to overlap and the lens mixes their colors live in OKLab; double-click to draw the blend off as new pigment.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "pigment, interaction design, color, color mixing, OKLab, subtractive, blend, paint, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white:#FAFAFA; --c-grey:#8A8A8A; --c-black:#0A0A0A;
+  --bg: var(--c-white);
+  --fg: rgba(10,10,10,0.95);
+  --mid: rgba(10,10,10,0.30);
+  --active: rgba(10,10,10,0.60);
+  --glass: rgba(255,255,255,0.62);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --fg: rgba(250,250,250,0.95);
+  --mid: rgba(250,250,250,0.30);
+  --active: rgba(250,250,250,0.60);
+  --glass: rgba(20,20,24,0.55);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); color:var(--fg); font-family:'DM Sans',sans-serif; cursor:none; transition:background .4s var(--ease); touch-action:none; overscroll-behavior:none; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+#c { position:fixed; inset:0; z-index:1; }
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+.cursor{position:fixed;z-index:50;pointer-events:none;width:28px;height:28px;transform:translate(-50%,-50%);}
+.cursor .ring{position:absolute;inset:0;border:1px solid var(--c-grey);border-radius:50%;transition:transform .2s var(--ease),border-color .2s var(--ease),border-radius .2s var(--ease);}
+.cursor .cross{position:absolute;left:50%;top:50%;background:var(--c-grey);transform:translate(-50%,-50%);transition:background .2s var(--ease);}
+.cursor .cross.h{width:10px;height:1px;} .cursor .cross.v{width:1px;height:10px;}
+body.grabbing .cursor .ring{border-color:var(--fg);transform:scale(1.35);}
+body.grabbing .cursor .cross{background:var(--fg);}
+body.overlap .cursor .ring{border-color:var(--fg);border-radius:4px;transform:rotate(45deg) scale(1.1);}
+@media (hover:none) and (pointer:coarse){ html,body{cursor:auto;} .cursor{display:none;} }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+let W = 0, H = 0, prevW = 0, prevH = 0;
+
+const HINTS = 'Drag pigments to overlap and mix · Double-click a mix to draw it off · Scroll or pinch a pigment to resize · R reset';
+const ui = PT.ui({ title: 'Pigment', hints: HINTS, theme: 'light' });
+const pill = document.querySelector('.adui-pill');
+const seg = h => '<span class="adui-seg">' + h + '</span>';
+const key = t => '<b class="adui-key">' + t + '</b>';
+let barTimer = null, lastBar = '', flashActive = false;
+function setBar(h){ clearTimeout(barTimer); flashActive = false; if (pill && h !== lastBar){ pill.innerHTML = h; lastBar = h; } }
+function idleBar(){ clearTimeout(barTimer); flashActive = false; lastBar = ''; ui.setHints(HINTS); }
+function flashBar(h, ms){ clearTimeout(barTimer); if (pill){ pill.innerHTML = h; lastBar = h; } flashActive = true; barTimer = setTimeout(() => { flashActive = false; if (dragObj === null) idleBar(); }, ms); }
+
+const cursor = document.getElementById('cursor');
+const toggle = document.getElementById('toggle');
+
+let COL = {};
+function readTheme(){
+  const cs = getComputedStyle(document.body);
+  COL = { bg: cs.getPropertyValue('--bg').trim(), fg: cs.getPropertyValue('--fg').trim(),
+          mid: cs.getPropertyValue('--mid').trim(), active: cs.getPropertyValue('--active').trim(),
+          glass: cs.getPropertyValue('--glass').trim() };
+}
+readTheme();
+
+// ---- OKLab <-> sRGB ----
+const srgb2lin = c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+const lin2srgb = c => c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+function hexToLab(hex){
+  const r = srgb2lin(parseInt(hex.slice(1, 3), 16) / 255);
+  const g = srgb2lin(parseInt(hex.slice(3, 5), 16) / 255);
+  const b = srgb2lin(parseInt(hex.slice(5, 7), 16) / 255);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+          1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+          0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s];
+}
+function labToHex(lab){
+  const l = Math.pow(lab[0] + 0.3963377774 * lab[1] + 0.2158037573 * lab[2], 3);
+  const m = Math.pow(lab[0] - 0.1055613458 * lab[1] - 0.0638541728 * lab[2], 3);
+  const s = Math.pow(lab[0] - 0.0894841775 * lab[1] - 1.2914855480 * lab[2], 3);
+  const r = lin2srgb(Math.max(0, Math.min(1, +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s)));
+  const g = lin2srgb(Math.max(0, Math.min(1, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s)));
+  const b = lin2srgb(Math.max(0, Math.min(1, -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s)));
+  const h = v => Math.round(v * 255).toString(16).padStart(2, '0');
+  return '#' + h(r) + h(g) + h(b);
+}
+const mixLab = (A, B, t) => [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t];
+
+// Pigment colours span the hue wheel so mixes are legible (this study defines its own palette - colour IS the subject).
+const PIGMENTS = ['#E8642D', '#E8B54D', '#3ECF8E', '#29A5EA', '#5A78FF', '#8B3A1A'];
+
+let drops = [];
+let lenses = [];
+let dragObj = null;
+let mx = -100, my = -100;
+let lastTap = 0, lastTapPos = null;
+
+function resize(){
+  prevW = W || window.innerWidth; prevH = H || window.innerHeight;
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (drops.length && prevW && prevH){
+    const sx = W / prevW, sy = H / prevH, sr = Math.min(sx, sy);
+    for (const o of drops){ o.x *= sx; o.y *= sy; o.r *= sr; }
+  }
+}
+
+function seed(){
+  drops = []; dragObj = null;
+  const cx = W / 2, cy = H / 2, S = Math.min(W, H);
+  for (let i = 0; i < PIGMENTS.length; i++){
+    const ang = (i / PIGMENTS.length) * Math.PI * 2 - Math.PI / 2;
+    const rad = S * 0.26;
+    drops.push({ x: cx + Math.cos(ang) * rad, y: cy + Math.sin(ang) * rad, r: S * (0.07 + Math.random() * 0.03), lab: hexToLab(PIGMENTS[i]), sc: 1 });
+  }
+}
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function lensArea(A, B){
+  const d = Math.hypot(B.x - A.x, B.y - A.y);
+  if (d >= A.r + B.r) return 0;
+  if (d <= Math.abs(A.r - B.r)) return Math.PI * Math.min(A.r, B.r) ** 2;
+  const r1 = A.r, r2 = B.r;
+  const a1 = r1 * r1 * Math.acos((d * d + r1 * r1 - r2 * r2) / (2 * d * r1));
+  const a2 = r2 * r2 * Math.acos((d * d + r2 * r2 - r1 * r1) / (2 * d * r2));
+  const a3 = 0.5 * Math.sqrt((-d + r1 + r2) * (d + r1 - r2) * (d - r1 + r2) * (d + r1 + r2));
+  return a1 + a2 - a3;
+}
+
+function buildLenses(){
+  lenses = [];
+  for (let i = 0; i < drops.length; i++){
+    for (let j = i + 1; j < drops.length; j++){
+      const A = drops[i], B = drops[j];
+      const area = lensArea(A, B);
+      if (area < 40) continue;
+      const wA = A.r * A.r, wB = B.r * B.r, t = wB / (wA + wB);
+      const d = Math.hypot(B.x - A.x, B.y - A.y) || 1;
+      const m = (d * d + A.r * A.r - B.r * B.r) / (2 * d * d);
+      const midX = A.x + (B.x - A.x) * clamp(m, 0, 1), midY = A.y + (B.y - A.y) * clamp(m, 0, 1);
+      lenses.push({ a: i, b: j, cx: midX, cy: midY, area, lab: mixLab(A.lab, B.lab, t), ratio: Math.round((1 - t) * 100) });
+    }
+  }
+}
+
+function hitDrop(x, y){ for (let i = drops.length - 1; i >= 0; i--){ if (Math.hypot(x - drops[i].x, y - drops[i].y) < drops[i].r) return i; } return -1; }
+function hitLens(x, y){ for (let i = lenses.length - 1; i >= 0; i--){ const L = lenses[i], A = drops[L.a], B = drops[L.b]; if (Math.hypot(x - A.x, y - A.y) < A.r && Math.hypot(x - B.x, y - B.y) < B.r) return L; } return null; }
+
+function drawDrop(o){
+  const r = o.r * o.sc;
+  X.save();
+  X.translate(o.x, o.y);
+  X.fillStyle = labToHex(o.lab);            // flat OKLab fill - no fake sphere shading
+  X.beginPath(); X.arc(0, 0, r, 0, Math.PI * 2); X.fill();
+  X.restore();
+}
+
+function drawLens(L){
+  const A = drops[L.a], B = drops[L.b];
+  X.save();
+  X.beginPath(); X.arc(A.x, A.y, A.r * A.sc, 0, Math.PI * 2); X.clip();
+  X.beginPath(); X.arc(B.x, B.y, B.r * B.sc, 0, Math.PI * 2); X.clip();
+  const bx = Math.min(A.x - A.r, B.x - B.r), by = Math.min(A.y - A.r, B.y - B.r), bs = (A.r + B.r) * 2;
+  X.fillStyle = labToHex(L.lab); X.fillRect(bx, by, bs, bs);   // flat mix - no shading
+  X.restore();
+}
+
+function drawLensLabel(L){
+  const hex = labToHex(L.lab).toUpperCase();
+  const text = hex + ' · ' + L.ratio + '/' + (100 - L.ratio);
+  X.save();
+  X.font = '600 10px "IBM Plex Mono", monospace';
+  const w = X.measureText(text).width + 34;
+  const y = L.cy - Math.sqrt(L.area / Math.PI) - 26;
+  X.fillStyle = COL.glass; X.strokeStyle = COL.mid; X.lineWidth = 1;
+  X.beginPath(); X.roundRect(L.cx - w / 2, y - 11, w, 22, 11); X.fill(); X.stroke();
+  X.fillStyle = labToHex(L.lab);
+  X.beginPath(); X.arc(L.cx - w / 2 + 12, y, 5, 0, Math.PI * 2); X.fill();
+  X.fillStyle = COL.fg; X.textAlign = 'left'; X.textBaseline = 'middle';
+  X.fillText(text, L.cx - w / 2 + 22, y + 0.5);
+  X.restore();
+}
+
+function draw(){
+  X.fillStyle = COL.bg; X.fillRect(0, 0, W, H);
+  for (const o of drops){ if (o.sc < 1) o.sc = Math.min(1, o.sc + (1 - o.sc) * 0.18 + 0.01); drawDrop(o); }
+  buildLenses();
+  for (const L of lenses) drawLens(L);
+  const hover = hitLens(mx, my);
+  if (hover) drawLensLabel(hover);
+  document.body.classList.toggle('overlap', !!hover && !dragObj);
+  if (!dragObj && !flashActive){
+    if (hover) setBar(seg(key('Mix')) + seg(labToHex(hover.lab).toUpperCase()) + seg('double-click to draw off'));
+    else idleBar();
+  }
+  requestAnimationFrame(draw);
+}
+
+window.addEventListener('resize', resize);
+resize(); seed(); draw();
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (dragObj !== null){ drops[dragObj.i].x = mx - dragObj.ox; drops[dragObj.i].y = my - dragObj.oy; }
+});
+
+function drawOff(L){
+  const A = drops[L.a], B = drops[L.b];
+  const newR = clamp(Math.sqrt(L.area / Math.PI) * 1.1, 14, Math.min(W, H) * 0.16);
+  const newArea = Math.PI * newR * newR;
+  const wA = A.r * A.r, wB = B.r * B.r, shareA = wA / (wA + wB), shareB = 1 - shareA;
+  A.r = Math.sqrt(Math.max(64, Math.PI * A.r * A.r - newArea * shareA) / Math.PI);
+  B.r = Math.sqrt(Math.max(64, Math.PI * B.r * B.r - newArea * shareB) / Math.PI);
+  const d = Math.hypot(B.y - A.y, B.x - A.x) || 1, px = -(B.y - A.y) / d, py = (B.x - A.x) / d;
+  drops.push({ x: L.cx + px * (newR + 18), y: L.cy + py * (newR + 18), r: newR, lab: L.lab.slice(), sc: 0.05 });
+  drops = drops.filter(o => o.r > 9);
+  flashBar(seg(key('Drew off')) + seg(labToHex(L.lab).toUpperCase()), 1600);
+}
+
+window.addEventListener('pointerdown', e => {
+  if (e.target.closest('#toggle, .adui')) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  // Touch double-tap on a lens draws it off (dblclick is unreliable on touch).
+  // Mouse uses the native dblclick handler, so this path is touch-only to avoid a double fire.
+  if (e.pointerType === 'touch'){
+    const now = performance.now();
+    if (lastTapPos && now - lastTap < 320 && Math.hypot(mx - lastTapPos.x, my - lastTapPos.y) < 24){
+      const L = hitLens(mx, my); if (L){ drawOff(L); lastTap = 0; return; }
+    }
+    lastTap = now; lastTapPos = { x: mx, y: my };
+  }
+  const i = hitDrop(mx, my);
+  if (i >= 0){ const o = drops[i]; drops.splice(i, 1); drops.push(o); dragObj = { i: drops.length - 1, ox: mx - o.x, oy: my - o.y }; document.body.classList.add('grabbing'); try { C.setPointerCapture(e.pointerId); } catch(_) {} }
+});
+window.addEventListener('pointerup', () => { dragObj = null; document.body.classList.remove('grabbing'); });
+window.addEventListener('pointercancel', () => { dragObj = null; document.body.classList.remove('grabbing'); });
+
+window.addEventListener('dblclick', e => { const L = hitLens(e.clientX, e.clientY); if (L) drawOff(L); });
+
+window.addEventListener('wheel', e => { const i = hitDrop(e.clientX, e.clientY); if (i >= 0){ e.preventDefault(); drops[i].r = clamp(drops[i].r - e.deltaY * 0.08, 12, Math.min(W, H) * 0.16); } }, { passive: false });
+
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); ui.theme(dark ? 'dark' : 'light'); readTheme(); });
+
+window.addEventListener('keydown', e => { if (e.metaKey || e.ctrlKey || e.altKey) return; if ((e.key === 'r' || e.key === 'R') && !e.repeat){ seed(); idleBar(); } });
+</script>
+</body>
+</html>

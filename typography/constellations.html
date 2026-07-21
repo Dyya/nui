@@ -4,8 +4,8 @@
   Typographic constellations in 3D space, letterforms scattered and linked like star maps, rendered live on canvas.
 
   Part of NUI - experiments in interface design and interaction.
-  Author · Adi Dizdarevic · AD& · http://adidizdarevic.com/
-  © 2026 Adi Dizdarevic. All rights reserved.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
 -->
 <html lang="en">
 <head>
@@ -14,8 +14,8 @@
 <title>Constellations - letterforms as 3D constellations</title>
 <meta name="description" content="Typographic constellations in 3D space, letterforms scattered and linked like star maps, rendered live on canvas.">
 <meta name="author" content="Adi Dizdarevic">
-<link rel="author" href="http://adidizdarevic.com/">
-<meta name="theme-color" content="#05070C">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
 
 <!-- Open Graph (minimal) -->
 <meta property="og:type" content="website">
@@ -34,9 +34,9 @@
   "browserRequirements": "Requires JavaScript and HTML5 canvas",
   "inLanguage": "en",
   "keywords": "typography, 3D, constellations, letterforms, generative, canvas",
-  "license": "All rights reserved",
-  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "http://adidizdarevic.com/" },
-  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "http://adidizdarevic.com/" },
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
   "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
 }
 </script>
@@ -45,22 +45,35 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@200;300;400;500;600&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #05070C; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #FAFAFA; }
+  body.dark { background: #0A0A0A; }
   canvas { display: block; position: fixed; top: 0; left: 0; width: 100%; height: 100%; }
 
+  /* Theme toggle: base light/dark (nav-driven when embedded). Click flips the sky. */
+  #toggle { position: fixed; bottom: 14px; right: 16px; z-index: 9998; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); background: rgba(255,255,255,.5); border: 1px solid rgba(0,0,0,.06); display: grid; place-items: center; transition: transform .2s cubic-bezier(.5,.02,.15,1); }
+  body.dark #toggle { background: rgba(10,10,10,.35); border-color: rgba(255,255,255,.08); }
+  #toggle::after { content: ''; width: 10px; height: 10px; border-radius: 50%; background: #0A0A0A; }
+  body.dark #toggle::after { background: #FAFAFA; }
+  #toggle:hover { transform: scale(1.08); }
+
+  /* Found-words legend: dark ink on paper by default, wheat on the night sky. */
   .found-words {
     position: fixed; bottom: 56px; left: 16px; z-index: 10; padding: 8px 12px;
     pointer-events: none; font-family: 'IBM Plex Mono', monospace;
-    color: #F5DEB3; font-size: 10px; letter-spacing: 0.08em; font-weight: 400;
+    color: #1a1a1a; font-size: 10px; letter-spacing: 0.08em; font-weight: 400;
     user-select: none; max-height: 40vh; overflow: hidden;
     backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-radius: 10px;
-    background: rgba(10,10,10,0.35); border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.5); border: 1px solid rgba(0,0,0,0.06);
+  }
+  body.dark .found-words {
+    color: #F5DEB3; background: rgba(10,10,10,0.35); border-color: rgba(255,255,255,0.08);
   }
   .found-words:empty { display: none; }
   .found-words .found-label {
-    color: #5A6A8A; font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase;
+    color: #8A7A5A; font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase;
     margin-bottom: 6px;
   }
+  body.dark .found-words .found-label { color: #5A6A8A; }
   .found-words .found-word {
     margin-bottom: 4px; display: flex; align-items: center; gap: 8px;
     font-family: 'DM Sans', sans-serif; font-weight: 300;
@@ -69,15 +82,18 @@
     width: 28px; height: 18px; flex-shrink: 0;
   }
   .found-words .found-word .mini-constellation line {
-    stroke: #F5DEB3; stroke-width: 1; opacity: 0.5;
+    stroke: #1a1a1a; stroke-width: 1; opacity: 0.5;
   }
   .found-words .found-word .mini-constellation circle {
-    fill: #F5DEB3; opacity: 0.8;
+    fill: #1a1a1a; opacity: 0.8;
   }
+  body.dark .found-words .found-word .mini-constellation line { stroke: #F5DEB3; }
+  body.dark .found-words .found-word .mini-constellation circle { fill: #F5DEB3; }
 </style>
 </head>
 <body>
 <canvas id="sky">Constellations, letterforms as 3D constellations. Requires JavaScript and an HTML5 canvas.</canvas>
+<div id="toggle" title="Toggle theme"></div>
 <div class="found-words" id="foundWords"></div>
 
 <script src="./core/ui.js"></script>
@@ -87,7 +103,63 @@
 const ui = PT.ui({
   title: 'Constellations',
   hints: 'Drag orbit · Scroll zoom · Click connect · Double-click finish · Del undo · Space rotate · E export · C clear · R reset',
-  theme: 'dark'
+  theme: 'light'
+});
+
+// --- Theme: base light/dark, driven by the nav (via #toggle) like the rest of the lab.
+// Default is light: an ink constellation on white paper. Dark is the night sky.
+// Every colour below is derived from `dark` so a single flip re-tints the whole scene. ---
+let dark = false;
+let P = makePalette(dark);
+
+function makePalette(d) {
+  return d ? {
+    // Night sky (retuned from #05070C to the lab-wide near-black).
+    bg: '#0A0A0A',
+    nebula: true,
+    dustStyle: '#ffffff',
+    baseStar: (b) => { const v = Math.round(b * 255); return `rgba(${v},${v},${Math.min(255, v + 10)},${b})`; },
+    foundStar: (b) => `rgba(245,222,179,${b})`,
+    chainStar: (b) => `rgba(240,232,216,${Math.min(1, b + 0.2)})`,
+    foundLine: (a) => `rgba(245,222,179,${a})`,
+    activeLine: (a) => `rgba(240,232,216,${a})`,
+    mouseLine: 'rgba(240,232,216,0.15)',
+    hoverRing: (a) => `rgba(245,222,179,${a})`,
+    // Additive-style wheat bloom reads as light-on-dark.
+    bloomStops: [[0, 'rgba(245,235,220,0.35)'], [0.3, 'rgba(245,235,220,0.08)'], [0.7, 'rgba(200,200,240,0.02)'], [1, 'rgba(200,200,240,0)']],
+    bloomBaseAlpha: 0.25,
+    foundGlowAlpha: 0.3
+  } : {
+    // Paper white. Stars and lines become dark ink so they read on white; a light-on-white
+    // additive glow is invisible, so the bloom becomes a whisper of dark haze instead, and
+    // the coloured nebulae (only legible on black) are suppressed entirely.
+    bg: '#FAFAFA',
+    nebula: false,
+    dustStyle: '#1a1a1a',
+    baseStar: (b) => `rgba(26,26,26,${b})`,
+    foundStar: (b) => `rgba(232,100,45,${Math.min(1, b + 0.15)})`,
+    chainStar: (b) => `rgba(10,10,10,${Math.min(1, b + 0.25)})`,
+    foundLine: (a) => `rgba(232,100,45,${Math.min(1, a + 0.12)})`,
+    activeLine: (a) => `rgba(10,10,10,${Math.min(1, a + 0.15)})`,
+    mouseLine: 'rgba(10,10,10,0.22)',
+    hoverRing: (a) => `rgba(10,10,10,${a})`,
+    bloomStops: [[0, 'rgba(10,10,10,0.14)'], [0.3, 'rgba(10,10,10,0.05)'], [0.7, 'rgba(10,10,10,0.01)'], [1, 'rgba(10,10,10,0)']],
+    bloomBaseAlpha: 0.16,
+    foundGlowAlpha: 0.2
+  };
+}
+
+function applyTheme(d) {
+  dark = d;
+  P = makePalette(d);
+  document.body.style.background = P.bg;
+  createBloomSprite(); // rebuild the cached sprite in the new ink. The RAF loop redraws the rest.
+}
+
+document.getElementById('toggle').addEventListener('click', () => {
+  const d = document.body.classList.toggle('dark');
+  ui.theme(d ? 'dark' : 'light');
+  applyTheme(d);
 });
 
 // --- Constants ---
@@ -184,10 +256,8 @@ function createBloomSprite() {
   bloomSprite.height = size;
   const bctx = bloomSprite.getContext('2d');
   const grad = bctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
-  grad.addColorStop(0, 'rgba(245, 235, 220, 0.35)');
-  grad.addColorStop(0.3, 'rgba(245, 235, 220, 0.08)');
-  grad.addColorStop(0.7, 'rgba(200, 200, 240, 0.02)');
-  grad.addColorStop(1, 'rgba(200, 200, 240, 0)');
+  P.bloomStops.forEach(([stop, color]) => grad.addColorStop(stop, color));
+  bctx.clearRect(0, 0, size, size);
   bctx.fillStyle = grad;
   bctx.fillRect(0, 0, size, size);
 }
@@ -319,6 +389,8 @@ const nebulaCenters = [
 ];
 
 function drawNebulae() {
+  // Coloured nebulae only read as light-on-dark; on paper they turn to muddy smudges, so skip.
+  if (!P.nebula) return;
   nebulaCenters.forEach(neb => {
     const [px, py, pz] = transformPoint(neb.x, neb.y, neb.z);
     if (pz < NEAR_PLANE) return;
@@ -417,7 +489,7 @@ function quantizeSize(size) {
 // --- Drawing ---
 function drawDust() {
   const margin = 30;
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = P.dustStyle;
   for (let i = 0; i < dust.length; i++) {
     const d = dust[i];
     const [px, py, pz] = transformPoint(d.x, d.y, d.z);
@@ -465,13 +537,13 @@ function drawStars() {
     // Bloom for bright/close stars
     if (brightness > 0.5 && size > 8) {
       const bloomSize = size * 4;
-      ctx.globalAlpha = brightness * 0.25;
+      ctx.globalAlpha = brightness * P.bloomBaseAlpha;
       ctx.drawImage(bloomSprite, p.sx - bloomSize / 2, p.sy - bloomSize / 2, bloomSize, bloomSize);
     }
 
     // Found word glow
     if (inFoundConstellation) {
-      ctx.globalAlpha = 0.3;
+      ctx.globalAlpha = P.foundGlowAlpha;
       const glowSize = size * 3;
       ctx.drawImage(bloomSprite, p.sx - glowSize / 2, p.sy - glowSize / 2, glowSize, glowSize);
     }
@@ -485,14 +557,13 @@ function drawStars() {
       lastFont = fontKey;
     }
 
-    // Color
-    const b = Math.round(brightness * 255);
+    // Color (theme-driven: light ink on white, near-white stars on the night sky)
     if (inFoundConstellation) {
-      ctx.fillStyle = `rgba(245,222,179,${brightness})`;
+      ctx.fillStyle = P.foundStar(brightness);
     } else if (inChain) {
-      ctx.fillStyle = `rgba(240,232,216,${Math.min(1, brightness + 0.2)})`;
+      ctx.fillStyle = P.chainStar(brightness);
     } else {
-      ctx.fillStyle = `rgba(${b},${b},${Math.min(255, b + 10)},${brightness})`;
+      ctx.fillStyle = P.baseStar(brightness);
     }
 
     ctx.globalAlpha = 1;
@@ -504,7 +575,7 @@ function drawStars() {
     if (isHovered) {
       ctx.beginPath();
       ctx.arc(p.sx, p.sy, size * 0.9, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(245,222,179,${brightness * 0.5})`;
+      ctx.strokeStyle = P.hoverRing(brightness * 0.5);
       ctx.lineWidth = 1;
       ctx.stroke();
     }
@@ -543,7 +614,7 @@ function drawConnections() {
       ctx.beginPath();
       ctx.moveTo(lastProj.sx, lastProj.sy);
       ctx.lineTo(mouse.x, mouse.y);
-      ctx.strokeStyle = 'rgba(240,232,216,0.15)';
+      ctx.strokeStyle = P.mouseLine;
       ctx.lineWidth = 0.8;
       ctx.stroke();
     }
@@ -577,7 +648,7 @@ function drawLine3D(idx1, idx2, conStartTime, segIndex, isCompleted) {
   ctx.beginPath();
   ctx.moveTo(p1.sx, p1.sy);
   ctx.lineTo(ex, ey);
-  ctx.strokeStyle = isCompleted ? `rgba(245,222,179,${alpha})` : `rgba(240,232,216,${alpha})`;
+  ctx.strokeStyle = isCompleted ? P.foundLine(alpha) : P.activeLine(alpha);
   ctx.lineWidth = isCompleted ? 1.2 : 1;
   ctx.stroke();
 }
@@ -799,7 +870,7 @@ function clearConnections() {
 // --- Scene draw (shared by the live loop and the export grab) ---
 function drawScene() {
   // Clear
-  ctx.fillStyle = '#05070C';
+  ctx.fillStyle = P.bg;
   ctx.fillRect(0, 0, W, H);
   // Draw nebulae
   drawNebulae();

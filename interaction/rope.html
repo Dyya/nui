@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<!--
+  Rope - a verlet rope between shapes
+  Tie a slack verlet rope between two shapes: pull it taut to drag, knot the end, stroke across to cut.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Rope - a verlet rope between shapes</title>
+<meta name="description" content="Tie a slack verlet rope between two shapes: pull it taut to drag, knot the end, stroke across to cut.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Rope - a verlet rope between shapes">
+<meta property="og:description" content="Tie a slack verlet rope between two shapes: pull it taut to drag, knot the end, stroke across to cut.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Rope",
+  "applicationCategory": "DesignApplication",
+  "description": "Tie a slack verlet rope between two shapes: pull it taut to drag, knot the end, stroke across to cut.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "rope, interaction design, physics, verlet, constraint, knot, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Objects fill with a theme-aware grey; the one accent (yellow) is a fill, set in JS. */
+  --obj: rgb(98,103,113);
+  /* UI neutrals - the interface is monochrome: proper white / grey / black */
+  --c-white: #FAFAFA;
+  --c-grey:  #8A8A8A;
+  --c-black: #0A0A0A;
+
+  /* Light is the default theme; add `dark` on <body> for the option. */
+  --bg: var(--c-white);
+  --doc: #EDEDEF;
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.16);
+  --mid: rgba(10,10,10,0.28);
+  --active: rgba(10,10,10,0.55);
+  --hover: rgba(10,10,10,0.80);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --doc: #16161A;
+  --obj: rgb(132,137,148);
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.16);
+  --mid: rgba(250,250,250,0.28);
+  --active: rgba(250,250,250,0.55);
+  --hover: rgba(250,250,250,0.80);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+#c { position: fixed; inset: 0; z-index: 1; }
+
+/* Theme toggle: the same glass as the floating legend, but circular, with a
+   small solid white/black dot in the centre (the dot follows the theme). */
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+
+/* Cursor */
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: all 0.25s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.25s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; }
+.cursor .cross.v { width: 1px; height: 10px; }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(1.4); }
+body.dragging .cursor .cross { background: var(--fg); }
+body.dragging.armed .cursor .ring { border-color: var(--fg); transform: scale(1.7); border-style: dashed; }
+body.dragging.armed .cursor .cross { background: var(--fg); }
+body.dragging.link .cursor .ring { border-color: var(--fg); transform: scale(1.7); }
+body.dragging.link .cursor .cross { background: var(--fg); }
+
+/* Touch devices: the finger is the pointer, so no custom crosshair. */
+@media (hover: none) and (pointer: coarse) {
+  html, body { cursor: auto; }
+  .cursor { display: none; }
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="toggle" title="Toggle theme"></div>
+
+<div class="cursor" id="cursor">
+  <div class="ring"></div>
+  <div class="cross h"></div>
+  <div class="cross v"></div>
+</div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+const HINTS = 'Drag between shapes to tie a rope · Pull taut to drag · Loop the end to knot · Stroke across to cut · R reset';
+const ui = PT.ui({ title: 'Rope', hints: HINTS, theme: 'light' });
+
+// The bottom legend doubles as a stage-reflective status bar: idle shows the how-to,
+// then tying / pulling / plucking / cutting each swap in the live readout. We reuse
+// the panel's own glass pill + segment classes so it always looks native.
+const pill = document.querySelector('.adui-pill');
+const seg = (html) => '<span class="adui-seg">' + html + '</span>';
+const key = (t) => '<b class="adui-key">' + t + '</b>';
+let lastBar = '';
+function setBar(html) { if (pill && html !== lastBar) { pill.innerHTML = html; lastBar = html; } }
+function idleBar() { lastBar = ''; ui.setHints(HINTS); }
+let flashUntil = 0;                 // committed messages hold the bar until this timestamp
+function flashBar(html, ms) { setBar(html); flashUntil = performance.now() + ms; }
+
+// ───── Rope physics constants (verlet, in isotropic normalized space, per second) ─────
+const NODES   = 22;     // point masses per rope (18-24 band)
+const ITER    = 16;     // relaxation iterations per fixed step (hinge held at 12)
+const STEP    = 1 / 60; // fixed physics sub-step - the make-or-break for verlet stability
+const MAXSUB  = 4;      // cap sub-steps per frame so a long stall can't spiral
+const GRAV    = 1.15;   // gentle gravity -> catenary droop, never a rigid rod
+const DAMP    = 0.985;  // velocity retention (position verlet)
+const SLACK_T = 1.30;   // tether rope: longer than the gap, so it sags with real slack
+const SLACK_K = 1.10;   // knotted rope: tighter, reads as a locked permanent link
+const MINREST = 0.14;   // floor on total rope length so a short link still has slack
+const PULL    = 1.0;    // once taut, the free shape follows fully (a hard max-distance)
+const GRAB_R  = 0.042;  // pluck grab radius (normalized)
+const LOOP_R  = 0.058;  // knot loop: end must return within this of an earlier path point
+const LOOP_ARC= 0.17;   // ...having travelled at least this far along the path in between
+
+// ───── State (declared with defaults BEFORE the first resize() - no TDZ) ─────
+let shapes = [];
+let ropes = [];                     // { aId, bId, knot, rest, seg, pts:[{x,y,px,py,pin}] }
+let dying = [];                     // severed ropes falling slack, fading out
+let drag = null;                    // { mode, ... } move | connect | pluck | cut
+let hoverId = -1;                   // shape under the cursor (for the collar affordance)
+let hoverMode = '';                 // 'core' | 'band' | ''
+let mouseX = -100, mouseY = -100;
+let lastTap = 0;
+let idCounter = 0;
+const seed = 515151;
+
+let docX = 0, docY = 0, docW = 0, docH = 0, minDim = 0, extX = 1, extY = 1;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() {
+  const m = Math.max(24, Math.min(W, H) * 0.055);
+  docX = m; docY = m;
+  docW = W - 2 * m; docH = H - 2 * m;
+  // Isotropic normalized space: one scale for both axes so rope length and sag
+  // never distort. min(docW,docH) is 1.0; the long axis extends past 1.0.
+  minDim = Math.min(docW, docH);
+  extX = docW / minDim;
+  extY = docH / minDim;
+  // Positions are stored normalized (isotropic), so no rescale is needed - only
+  // the pixel radius is recomputed, and shapes are clamped back inside on reflow.
+  for (const s of shapes) {
+    s.r = s.nr * minDim;
+    s.x = clamp(s.x, s.nr, extX - s.nr);
+    s.y = clamp(s.y, s.nr, extY - s.nr);
+  }
+}
+
+function mulberry32(s) {
+  return function() {
+    let t = (s += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const lerp  = (a, b, t) => a + (b - a) * t;
+const byId  = (id) => shapes.find(s => s.id === id);
+
+// ───── Isotropic normalized <-> pixel ─────
+const px = (nx) => docX + nx * minDim;
+const py = (ny) => docY + ny * minDim;
+const toNormX = (p) => (p - docX) / minDim;
+const toNormY = (p) => (p - docY) / minDim;
+
+// Shapes read as one theme-aware grey; the form (its geometry) labels the readout.
+const TYPES = ['circle', 'square', 'triangle'];
+
+function makeShape(nx, ny, nr, i) {
+  return {
+    id: ++idCounter,
+    x: nx, y: ny, nr, r: nr * minDim,
+    type: TYPES[i % TYPES.length],
+    name: '',                         // filled by nameByForm() once the set is placed
+  };
+}
+
+// Name each shape by its geometry; a form that repeats gets a reading-order index.
+function nameByForm() {
+  const counts = {};
+  for (const s of shapes) counts[s.type] = (counts[s.type] || 0) + 1;
+  const seen = {};
+  for (const s of shapes) {
+    seen[s.type] = (seen[s.type] || 0) + 1;
+    const form = s.type.charAt(0).toUpperCase() + s.type.slice(1);
+    s.name = form + (counts[s.type] > 1 ? ' ' + seen[s.type] : '');
+  }
+}
+
+function regen() {
+  const rng = mulberry32(seed);
+  shapes = []; ropes = []; dying = []; idCounter = 0;
+  const padX = 0.16 * extX, padY = 0.16 * extY;
+  let tries = 0;
+  while (shapes.length < 6 && tries < 3000) {
+    const nx = padX + rng() * (extX - 2 * padX);
+    const ny = padY + rng() * (extY - 2 * padY);
+    const nr = 0.05 + rng() * 0.018;
+    let ok = true;
+    for (const o of shapes) if (Math.hypot(nx - o.x, ny - o.y) < nr + o.nr + 0.11) { ok = false; break; }
+    if (ok) shapes.push(makeShape(nx, ny, nr, shapes.length));
+    tries++;
+  }
+  nameByForm();
+}
+
+// ───── Rope construction ─────
+function ropeBetween(a, b) {
+  return ropes.find(r =>
+    (r.aId === a && r.bId === b) || (r.aId === b && r.bId === a));
+}
+function tieRope(aId, bId, knot) {
+  const a = byId(aId), b = byId(bId);
+  if (!a || !b || ropeBetween(aId, bId)) return null;
+  let dx = b.x - a.x, dy = b.y - a.y;
+  let d = Math.hypot(dx, dy);
+  if (d < 1e-4) { dx = 0.1; dy = 0; d = 0.1; }
+  const rest = Math.max(d * (knot ? SLACK_K : SLACK_T), MINREST);
+  const segLen = rest / (NODES - 1);
+  const pts = [];
+  for (let i = 0; i < NODES; i++) {
+    const t = i / (NODES - 1);
+    // seed along the straight line with a light initial droop so it settles, not snaps
+    const sag = Math.sin(Math.PI * t) * (rest - d) * 0.5;
+    const x = a.x + dx * t;
+    const y = a.y + dy * t + Math.abs(sag);
+    pts.push({ x, y, px: x, py: y, pin: false });
+  }
+  const rope = { aId, bId, knot, rest, seg: segLen, pts };
+  ropes.push(rope);
+  return rope;
+}
+
+// ───── Verlet solve (fixed sub-step) ─────
+function solveRope(r, h) {
+  const a = byId(r.aId), b = byId(r.bId);
+  if (!a || !b) { r.dead = true; return; }
+  const pts = r.pts;
+  const last = pts.length - 1;
+
+  // Pin the endpoints to the two shape centres. Carry their previous position into
+  // px/py so a moving shape imparts real velocity to the rope (tug + twang).
+  const p0 = pts[0], pn = pts[last];
+  const oax = p0.x, oay = p0.y;
+  p0.px = oax; p0.py = oay; p0.x = a.x; p0.y = a.y; p0.pin = true;
+  const obx = pn.x, oby = pn.y;
+  pn.px = obx; pn.py = oby; pn.x = b.x; pn.y = b.y; pn.pin = true;
+
+  // Integrate interior points (pinned ones - endpoints, held pluck node - are skipped).
+  const g = GRAV * h * h;
+  for (let i = 1; i < last; i++) {
+    const p = pts[i];
+    if (p.pin) continue;
+    const vx = (p.x - p.px) * DAMP;
+    const vy = (p.y - p.py) * DAMP;
+    p.px = p.x; p.py = p.y;
+    p.x += vx;
+    p.y += vy + g;
+  }
+
+  // Relaxation: satisfy each distance constraint, clamped, endpoints immovable.
+  const rl = r.seg;
+  for (let k = 0; k < ITER; k++) {
+    for (let i = 0; i < last; i++) {
+      const p1 = pts[i], p2 = pts[i + 1];
+      let dx = p2.x - p1.x, dy = p2.y - p1.y;
+      let d = Math.hypot(dx, dy);
+      if (d < 1e-6) { dx = 1e-4; dy = 0; d = 1e-4; }   // guard zero-length -> no NaN
+      // clamp the correction so a wild frame can never inject an explosive kick
+      let diff = (rl - d) / d;
+      diff = clamp(diff, -0.5, 0.5);
+      const ox = dx * 0.5 * diff, oy = dy * 0.5 * diff;
+      const c1 = p1.pin, c2 = p2.pin;
+      if (c1 && c2) continue;
+      if (c1)      { p2.x += ox * 2; p2.y += oy * 2; }
+      else if (c2) { p1.x -= ox * 2; p1.y -= oy * 2; }
+      else { p1.x -= ox; p1.y -= oy; p2.x += ox; p2.y += oy; }
+    }
+  }
+}
+
+// Once the straight gap exceeds the rope's rest length the slack is gone and the rope
+// goes taut - it then drags whichever endpoint the user is NOT holding (real rope pull).
+function pullShapes() {
+  const heldId = (drag && drag.mode === 'move') ? drag.id : -1;
+  for (const r of ropes) {
+    const a = byId(r.aId), b = byId(r.bId);
+    if (!a || !b) continue;
+    let dx = b.x - a.x, dy = b.y - a.y;
+    let d = Math.hypot(dx, dy);
+    if (d < 1e-6) continue;
+    const excess = d - r.rest;
+    if (excess <= 0) continue;
+    const ux = dx / d, uy = dy / d;
+    const aHeld = a.id === heldId, bHeld = b.id === heldId;
+    const move = excess * PULL;
+    if (aHeld && !bHeld) {
+      b.x -= ux * move; b.y -= uy * move;
+    } else if (bHeld && !aHeld) {
+      a.x += ux * move; a.y += uy * move;
+    } else if (!aHeld && !bHeld) {
+      a.x += ux * move * 0.5; a.y += uy * move * 0.5;
+      b.x -= ux * move * 0.5; b.y -= uy * move * 0.5;
+    }
+    a.x = clamp(a.x, a.nr, extX - a.nr); a.y = clamp(a.y, a.nr, extY - a.nr);
+    b.x = clamp(b.x, b.nr, extX - b.nr); b.y = clamp(b.y, b.nr, extY - b.nr);
+  }
+}
+
+// Severed ropes keep their points, unpin, and fall under gravity while fading.
+function solveDying(r, h) {
+  const pts = r.pts, last = pts.length - 1;
+  const g = GRAV * h * h;
+  for (let i = 0; i <= last; i++) {
+    const p = pts[i];
+    const vx = (p.x - p.px) * DAMP;
+    const vy = (p.y - p.py) * DAMP;
+    p.px = p.x; p.py = p.y;
+    p.x += vx; p.y += vy + g;
+  }
+  for (let k = 0; k < 6; k++) {
+    for (let i = 0; i < last; i++) {
+      const p1 = pts[i], p2 = pts[i + 1];
+      let dx = p2.x - p1.x, dy = p2.y - p1.y;
+      let d = Math.hypot(dx, dy);
+      if (d < 1e-6) { dx = 1e-4; dy = 0; d = 1e-4; }
+      let diff = clamp((r.seg - d) / d, -0.5, 0.5);
+      const ox = dx * 0.5 * diff, oy = dy * 0.5 * diff;
+      p1.x -= ox; p1.y -= oy; p2.x += ox; p2.y += oy;
+    }
+  }
+  r.life -= h;
+}
+
+function physicsStep(h) {
+  // Reset pin flags each step; connect/move set none here, pluck marks its node.
+  for (const r of ropes) for (const p of r.pts) p.pin = false;
+  if (drag && drag.mode === 'pluck') {
+    const r = ropes[drag.ri];
+    if (r) { const p = r.pts[drag.pi]; if (p) p.pin = true; }
+  }
+  for (const r of ropes) solveRope(r, h);
+  pullShapes();
+  ropes = ropes.filter(r => !r.dead);
+  for (const r of dying) solveDying(r, h);
+  dying = dying.filter(r => r.life > 0);
+}
+
+// ───── Geometry helpers ─────
+function hitShape(nx, ny) {
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    const d = Math.hypot(nx - s.x, ny - s.y);
+    if (d <= s.nr * 1.4) return { s, mode: d < s.nr * 0.66 ? 'core' : 'band' };
+  }
+  return null;
+}
+function nearestRopePoint(nx, ny) {
+  let best = null, bd = GRAB_R;
+  for (let ri = 0; ri < ropes.length; ri++) {
+    const pts = ropes[ri].pts;
+    for (let pi = 1; pi < pts.length - 1; pi++) {
+      const d = Math.hypot(nx - pts[pi].x, ny - pts[pi].y);
+      if (d < bd) { bd = d; best = { ri, pi }; }
+    }
+  }
+  return best;
+}
+// Segment-segment intersection (for cut-stroke crossing detection).
+function segCross(a, b, c, d) {
+  const r1 = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  const r2 = (b.x - a.x) * (d.y - a.y) - (b.y - a.y) * (d.x - a.x);
+  const r3 = (d.x - c.x) * (a.y - c.y) - (d.y - c.y) * (a.x - c.x);
+  const r4 = (d.x - c.x) * (b.y - c.y) - (d.y - c.y) * (b.x - c.x);
+  return (r1 * r2 < 0) && (r3 * r4 < 0);
+}
+function ropeCrossedBy(a, b) {
+  // Returns the topmost non-knotted rope whose body the stroke a->b crosses.
+  for (let ri = ropes.length - 1; ri >= 0; ri--) {
+    const r = ropes[ri];
+    if (r.knot) continue;                       // knots are permanent - resist the cut
+    const pts = r.pts;
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (segCross(a, b, pts[i], pts[i + 1])) return ri;
+    }
+  }
+  return -1;
+}
+// Knot detection: did the connect path circle back on itself near the end?
+function pathLoops(path) {
+  if (path.length < 6) return false;
+  const end = path[path.length - 1];
+  let arc = 0;
+  for (let i = path.length - 1; i > 0; i--) {
+    arc += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+    if (arc < LOOP_ARC) continue;               // need enough travel to be a loop
+    if (Math.hypot(end.x - path[i - 1].x, end.y - path[i - 1].y) < LOOP_R) return true;
+    if (arc > LOOP_ARC * 4) break;              // only look at the recent tail
+  }
+  return false;
+}
+function ropeTension(r) {
+  const a = byId(r.aId), b = byId(r.bId);
+  if (!a || !b) return 0;
+  return Math.hypot(b.x - a.x, b.y - a.y) / r.rest;   // ~1 = taut
+}
+
+// ───── Theme colours (cached; custom props don't transition, re-read only on toggle) ─────
+let COL = {};
+function readTheme() {
+  const cs = getComputedStyle(document.body);
+  COL = {
+    bg:     cs.getPropertyValue('--bg').trim(),
+    doc:    cs.getPropertyValue('--doc').trim(),
+    fg:     cs.getPropertyValue('--fg').trim(),
+    dim:    cs.getPropertyValue('--dim').trim(),
+    mid:    cs.getPropertyValue('--mid').trim(),
+    active: cs.getPropertyValue('--active').trim(),
+    obj:    cs.getPropertyValue('--obj').trim(),
+  };
+}
+
+// ───── Render ─────
+function shapePath(type, x, y, r) {
+  X.beginPath();
+  if (type === 'square') {
+    const h = r * 0.9;
+    X.rect(x - h, y - h, h * 2, h * 2);
+  } else if (type === 'triangle') {
+    const tr = r * 1.1;
+    for (let i = 0; i < 3; i++) {
+      const a = -Math.PI / 2 + i * (Math.PI * 2 / 3);
+      const qx = x + tr * Math.cos(a), qy = y + tr * Math.sin(a);
+      i ? X.lineTo(qx, qy) : X.moveTo(qx, qy);
+    }
+    X.closePath();
+  } else {
+    X.arc(x, y, r, 0, Math.PI * 2);
+  }
+}
+
+// Smooth catenary stroke through the rope's normalized points.
+function strokeRopePts(pts, color, width, alpha, dash) {
+  X.save();
+  X.globalAlpha = alpha;
+  X.strokeStyle = color;
+  X.lineWidth = width;
+  X.lineJoin = 'round';
+  X.lineCap = 'round';
+  if (dash) X.setLineDash(dash); else X.setLineDash([]);
+  X.beginPath();
+  X.moveTo(px(pts[0].x), py(pts[0].y));
+  for (let i = 1; i < pts.length - 1; i++) {
+    const mx = (pts[i].x + pts[i + 1].x) / 2;
+    const my = (pts[i].y + pts[i + 1].y) / 2;
+    X.quadraticCurveTo(px(pts[i].x), py(pts[i].y), px(mx), py(my));
+  }
+  const l = pts.length - 1;
+  X.lineTo(px(pts[l].x), py(pts[l].y));
+  X.stroke();
+  X.setLineDash([]);
+  X.restore();
+}
+
+// Hand-drawn over-under knot: a strand crosses another, masked at the crossing so
+// one clearly passes over the other - no ctx.filter, just a doc-coloured gap.
+function drawKnot(cx, cy, ang, s, color) {
+  const c = Math.cos(ang), sn = Math.sin(ang);
+  const rot = (dx, dy) => ({ x: cx + dx * c - dy * sn, y: cy + dx * sn + dy * c });
+  const w = 3.2;
+  // under strand (drawn first)
+  const a1 = rot(-s, -s * 0.55), b1 = rot(s, s * 0.55);
+  X.save();
+  X.lineCap = 'round';
+  X.strokeStyle = color; X.lineWidth = w;
+  X.beginPath(); X.moveTo(a1.x, a1.y); X.lineTo(b1.x, b1.y); X.stroke();
+  // mask the crossing so the over strand reads as passing above (mask matches the backdrop)
+  X.strokeStyle = COL.bg; X.lineWidth = w + 3.4;
+  const m1 = rot(-s * 0.34, s * 0.19), m2 = rot(s * 0.34, -s * 0.19);
+  X.beginPath(); X.moveTo(m1.x, m1.y); X.lineTo(m2.x, m2.y); X.stroke();
+  // over strand
+  X.strokeStyle = color; X.lineWidth = w;
+  const a2 = rot(-s, s * 0.55), b2 = rot(s, -s * 0.55);
+  X.beginPath(); X.moveTo(a2.x, a2.y); X.lineTo(b2.x, b2.y); X.stroke();
+  X.restore();
+}
+
+function drawRope(r) {
+  const cutArmed = drag && drag.mode === 'cut' && drag.armed === ropes.indexOf(r);
+  const t = ropeTension(r);
+  const taut = clamp((t - 0.9) / 0.1, 0, 1);           // 0 slack -> 1 fully taut
+  let color, width, alpha;
+  if (cutArmed) {
+    strokeRopePts(r.pts, COL.fg, 2.4, 0.95, [7, 6]);
+    return;
+  }
+  if (r.knot) {
+    color = COL.fg; width = lerp(2.2, 3.0, taut); alpha = 0.9;
+  } else {
+    color = taut > 0.02 ? COL.fg : COL.mid;
+    width = lerp(1.5, 2.4, taut);
+    alpha = lerp(0.55, 0.95, taut);
+  }
+  strokeRopePts(r.pts, color, width, alpha, null);
+  if (r.knot) {
+    // knot glyph sits a little in from the B endpoint, aligned to the rope
+    const pts = r.pts, n = pts.length;
+    const kp = pts[n - 3], kn = pts[n - 1];
+    const ang = Math.atan2(kn.y - kp.y, kn.x - kp.x);
+    drawKnot(px(kp.x), py(kp.y), ang, minDim * 0.02, COL.fg);
+  }
+}
+
+function drawConnectPreview() {
+  if (!drag || drag.mode !== 'connect') return;
+  const o = byId(drag.originId);
+  if (!o) return;
+  const ox = px(o.x), oy = py(o.y);
+  const fx = px(drag.freeX), fy = py(drag.freeY);
+  const hasTarget = drag.target >= 0;
+  const knot = hasTarget && drag.knot;
+  const col = hasTarget ? COL.fg : COL.active;
+  // sagging bezier - a rope being paid out of the shape into the hand
+  const mx = (ox + fx) / 2, my = (oy + fy) / 2;
+  const sag = Math.min(minDim * 0.16, Math.hypot(fx - ox, fy - oy) * 0.22);
+  X.save();
+  X.globalAlpha = hasTarget ? 0.95 : 0.6;
+  X.strokeStyle = col;
+  X.lineWidth = hasTarget ? 2.2 : 1.5;
+  X.lineCap = 'round';
+  if (!hasTarget) X.setLineDash([6, 7]);
+  X.beginPath();
+  X.moveTo(ox, oy);
+  X.quadraticCurveTo(mx, my + sag, fx, fy);
+  X.stroke();
+  X.setLineDash([]);
+  // free-end node
+  X.fillStyle = col;
+  X.beginPath(); X.arc(fx, fy, hasTarget ? 5 : 3.5, 0, Math.PI * 2); X.fill();
+  if (knot) drawKnot(fx, fy, 0, minDim * 0.02, COL.fg);
+  X.restore();
+}
+
+function drawShape(s) {
+  const cx = px(s.x), cy = py(s.y);
+  // collar affordance: the tie-off ring, shown on hover or while it is a connect end
+  const isHover = s.id === hoverId;
+  const isConnectTarget = drag && drag.mode === 'connect' && drag.target === s.id;
+  const isOrigin = drag && drag.mode === 'connect' && drag.originId === s.id;
+  if (isHover || isConnectTarget || isOrigin) {
+    X.save();
+    X.globalAlpha = isConnectTarget ? 0.9 : 0.5;
+    X.strokeStyle = isConnectTarget ? COL.fg : COL.mid;
+    X.lineWidth = 1.4;
+    X.setLineDash([3, 4]);
+    X.beginPath(); X.arc(cx, cy, s.r * 1.32, 0, Math.PI * 2); X.stroke();
+    X.setLineDash([]);
+    X.restore();
+  }
+  X.save();
+  const isMoved = drag && drag.mode === 'move' && drag.id === s.id;
+  if (isMoved) {
+    // the shape being dragged is the one charged thing - fill it with the accent
+    X.fillStyle = '#FBF251';
+    shapePath(s.type, cx, cy, s.r);
+    X.fill();
+  } else {
+    X.fillStyle = COL.obj;
+    shapePath(s.type, cx, cy, s.r);
+    X.fill();
+  }
+  X.restore();
+  // selection ring on a moved shape
+  if (isMoved) {
+    X.save();
+    X.strokeStyle = COL.fg; X.lineWidth = 1.5;
+    X.beginPath(); X.arc(cx, cy, s.r + 7, 0, Math.PI * 2); X.stroke();
+    X.restore();
+  }
+}
+
+// ───── Bar readouts ─────
+const nameOf = (id) => { const s = byId(id); return s ? s.name : '?'; };
+function moveBar(s) {
+  let taut = false;
+  for (const r of ropes) if ((r.aId === s.id || r.bId === s.id) && ropeTension(r) >= 0.995) taut = true;
+  setBar(seg(key('Moving') + ' ' + s.name) +
+         seg(ropes.length ? (taut ? 'Rope taut' : 'Slack') : 'No ropes tied'));
+}
+function connectBar() {
+  if (drag.target >= 0) {
+    setBar(seg(key('Rope') + ' from ' + nameOf(drag.originId)) +
+           (drag.knot ? seg(key('Release') + ' to knot ' + nameOf(drag.target))
+                      : seg(key('Release') + ' to tie ' + nameOf(drag.target))));
+  } else {
+    setBar(seg(key('Paying out') + ' from ' + nameOf(drag.originId)) +
+           seg('Drag onto a shape · loop to knot'));
+  }
+}
+function cutBar() {
+  if (drag.armed >= 0) {
+    const r = ropes[drag.armed];
+    setBar(r ? seg(key('Cut') + ' ' + nameOf(r.aId) + ' to ' + nameOf(r.bId)) + seg('Release to sever')
+             : seg(key('Stroke') + ' across a rope to cut'));
+  } else {
+    setBar(seg(key('Stroke') + ' across a rope to cut'));
+  }
+}
+
+// ───── Frame ─────
+let last = performance.now();
+let acc = 0;
+function frame(now) {
+  let dt = (now - last) / 1000; last = now;
+  if (dt > 0.1) dt = 0.1;
+  acc += dt;
+  let steps = 0;
+  while (acc >= STEP && steps < MAXSUB) { physicsStep(STEP); acc -= STEP; steps++; }
+  if (acc > STEP) acc = 0;               // shed backlog after a stall
+
+  // cursor state: link (blue) for a valid tie/knot, armed (orange) for a live cut
+  let link = false, armed = false;
+  if (drag) {
+    if (drag.mode === 'connect' && drag.target >= 0) link = true;
+    else if (drag.mode === 'cut' && drag.armed >= 0) armed = true;
+    else if (drag.mode === 'pluck') link = true;
+  }
+  document.body.classList.toggle('link', link);
+  document.body.classList.toggle('armed', armed);
+
+  // bar: committed flash holds, else live gesture, else idle
+  if (now >= flashUntil) {
+    if (drag && drag.mode === 'move')       moveBar(byId(drag.id) || {});
+    else if (drag && drag.mode === 'connect') connectBar();
+    else if (drag && drag.mode === 'cut')     cutBar();
+    else if (drag && drag.mode === 'pluck')   setBar(seg(key('Plucking') + ' rope') + seg('Release to twang'));
+    else if (lastBar !== '')                  idleBar();
+  }
+
+  // draw
+  X.fillStyle = COL.bg; X.fillRect(0, 0, W, H);
+  // Work zone: docX/docY/docW/docH stays as an invisible limit zone (no visible panel).
+
+  for (const r of dying) strokeRopePts(r.pts, COL.mid, 1.4, clamp(r.life / r.maxLife, 0, 1) * 0.5, null);
+  for (const r of ropes) drawRope(r);
+  drawConnectPreview();
+  for (const s of shapes) drawShape(s);
+
+  requestAnimationFrame(frame);
+}
+
+// ───── Input ─────
+const cursor = document.getElementById('cursor');
+const toggle = document.getElementById('toggle');
+
+function updateHover(nx, ny) {
+  if (drag) { hoverId = -1; hoverMode = ''; return; }
+  const h = hitShape(nx, ny);
+  hoverId = h ? h.s.id : -1;
+  hoverMode = h ? h.mode : '';
+}
+
+window.addEventListener('pointermove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top  = mouseY + 'px';
+  const nx = toNormX(mouseX), ny = toNormY(mouseY);
+
+  if (!drag) { updateHover(nx, ny); return; }
+
+  if (drag.mode === 'move') {
+    const s = byId(drag.id);
+    if (s) { s.x = clamp(nx - drag.offx, s.nr, extX - s.nr); s.y = clamp(ny - drag.offy, s.nr, extY - s.nr); }
+  } else if (drag.mode === 'connect') {
+    drag.freeX = nx; drag.freeY = ny;
+    drag.path.push({ x: nx, y: ny });
+    if (drag.path.length > 90) drag.path.shift();
+    const h = hitShape(nx, ny);
+    let tgt = -1;
+    if (h && h.s.id !== drag.originId && !ropeBetween(drag.originId, h.s.id)) tgt = h.s.id;
+    drag.target = tgt;
+    drag.knot = tgt >= 0 && pathLoops(drag.path);
+  } else if (drag.mode === 'pluck') {
+    const r = ropes[drag.ri];
+    if (r) {
+      const p = r.pts[drag.pi];
+      if (p) { p.px = p.x; p.py = p.y; p.x = nx; p.y = ny; }
+    }
+  } else if (drag.mode === 'cut') {
+    const a = { x: drag.lastX, y: drag.lastY }, b = { x: nx, y: ny };
+    if (Math.hypot(b.x - a.x, b.y - a.y) > 1e-4) {
+      const ri = ropeCrossedBy(a, b);
+      if (ri >= 0) drag.armed = ri;
+      drag.moved = true;
+    }
+    drag.lastX = nx; drag.lastY = ny;
+  }
+});
+
+window.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  mouseX = e.clientX; mouseY = e.clientY;
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top  = mouseY + 'px';
+  const nx = toNormX(mouseX), ny = toNormY(mouseY);
+  flashUntil = 0;                                  // a fresh gesture overrides any flash
+  hoverId = -1; hoverMode = '';
+
+  const hit = hitShape(nx, ny);
+  if (hit) {
+    e.preventDefault();
+    try { C.setPointerCapture(e.pointerId); } catch (_) {}
+    document.body.classList.add('dragging');
+    if (hit.mode === 'band') {
+      // grab the collar -> pay out a rope (origin stays put)
+      drag = { mode: 'connect', originId: hit.s.id, target: -1, knot: false,
+               freeX: nx, freeY: ny, path: [{ x: nx, y: ny }] };
+    } else {
+      // grab the body -> move it; connected ropes tauten and pull neighbours
+      drag = { mode: 'move', id: hit.s.id, offx: nx - hit.s.x, offy: ny - hit.s.y };
+    }
+    return;
+  }
+
+  const near = nearestRopePoint(nx, ny);
+  if (near) {
+    e.preventDefault();
+    try { C.setPointerCapture(e.pointerId); } catch (_) {}
+    document.body.classList.add('dragging');
+    drag = { mode: 'pluck', ri: near.ri, pi: near.pi };
+    return;
+  }
+
+  // empty: begin a cut stroke (severs any rope the stroke crosses); a still tap
+  // that never moves falls through to the double-tap reset in pointerup.
+  e.preventDefault();
+  try { C.setPointerCapture(e.pointerId); } catch (_) {}
+  document.body.classList.add('dragging');
+  drag = { mode: 'cut', lastX: nx, lastY: ny, armed: -1, moved: false };
+});
+
+function endDrag() {
+  if (!drag) return;
+  const d = drag;
+  drag = null;
+  document.body.classList.remove('dragging', 'armed', 'link');
+
+  if (d.mode === 'connect') {
+    if (d.target >= 0) {
+      const r = tieRope(d.originId, d.target, d.knot);
+      if (r) flashBar((d.knot ? seg(key('Knotted') + ' ' + nameOf(d.originId) + ' to ' + nameOf(d.target)) + seg('Permanent link')
+                              : seg(key('Tied') + ' ' + nameOf(d.originId) + ' to ' + nameOf(d.target)) + seg('Light tether')), 1500);
+      else idleBar();
+    } else { idleBar(); }
+  } else if (d.mode === 'cut') {
+    if (d.armed >= 0 && ropes[d.armed]) {
+      const r = ropes[d.armed];
+      const a = nameOf(r.aId), b = nameOf(r.bId);
+      dying.push({ pts: r.pts.map(p => ({ x: p.x, y: p.y, px: p.x, py: p.y })), seg: r.seg, life: 0.7, maxLife: 0.7 });
+      ropes.splice(d.armed, 1);
+      flashBar(seg(key('Cut') + ' ' + a + ' to ' + b) + seg('Ends fall slack'), 1400);
+    } else if (!d.moved) {
+      // still tap on empty canvas -> double-tap resets (touch fallback for R)
+      const t = performance.now();
+      if (t - lastTap < 320) { lastTap = 0; doReset(); return; }
+      lastTap = t; idleBar();
+    } else { idleBar(); }
+  } else if (d.mode === 'pluck') {
+    flashBar(seg(key('Plucked') + ' rope') + seg('Twang'), 1000);
+  } else if (d.mode === 'move') {
+    idleBar();
+  }
+}
+
+window.addEventListener('pointerup', endDrag);
+window.addEventListener('pointercancel', () => {
+  if (!drag) return;
+  drag = null;
+  document.body.classList.remove('dragging', 'armed', 'link');
+  idleBar();
+});
+
+function doReset() {
+  drag = null; lastTap = 0; flashUntil = 0;
+  document.body.classList.remove('dragging', 'armed', 'link');
+  regen();
+  idleBar();
+}
+
+window.addEventListener('keydown', (e) => {
+  if (!e.key) return;
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) doReset();
+});
+
+toggle.addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  ui.theme(dark ? 'dark' : 'light');
+  readTheme();
+});
+
+// ───── Boot ─────
+readTheme();
+resize();
+window.addEventListener('resize', resize);
+regen();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

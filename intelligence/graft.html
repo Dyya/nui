@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<!--
+  Graft - rearrange prose by moving ideas
+  Drag a whole grammatical phrase, not characters: the source wound closes and the graft site re-inflects (case, punctuation) as it settles.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Graft - rearrange prose by moving ideas</title>
+<meta name="description" content="Drag whole phrases instead of characters: the source wound closes and the graft site re-inflects case and punctuation as it settles.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Graft - rearrange prose by moving ideas">
+<meta property="og:description" content="Drag whole phrases instead of characters: the source wound closes and the graft site re-inflects case and punctuation as it settles.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Graft",
+  "applicationCategory": "DesignApplication",
+  "description": "Rearrange prose by dragging whole grammatical phrases. On drop the source wound closes and the graft site re-inflects case and punctuation, animated with an exponential settle.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript",
+  "inLanguage": "en",
+  "keywords": "graft, prose editing, phrase drag, re-inflection, grammar, kinetic text, interaction design, AI interface",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root { --bg:#0a0a0c; --fg:rgba(255,255,255,0.92); --fg-dim:rgba(255,255,255,0.45); --fg-faint:rgba(255,255,255,0.18); --grid:rgba(255,255,255,0.018); --accent:#FBF251; --obj:rgb(132,137,148); }
+  body.light { --bg:#FAFAFA; --fg:rgba(0,0,0,0.88); --fg-dim:rgba(0,0,0,0.45); --fg-faint:rgba(0,0,0,0.15); --grid:rgba(0,0,0,0.03); --accent:#FBF251; --obj:rgb(98,103,113); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; transition: background 0.4s; }
+
+  #stage { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 680px; height: 200px; user-select: none; -webkit-user-select: none; }
+  .chip { position: absolute; left: 0; top: 0; will-change: transform; font: 500 24px/1 'DM Sans', sans-serif; color: var(--fg); background: transparent; padding: 5px 6px; border-radius: 7px; white-space: pre; user-select: none; -webkit-user-select: none; }
+  .chip.movable { cursor: grab; }
+  .chip.movable.hot { box-shadow: inset 0 -2px 0 var(--fg-faint); }
+  .chip.dragging { cursor: grabbing; z-index: 50; }
+
+  #caret { position: fixed; left: 0; top: 0; width: 2px; height: 30px; background: var(--fg-dim); border-radius: 2px; opacity: 0; pointer-events: none; z-index: 40; transition: opacity 0.18s; }
+  #caret.on { opacity: 1; }
+
+  #toast { position: fixed; left: 50%; bottom: 68px; transform: translateX(-50%) translateY(6px); z-index: 9998; padding: 7px 14px; border-radius: 20px; font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .02em; color: var(--fg-dim); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); background: rgba(10,10,10,.35); border: 1px solid rgba(255,255,255,.08); opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; }
+  body.light #toast { background: rgba(255,255,255,.55); border-color: rgba(0,0,0,.06); }
+  #toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  #live { position: fixed; left: 50%; top: 74px; transform: translateX(-50%) translateY(-8px); z-index: 9998; width: min(460px, calc(100vw - 32px)); padding: 16px; border-radius: 16px; -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); background: rgba(10,10,10,.42); border: 1px solid rgba(255,255,255,.09); color: var(--fg); opacity: 0; pointer-events: none; transition: opacity .22s, transform .22s; }
+  body.light #live { background: rgba(255,255,255,.7); border-color: rgba(0,0,0,.07); }
+  #live.on { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+  #live .lv-t { font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .04em; color: var(--fg-dim); margin-bottom: 10px; }
+  #live input, #live textarea { width: 100%; margin-bottom: 8px; padding: 8px 10px; border-radius: 8px; font: 400 12px 'IBM Plex Mono', monospace; color: var(--fg); background: var(--grid); border: 1px solid var(--fg-faint); outline: none; resize: none; }
+  #live input:focus, #live textarea:focus { border-color: var(--fg-dim); }
+  #live textarea { min-height: 76px; font-family: 'DM Sans', sans-serif; font-size: 13px; }
+  #live .lv-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  #live .lv-note { font: 400 10px 'IBM Plex Mono', monospace; color: var(--fg-dim); }
+  #live button { padding: 7px 14px; border-radius: 8px; font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .03em; color: #0A0A0A; background: var(--accent); border: none; cursor: pointer; }
+  #live button:active { transform: translateY(1px); }
+
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+</style>
+</head>
+<body class="light">
+  <div id="stage"></div>
+  <div id="caret"></div>
+  <div id="toast"></div>
+  <div id="live">
+    <div class="lv-t">Connect a key to graft any paragraph</div>
+    <input id="lv-key" type="password" placeholder="Anthropic API key (stored on this device)" autocomplete="off" spellcheck="false">
+    <textarea id="lv-para" placeholder="Paste a paragraph to graft (2-4 sentences reads best)"></textarea>
+    <div class="lv-row">
+      <span class="lv-note" id="lv-note">The drag is the whole instruction.</span>
+      <button id="lv-go">Graft it</button>
+    </div>
+  </div>
+  <div id="toggle" title="Toggle theme"></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+// ---------------------------------------------------------------------------
+// Graft - rearrange prose by dragging whole phrases.
+// The offline engine is fully deterministic: a hand-authored constituent parse
+// (which word-runs are movable phrases vs the fixed clause core) plus a rule
+// set that heals every legal (phrase -> slot) move. Case + comma + period are
+// recomputed from the arrangement, so any sequence of moves stays correct.
+// The optional K path parses any pasted paragraph live via the Claude API.
+// ---------------------------------------------------------------------------
+
+const CLAUDE_MODEL = 'claude-sonnet-5';   // editable: live-parse model
+
+const stage  = document.getElementById('stage');
+const caret  = document.getElementById('caret');
+const toastEl= document.getElementById('toast');
+const live   = document.getElementById('live');
+
+const ui = PT.ui({ title: 'Graft', hints: 'Drag a phrase to move it · C copy healed text · E graft log · K connect a key · R reset', theme: 'light' });
+const toggle = document.getElementById('toggle');
+let isDark = false;
+toggle.addEventListener('click', () => {
+  isDark = document.body.classList.toggle('dark');
+  document.body.classList.toggle('light', !isDark);
+  ui.theme(isDark ? 'dark' : 'light');
+});
+
+// --- geometry constants -----------------------------------------------------
+const PADX = 6, PADY = 5, LINE = 40;
+let   maxW = Math.min(680, innerWidth - 80);
+let   SPACE = 6;
+const FONT = '500 24px "DM Sans", sans-serif';
+const mctx = document.createElement('canvas').getContext('2d');
+const mcache = new Map();
+function measure(s){ let v = mcache.get(s); if (v == null){ mctx.font = FONT; v = mctx.measureText(s).width; mcache.set(s, v); } return v; }
+function recomputeSpace(){ mctx.font = FONT; SPACE = mctx.measureText(' ').width || 6; }
+
+// --- model ------------------------------------------------------------------
+// C: constituents keyed by id. kind 'core' = fixed main clause, 'phrase' = movable adverbial.
+// sentences: ordered arrays of constituent ids. Exactly one core per sentence.
+let C, sentences, initial;
+function bakedModel(){
+  const c = {
+    p1: { id:'p1', kind:'phrase', words:['in','the','early','spring'] },
+    cA: { id:'cA', kind:'core',   words:['the','gardener','planted','the','seeds'] },
+    p2: { id:'p2', kind:'phrase', words:['along','the','fence'] },
+    p3: { id:'p3', kind:'phrase', words:['with','great','care'] },
+    p4: { id:'p4', kind:'phrase', words:['by','midsummer'] },
+    cB: { id:'cB', kind:'core',   words:['the','beds','turned','green'] },
+    p5: { id:'p5', kind:'phrase', words:['almost','overnight'] },
+  };
+  const s = [ ['p1','cA','p2','p3'], ['p4','cB','p5'] ];
+  return { C: c, sentences: s };
+}
+const clone = a => JSON.parse(JSON.stringify(a));
+const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+
+// --- inflection engine ------------------------------------------------------
+// Walk the arrangement and produce the healed token stream + the legal slots.
+// This is the rule table: sentence-initial capital, front-adverbial comma,
+// end-of-sentence period, and an a/an agreement pass (covers the live path).
+function renderStream(sents){
+  const tokens = [], slots = [];
+  for (let s = 0; s < sents.length; s++){
+    const items = sents[s];
+    if (!items.length) continue;
+    const coreIdx = items.findIndex(id => C[id].kind === 'core');
+    const startTok = tokens.length;
+    slots.push({ s, i:0, at: tokens.length });
+    items.forEach((cid, ii) => {
+      const c = C[cid];
+      c.words.forEach((w, wi) => tokens.push({ id: cid + '#' + wi, cid, base: w, text: w }));
+      // a front-position adverbial (before the core) takes a trailing comma
+      if (c.kind === 'phrase' && coreIdx >= 0 && ii < coreIdx){
+        const lt = tokens[tokens.length - 1]; lt.text = lt.base + ',';
+      }
+      slots.push({ s, i: ii + 1, at: tokens.length });
+    });
+    // sentence-final period on the last token
+    const last = tokens[tokens.length - 1]; last.text = last.text + '.';
+    // sentence-initial capital
+    tokens[startTok].text = cap(tokens[startTok].text);
+  }
+  // a/an agreement (inert for the baked demo, correct for pasted prose)
+  for (let i = 0; i < tokens.length; i++){
+    const t = tokens[i], b = t.base.toLowerCase();
+    if ((b === 'a' || b === 'an') && !/[.]$/.test(t.text)){
+      const nx = tokens[i + 1];
+      if (nx){
+        const vowel = /^[aeiou]/i.test(nx.base);
+        let art = vowel ? 'an' : 'a';
+        if (/^[A-Z]/.test(t.text)) art = cap(art);
+        t.text = art;
+      }
+    }
+  }
+  return { tokens, slots };
+}
+
+// pure geometry over an already-healed token stream
+function flow(tokens, slots, dilateKey, dilateW){
+  const pos = {}, slotPos = {};
+  const byAt = {};
+  slots.forEach(sl => { (byAt[sl.at] = byAt[sl.at] || []).push(sl); });
+  let x = 0, y = 0;
+  const placeSlots = at => {
+    (byAt[at] || []).forEach(sl => {
+      const key = sl.s + ':' + sl.i;
+      if (key === dilateKey){ slotPos[key] = { x: x + dilateW / 2, y }; x += dilateW; }
+      else slotPos[key] = { x, y };
+    });
+  };
+  for (let ti = 0; ti < tokens.length; ti++){
+    placeSlots(ti);
+    const t = tokens[ti];
+    const w = measure(t.text);
+    if (ti > 0){
+      if (x + SPACE + w > maxW && x > 0){ x = 0; y += LINE; }
+      else x += SPACE;
+    }
+    pos[t.id] = { x, y };
+    x += w;
+  }
+  placeSlots(tokens.length);
+  return { pos, slotPos, height: y + LINE };
+}
+
+// --- chips ------------------------------------------------------------------
+let chips = [], byId = {};
+function buildChips(){
+  stage.innerHTML = ''; chips = []; byId = {};
+  for (const cid in C){
+    const c = C[cid];
+    c.words.forEach((w, wi) => {
+      const id = cid + '#' + wi;
+      const el = document.createElement('span');
+      el.className = 'chip' + (c.kind === 'phrase' ? ' movable' : '');
+      el.dataset.cid = cid;
+      el.textContent = w;
+      stage.appendChild(el);
+      const chip = { id, cid, el, text: w, x: 0, y: 0, tx: 0, ty: 0, charge: 0, dragging: false, off: { x:0, y:0 } };
+      chips.push(chip); byId[id] = chip;
+    });
+  }
+}
+
+let stageRect = { left: 0, top: 0 };
+function refreshRect(){ stageRect = stage.getBoundingClientRect(); }
+
+function commit(flash, snap){
+  const rs = renderStream(sentences);
+  const lay = flow(rs.tokens, rs.slots, null, 0);
+  stage.style.height = Math.max(lay.height, LINE) + 'px';
+  rs.tokens.forEach(t => {
+    const c = byId[t.id];
+    if (c.text !== t.text){ c.el.textContent = t.text; c.text = t.text; if (flash) c.charge = 1; }
+    c.tx = lay.pos[t.id].x; c.ty = lay.pos[t.id].y;
+    if (snap){ c.x = c.tx; c.y = c.ty; c.el.style.transform = `translate(${c.x - PADX}px,${c.y - PADY}px)`; }
+  });
+  requestAnimationFrame(refreshRect);
+  if (!snap) wake();
+}
+
+// --- animation loop (exponential settle, idle-stops) ------------------------
+let running = false;
+function wake(){ if (!running){ running = true; requestAnimationFrame(frame); } }
+function chargeColor(ch){
+  // charged chips sit on a yellow fill: text drifts to ink so it stays legible on both themes
+  if (isDark){
+    const r = Math.round(233 + (10 - 233) * ch), g = Math.round(233 + (10 - 233) * ch), b = Math.round(235 + (12 - 235) * ch);
+    return `rgb(${r},${g},${b})`;
+  }
+  return '#0A0A0A';
+}
+function frame(){
+  let alive = false;
+  for (const c of chips){
+    const k = c.dragging ? 0.34 : 0.22;
+    c.x += (c.tx - c.x) * k; c.y += (c.ty - c.y) * k;
+    const moving = Math.abs(c.tx - c.x) > 0.1 || Math.abs(c.ty - c.y) > 0.1;
+    if (moving) alive = true;
+    if (c.charge > 0.002){ c.charge += (0 - c.charge) * 0.055; alive = true; } else c.charge = 0;
+    c.el.style.transform = `translate(${c.x - PADX}px,${c.y - PADY}px)`;
+    const active = c.dragging || c.charge > 0.01;
+    if (active){
+      const ch = c.dragging ? 1 : c.charge;
+      c.el.style.background = c.dragging ? 'var(--accent)' : `rgba(251,242,81,${ch})`;
+      c.el.style.color = chargeColor(ch);
+    } else if (c.el.style.background){
+      c.el.style.background = ''; c.el.style.color = '';
+    }
+  }
+  if (drag){ alive = true; drawCaret(); }
+  if (alive) requestAnimationFrame(frame); else running = false;
+}
+function drawCaret(){
+  if (drag && drag.activeXY){
+    caret.classList.add('on');
+    caret.style.transform = `translate(${stageRect.left + drag.activeXY.x - 1}px,${stageRect.top + drag.activeXY.y - 3}px)`;
+  } else caret.classList.remove('on');
+}
+
+// --- dragging ---------------------------------------------------------------
+let drag = null;
+function labelAt(s, i){
+  const items = sentences[s] || [];
+  const pos = i <= 0 ? 'front' : (i >= items.length ? 'end' : 'mid');
+  return `sentence ${s + 1} ${pos}`;
+}
+function healedText(){ return renderStream(sentences).tokens.map(t => t.text).join(' '); }
+
+function onChipDown(e){
+  const el = e.target.closest && e.target.closest('.chip.movable');
+  if (!el || drag) return;
+  const cid = el.dataset.cid;
+  let fs = -1, fi = -1;
+  sentences.forEach((items, si) => { const k = items.indexOf(cid); if (k >= 0){ fs = si; fi = k; } });
+  if (fs < 0) return;
+  e.preventDefault();
+  refreshRect();
+  const lx = e.clientX - stageRect.left, ly = e.clientY - stageRect.top;
+  const ids = C[cid].words.map((w, wi) => cid + '#' + wi);
+  let pw = 0; ids.forEach((id, k) => { pw += measure(byId[id].text) + (k > 0 ? SPACE : 0); });
+  drag = { cid, ids, fromS: fs, fromI: fi, phraseW: pw, activeKey: null, activeXY: null, fromLabel: labelAt(fs, fi) };
+  ids.forEach(id => { const c = byId[id]; c.dragging = true; c.off = { x: c.x - lx, y: c.y - ly }; c.el.classList.add('dragging'); c.el.classList.remove('hot'); });
+  window.addEventListener('pointermove', onDragMove);
+  window.addEventListener('pointerup', onDragUp, { once: true });
+  wake();
+}
+
+function onDragMove(e){
+  const lx = e.clientX - stageRect.left, ly = e.clientY - stageRect.top;
+  drag.ids.forEach(id => { const c = byId[id]; c.tx = lx + c.off.x; c.ty = ly + c.off.y; });
+  // remainder with the phrase removed = the wound closing in real time
+  const disp = sentences.map(items => items.filter(id => id !== drag.cid));
+  const rs = renderStream(disp);
+  rs.tokens.forEach(t => { t.text = byId[t.id].text; }); // geometry tracks what is actually on screen
+  const plain = flow(rs.tokens, rs.slots, null, 0);
+  let bestKey = null, bestD = Infinity;
+  for (const sl of rs.slots){
+    const key = sl.s + ':' + sl.i, p = plain.slotPos[key];
+    const d = Math.hypot(p.x - lx, p.y - ly);
+    if (d < bestD){ bestD = d; bestKey = key; }
+  }
+  if (bestD > 120) bestKey = null;
+  drag.activeKey = bestKey;
+  const dil = flow(rs.tokens, rs.slots, bestKey, bestKey ? drag.phraseW : 0);
+  rs.tokens.forEach(t => { const c = byId[t.id]; c.tx = dil.pos[t.id].x; c.ty = dil.pos[t.id].y; });
+  drag.activeXY = bestKey ? dil.slotPos[bestKey] : null;
+  wake();
+}
+
+function onDragUp(){
+  window.removeEventListener('pointermove', onDragMove);
+  const key = drag.activeKey;
+  drag.ids.forEach(id => { byId[id].dragging = false; byId[id].el.classList.remove('dragging'); });
+  if (key){
+    const [ts, ti] = key.split(':').map(Number);
+    const before = healedText();
+    const fromLabel = drag.fromLabel;
+    const items = sentences[drag.fromS];
+    items.splice(items.indexOf(drag.cid), 1);
+    let insI = ti;
+    if (ts === drag.fromS && ti > drag.fromI) insI = ti - 1;
+    sentences[ts].splice(insI, 0, drag.cid);
+    const after = healedText();
+    log.push({ phrase: C[drag.cid].words.join(' '), from: fromLabel, to: labelAt(ts, insI), before, after });
+    drag = null;
+    caret.classList.remove('on');
+    commit(true);   // heal + flash the repaired words
+  } else {
+    drag = null;
+    caret.classList.remove('on');
+    commit(false);  // no legal slot: the phrase settles back home
+  }
+  wake();
+}
+
+// phrase-level hover affordance
+stage.addEventListener('pointerover', e => {
+  if (drag) return;
+  const el = e.target.closest && e.target.closest('.chip.movable');
+  if (!el) return;
+  setHot(el.dataset.cid, true);
+});
+stage.addEventListener('pointerout', e => {
+  const el = e.target.closest && e.target.closest('.chip.movable');
+  if (!el) return;
+  setHot(el.dataset.cid, false);
+});
+function setHot(cid, on){ C[cid].words.forEach((w, wi) => { const c = byId[cid + '#' + wi]; if (c) c.el.classList.toggle('hot', on); }); }
+stage.addEventListener('pointerdown', onChipDown);
+
+// --- payoff: copy / export / reset ------------------------------------------
+let log = [];
+function copyText(t){
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).catch(fallbackCopy.bind(null, t)); }
+    else fallbackCopy(t);
+  } catch (e){ fallbackCopy(t); }
+}
+function fallbackCopy(t){
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  } catch (e){}
+}
+function exportLog(){
+  if (!log.length){ toast('No grafts yet'); return; }
+  const payload = { healed: healedText(), grafts: log };
+  try {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'graft-log.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 800);
+    toast('Graft log exported');
+  } catch (e){ toast('Export unavailable'); }
+}
+
+let toastT = null;
+function toast(msg){
+  toastEl.textContent = msg; toastEl.classList.add('on');
+  clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('on'), 1600);
+}
+
+window.addEventListener('keydown', e => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'c'){ copyText(healedText()); toast('Healed text copied'); }
+  else if (k === 'r'){ sentences = clone(initial); log = []; commit(true); toast('Reset'); }
+  else if (k === 'e'){ exportLog(); }
+  else if (k === 'k'){ toggleLive(); }
+});
+
+// --- optional live path (K) -------------------------------------------------
+const keyInput = document.getElementById('lv-key');
+const paraInput = document.getElementById('lv-para');
+const liveNoteEl = document.getElementById('lv-note');
+function liveNote(t){ liveNoteEl.textContent = t; }
+function toggleLive(){
+  const on = live.classList.toggle('on');
+  if (on){ keyInput.value = localStorage.getItem('graft_key') || ''; liveNote('The drag is the whole instruction.'); (keyInput.value ? paraInput : keyInput).focus(); }
+}
+document.getElementById('lv-go').addEventListener('click', runLive);
+live.addEventListener('keydown', e => { if (e.key === 'Escape') toggleLive(); });
+
+async function parseWithClaude(key, para){
+  const instr = 'Split the paragraph into sentences. For each sentence return its constituents in reading order as an array "items". Each item has "kind" ("core" for the single main-clause backbone of subject + verb + object, or "phrase" for a genuinely relocatable adverbial or prepositional phrase) and "words" (an array of lowercase tokens, no punctuation, no capital letters). Exactly one "core" per sentence. Only mark movable adverbial or prepositional phrases as "phrase"; leave the core and its required arguments alone. Return ONLY JSON of the form {"sentences":[{"items":[{"kind":"core","words":["..."]}]}]}';
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+    body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 1500, messages: [{ role: 'user', content: instr + '\n\nParagraph:\n' + para }] })
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  const txt = (data && data.content && data.content[0] && data.content[0].text) || '';
+  const m = txt.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  const parsed = JSON.parse(m[0]);
+  if (!parsed || !Array.isArray(parsed.sentences)) return null;
+  const nc = {}, sents = []; let pn = 0, cn = 0;
+  for (const s of parsed.sentences){
+    if (!s || !Array.isArray(s.items)) return null;
+    let cores = 0; const arr = [];
+    for (const it of s.items){
+      if (!it || !Array.isArray(it.words) || !it.words.length) continue;
+      const kind = it.kind === 'core' ? 'core' : 'phrase';
+      if (kind === 'core') cores++;
+      const id = kind === 'core' ? ('c' + (cn++)) : ('p' + (pn++));
+      nc[id] = { id, kind, words: it.words.map(w => String(w).toLowerCase().replace(/[^a-z'-]/g, '')).filter(Boolean) };
+      if (!nc[id].words.length){ delete nc[id]; continue; }
+      arr.push(id);
+    }
+    if (cores !== 1 || arr.length < 1) return null;
+    sents.push(arr);
+  }
+  if (!sents.length) return null;
+  if (!Object.values(nc).some(c => c.kind === 'phrase')) return null;
+  return { C: nc, sentences: sents };
+}
+
+async function runLive(){
+  const key = keyInput.value.trim();
+  const para = paraInput.value.trim();
+  if (key) localStorage.setItem('graft_key', key);
+  if (!key){ liveNote('Add a key first (nothing leaves this device without one)'); return; }
+  if (!para){ liveNote('Paste a paragraph to graft'); return; }
+  liveNote('Parsing your paragraph...');
+  try {
+    const model = await parseWithClaude(key, para);
+    if (!model) throw new Error('parse');
+    C = model.C; sentences = model.sentences; initial = clone(sentences); log = [];
+    buildChips(); commit(false, true); refreshRect();
+    toggleLive(); toast('Grafted your paragraph');
+  } catch (err){
+    liveNote('Parse failed, kept the demo'); // graceful fall-back, never throws
+  }
+}
+
+// --- boot -------------------------------------------------------------------
+function boot(){
+  const m = bakedModel(); C = m.C; sentences = m.sentences; initial = clone(sentences);
+  maxW = Math.min(680, innerWidth - 80); stage.style.width = maxW + 'px';
+  recomputeSpace();
+  buildChips();
+  commit(false, true);   // snap into place, no fly-in
+  requestAnimationFrame(refreshRect);
+}
+function onResize(){ maxW = Math.min(680, innerWidth - 80); stage.style.width = maxW + 'px'; if (!drag) commit(false); requestAnimationFrame(refreshRect); }
+window.addEventListener('resize', onResize);
+
+boot();
+// widths are approximate until the webfont lands; re-measure and glide into place
+if (document.fonts && document.fonts.ready){
+  document.fonts.ready.then(() => { mcache.clear(); recomputeSpace(); if (!drag) commit(false); requestAnimationFrame(refreshRect); });
+}
+</script>
+</body>
+</html>

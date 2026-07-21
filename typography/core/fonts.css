@@ -1,0 +1,13 @@
+/* NUI lab UI face - FT Polar Mono. Chrome only (nav, panels, legends, labels),
+   never the canvas work itself. Loaded by the nav shell and by core/ui.js so
+   every project's UI shares one face. url() resolves relative to this file. */
+@font-face{
+  font-family:"FT Polar Mono";
+  src:url("./fonts/FTPolarMono-Book.woff2") format("woff2");
+  font-weight:400; font-style:normal; font-display:swap;
+}
+@font-face{
+  font-family:"FT Polar Mono";
+  src:url("./fonts/FTPolarMono-Semibold.woff2") format("woff2");
+  font-weight:600; font-style:normal; font-display:swap;
+}

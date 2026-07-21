@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<!--
+  Parameter siphon - siphon traits and paint them on
+  Hold S to siphon a shape's tone, rotation, style, and form, then click others to paint the picked-up traits onto them.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Parameter siphon - siphon traits and paint them on</title>
+<meta name="description" content="Hold S to siphon a shape's tone, rotation, style, and form, then click others to paint the picked-up traits onto them.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Parameter siphon - siphon traits and paint them on">
+<meta property="og:description" content="Hold S to siphon a shape's tone, rotation, style, and form, then click others to paint the picked-up traits onto them.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Parameter siphon",
+  "applicationCategory": "DesignApplication",
+  "description": "Hold S to siphon a shape's tone, rotation, style, and form, then click others to paint the picked-up traits onto them.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "parameter siphon, interaction design, transfer, eyedropper, traits, style, paint, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0a0c;
+  --doc: #16161A;
+  --fg: rgba(255,255,255,0.95);
+  --dim: rgba(255,255,255,0.15);
+  --mid: rgba(255,255,255,0.25);
+  --active: rgba(255,255,255,0.5);
+  --hover: rgba(255,255,255,0.7);
+  --accent: #FBF251;
+  --grid: rgba(255,255,255,0.015);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.light {
+  --bg: #FAFAFA;
+  --doc: #EDEDEF;
+  --fg: rgba(0,0,0,0.95);
+  --dim: rgba(0,0,0,0.15);
+  --mid: rgba(0,0,0,0.28);
+  --active: rgba(0,0,0,0.5);
+  --hover: rgba(0,0,0,0.75);
+  --accent: #FBF251;
+  --grid: rgba(0,0,0,0.03);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); }
+
+#c { position: fixed; inset: 0; z-index: 1; }
+
+
+#toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+
+/* Carry indicator - follows cursor */
+.carry {
+  position: fixed; z-index: 45; pointer-events: none;
+  padding: 8px 10px;
+  border: 1px solid var(--mid);
+  background: rgba(10,10,12,0.82);
+  backdrop-filter: blur(10px);
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--active);
+  opacity: 0;
+  transition: opacity 0.2s var(--ease);
+  min-width: 118px;
+}
+body.light .carry { background: rgba(242,240,237,0.88); }
+.carry.on { opacity: 1; }
+.carry .row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.carry .swatch { width: 22px; height: 22px; border: 1px solid var(--dim); background: var(--c, #888); }
+.carry .src { font-size: 9px; letter-spacing: 0.18em; color: var(--mid); }
+.carry .src b { color: var(--active); font-weight: 500; }
+.carry .caps { display: flex; gap: 3px; font-size: 9px; letter-spacing: 0.18em; }
+.carry .caps span {
+  padding: 1px 4px; color: var(--dim);
+  border-bottom: 1px solid transparent;
+  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.carry .caps span.on { color: var(--hover); border-bottom-color: var(--active); }
+.carry .kind { margin-top: 5px; font-size: 9px; letter-spacing: 0.2em; color: var(--active); }
+
+/* Cursor */
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--mid); border-radius: 50%; transition: all 0.25s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--mid); transform: translate(-50%, -50%); transition: background 0.25s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; }
+.cursor .cross.v { width: 1px; height: 10px; }
+body.siphon .cursor .ring  { border-color: var(--hover); transform: scale(1.35); }
+body.siphon .cursor .cross { background: var(--hover); }
+body.siphon.carrying .cursor .ring { border-style: dashed; }
+</style>
+</head>
+<body class="light">
+<canvas id="c"></canvas>
+
+<div id="toggle" title="Toggle theme"></div>
+
+<div class="carry" id="carry">
+  <div class="row">
+    <div class="swatch" id="swatch"></div>
+    <div class="src" id="src">From <b>none</b></div>
+  </div>
+  <div class="caps" id="caps">
+    <span data-c="T">T</span><span data-c="R">R</span><span data-c="S">S</span><span data-c="F">F</span>
+  </div>
+  <div class="kind" id="kind">All</div>
+</div>
+
+<div class="cursor" id="cursor">
+  <div class="ring"></div>
+  <div class="cross h"></div>
+  <div class="cross v"></div>
+</div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const ui = PT.ui({ title: 'Parameter siphon', hints: 'S hold siphon · Click pick or drop · A all · 1 tone · 2 rotation · 3 style · 4 form · Esc clear · R reseed', theme: 'light' });
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+let isSiphon = false;
+let carrying = null;
+let mode = 'all';
+let hoveredId = 0;
+let mouseX = -100, mouseY = -100;
+let seed = 202604;
+let shapes = [];
+let depositCount = 0;
+
+let docX = 0, docY = 0, docSize = 0;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() {
+  docSize = Math.min(W, H) * 0.74;
+  docX = (W - docSize) / 2;
+  docY = (H - docSize) / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+function mulberry32(s) {
+  return function() {
+    let t = (s += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// The "color" trait is re-encoded as a discrete grey-value tier (equality preserved,
+// theme-aware, resolved at draw time so a light/dark toggle re-resolves).
+const TIERS_LIGHT = ['#2B2E34', '#484C53', '#666B74', '#878C95', '#A6ABB3'];
+const TIERS_DARK  = ['#EEF0F3', '#C4C8CF', '#9BA1AB', '#787D87', '#575C65'];
+const TIER_N = TIERS_LIGHT.length;
+const tierColor = (i) => (document.body.classList.contains('light') ? TIERS_LIGHT : TIERS_DARK)[i];
+// Neutral grey strokes for the siphon halo / connector (theme-aware, --active / dimmer weight).
+const greyStroke = (a) => (document.body.classList.contains('light') ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a})`);
+const FORMS   = ['circle', 'square', 'triangle', 'diamond'];
+const STYLES  = ['solid', 'outline', 'dashed', 'double'];
+
+function generateShapes(s) {
+  const rng = mulberry32(s);
+  const out = [];
+  let tries = 0;
+  while (out.length < 13 && tries < 2000) {
+    const x = 0.11 + rng() * 0.78;
+    const y = 0.11 + rng() * 0.78;
+    const size = 0.045 + rng() * 0.015;
+    let ok = true;
+    for (const o of out) {
+      if (Math.hypot(x - o.x, y - o.y) < size + o.size + 0.045) { ok = false; break; }
+    }
+    if (ok) {
+      out.push({
+        id: out.length + 1,
+        x, y, size,
+        tier:     (rng() * TIER_N) | 0,
+        rotation: ((rng() * 6) | 0) * 15,
+        form:     FORMS[(rng() * FORMS.length) | 0],
+        style:    STYLES[(rng() * STYLES.length) | 0],
+        flashUntil: 0,
+      });
+    }
+    tries++;
+  }
+  return out;
+}
+
+function buildPath(ctx, form, sz) {
+  ctx.beginPath();
+  if (form === 'circle') {
+    ctx.arc(0, 0, sz, 0, Math.PI * 2);
+  } else if (form === 'square') {
+    ctx.rect(-sz, -sz, sz * 2, sz * 2);
+  } else if (form === 'triangle') {
+    ctx.moveTo(0, -sz);
+    ctx.lineTo(sz * 0.866, sz * 0.5);
+    ctx.lineTo(-sz * 0.866, sz * 0.5);
+    ctx.closePath();
+  } else if (form === 'diamond') {
+    ctx.moveTo(0, -sz);
+    ctx.lineTo(sz, 0);
+    ctx.lineTo(0, sz);
+    ctx.lineTo(-sz, 0);
+    ctx.closePath();
+  }
+}
+
+function drawShape(ctx, s, alpha = 1, extraScale = 1) {
+  const x  = docX + s.x * docSize;
+  const y  = docY + s.y * docSize;
+  const sz = s.size * docSize * extraScale;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x, y);
+  ctx.rotate(s.rotation * Math.PI / 180);
+  // The siphon source is the single charged element: fill bare yellow on both themes.
+  const paint = (carrying && s.id === carrying.sourceId) ? '#FBF251' : tierColor(s.tier);
+  ctx.fillStyle = paint;
+  ctx.strokeStyle = paint;
+
+  if (s.style === 'solid') {
+    buildPath(ctx, s.form, sz);
+    ctx.fill();
+  } else if (s.style === 'outline') {
+    ctx.lineWidth = 3;
+    buildPath(ctx, s.form, sz);
+    ctx.stroke();
+  } else if (s.style === 'dashed') {
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([6, 4]);
+    buildPath(ctx, s.form, sz);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  } else if (s.style === 'double') {
+    ctx.lineWidth = 2;
+    buildPath(ctx, s.form, sz);
+    ctx.stroke();
+    ctx.save();
+    ctx.scale(0.66, 0.66);
+    buildPath(ctx, s.form, sz);
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawHaloCircle(ctx, s, color, dashed = true, scale = 1.3) {
+  const x  = docX + s.x * docSize;
+  const y  = docY + s.y * docSize;
+  const sz = s.size * docSize * scale;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  if (dashed) ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.arc(x, y, sz, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function hitAt(sx, sy) {
+  const dx = sx - docX;
+  const dy = sy - docY;
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    const cx = s.x * docSize;
+    const cy = s.y * docSize;
+    const d = Math.hypot(dx - cx, dy - cy);
+    if (d < s.size * docSize * 1.05) return s;
+  }
+  return null;
+}
+
+function previewShape(target, carry, m) {
+  return {
+    id: target.id,
+    x: target.x, y: target.y, size: target.size,
+    tier:     (m === 'all' || m === 'tone')    ? carry.tier     : target.tier,
+    rotation: (m === 'all' || m === 'rotation') ? carry.rotation : target.rotation,
+    style:    (m === 'all' || m === 'style')    ? carry.style    : target.style,
+    form:     (m === 'all' || m === 'form')     ? carry.form     : target.form,
+  };
+}
+
+function applyDeposit(targetId, carry, m) {
+  const t = shapes.find(s => s.id === targetId);
+  if (!t) return false;
+  if (m === 'all' || m === 'tone')    t.tier     = carry.tier;
+  if (m === 'all' || m === 'rotation') t.rotation = carry.rotation;
+  if (m === 'all' || m === 'style')    t.style    = carry.style;
+  if (m === 'all' || m === 'form')     t.form     = carry.form;
+  t.flashUntil = performance.now() + 320;
+  depositCount++;
+  return true;
+}
+
+function draw() {
+  X.clearRect(0, 0, W, H);
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg').trim();
+  X.fillRect(0, 0, W, H);
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--doc').trim();
+  X.fillRect(docX, docY, docSize, docSize);
+
+  const now = performance.now();
+
+  for (const s of shapes) {
+    const isHov = isSiphon && s.id === hoveredId;
+    let extra = 1;
+    if (s.flashUntil && now < s.flashUntil) {
+      const t = (s.flashUntil - now) / 320;
+      extra = 1 + t * 0.18;
+    }
+
+    if (isHov && carrying) {
+      drawShape(X, s, 0.18, extra);
+      const p = previewShape(s, carrying, mode);
+      drawShape(X, p, 0.96, extra);
+      drawHaloCircle(X, s, greyStroke(0.5), true, 1.35);
+    } else if (isHov && !carrying) {
+      drawShape(X, s, 1, extra);
+      drawHaloCircle(X, s, greyStroke(0.5), false, 1.32);
+    } else {
+      drawShape(X, s, 1, extra);
+    }
+
+    // A deposit freshly charges the target: brief bare-yellow fill flash (fill-only, on-rule).
+    if (s.flashUntil && now < s.flashUntil) {
+      const t = (s.flashUntil - now) / 320;
+      X.save();
+      X.globalAlpha = t * 0.85;
+      X.translate(docX + s.x * docSize, docY + s.y * docSize);
+      X.rotate(s.rotation * Math.PI / 180);
+      X.fillStyle = '#FBF251';
+      buildPath(X, s.form, s.size * docSize * extra);
+      X.fill();
+      X.restore();
+    }
+  }
+
+  // Source ↔ target connector
+  if (isSiphon && carrying && hoveredId && hoveredId !== carrying.sourceId) {
+    const src = shapes.find(s => s.id === carrying.sourceId);
+    const tgt = shapes.find(s => s.id === hoveredId);
+    if (src && tgt) {
+      X.save();
+      X.strokeStyle = greyStroke(0.4);
+      X.lineWidth = 1;
+      X.setLineDash([2, 5]);
+      X.beginPath();
+      X.moveTo(docX + src.x * docSize, docY + src.y * docSize);
+      X.lineTo(docX + tgt.x * docSize, docY + tgt.y * docSize);
+      X.stroke();
+      X.restore();
+    }
+  }
+
+  X.strokeStyle = document.body.classList.contains('light') ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.08)';
+  X.lineWidth = 1;
+  X.strokeRect(docX - 0.5, docY - 0.5, docSize + 1, docSize + 1);
+
+  requestAnimationFrame(draw);
+}
+
+const readout = { set innerHTML(v){}, set textContent(v){} };
+const val     = { set innerHTML(v){}, set textContent(v){} };
+const toggle  = document.getElementById('toggle');
+const cursor  = document.getElementById('cursor');
+const carryEl = document.getElementById('carry');
+const swatch  = document.getElementById('swatch');
+const srcEl   = document.getElementById('src');
+const capsEl  = document.getElementById('caps');
+const kindEl  = document.getElementById('kind');
+
+window.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top  = mouseY + 'px';
+  carryEl.style.left = (mouseX + 18) + 'px';
+  carryEl.style.top  = (mouseY + 18) + 'px';
+  if (isSiphon) {
+    const h = hitAt(mouseX, mouseY);
+    hoveredId = h ? h.id : 0;
+  }
+});
+
+window.addEventListener('mousedown', (e) => {
+  if (!isSiphon) return;
+  if (e.target.closest('#toggle, .carry, .adui')) return;
+  if (e.button !== 0) return;
+  const h = hitAt(e.clientX, e.clientY);
+  if (!h) {
+    if (carrying) clearCarry();
+    return;
+  }
+  if (!carrying) {
+    carrying = { tier: h.tier, rotation: h.rotation, style: h.style, form: h.form, sourceId: h.id };
+    updateCarryUI();
+    document.body.classList.add('carrying');
+  } else {
+    applyDeposit(h.id, carrying, mode);
+  }
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  const k = e.key.toLowerCase();
+  if (k === 's') {
+    isSiphon = true;
+    document.body.classList.add('siphon');
+    const h = hitAt(mouseX, mouseY);
+    hoveredId = h ? h.id : 0;
+  }
+  if (e.key === 'Escape' && isSiphon) clearCarry();
+  if (k === 'r') { seed = (Math.random() * 1e9) | 0; regen(); clearCarry(); }
+  if (isSiphon) {
+    if (k === 'a') setMode('all');
+    if (e.key === '1') setMode('tone');
+    if (e.key === '2') setMode('rotation');
+    if (e.key === '3') setMode('style');
+    if (e.key === '4') setMode('form');
+  }
+});
+
+window.addEventListener('keyup', (e) => {
+  if (e.key.toLowerCase() === 's') {
+    isSiphon = false;
+    document.body.classList.remove('siphon');
+    document.body.classList.remove('carrying');
+    carrying = null;
+    hoveredId = 0;
+    carryEl.classList.remove('on');
+  }
+});
+
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); document.body.classList.toggle('light', !dark); ui.theme(dark ? 'dark' : 'light'); });
+
+function clearCarry() {
+  carrying = null;
+  carryEl.classList.remove('on');
+  document.body.classList.remove('carrying');
+}
+
+function setMode(m) {
+  mode = m;
+  updateCarryUI();
+  kindEl.textContent = m.charAt(0).toUpperCase() + m.slice(1);
+}
+
+function updateCarryUI() {
+  if (!carrying) { carryEl.classList.remove('on'); return; }
+  carryEl.classList.add('on');
+  swatch.style.setProperty('--c', tierColor(carrying.tier));
+  srcEl.innerHTML = `From <b>G.${String(carrying.sourceId).padStart(2, '0')}</b>`;
+  const active = {
+    T: mode === 'all' || mode === 'tone',
+    R: mode === 'all' || mode === 'rotation',
+    S: mode === 'all' || mode === 'style',
+    F: mode === 'all' || mode === 'form',
+  };
+  capsEl.querySelectorAll('span').forEach(sp => {
+    sp.classList.toggle('on', !!active[sp.dataset.c]);
+  });
+  kindEl.textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+}
+
+function updateInfo() {
+  const hov = shapes.find(s => s.id === hoveredId);
+  const hovStr = hov ? `G.${String(hov.id).padStart(2, '0')}` : 'none';
+  const carryStr = carrying ? `G.${String(carrying.sourceId).padStart(2, '0')}` : 'idle';
+  val.innerHTML = `Carry <b>${carryStr}</b> · Target <b>${hovStr}</b> · <b>${depositCount}</b> deposits`;
+}
+setInterval(updateInfo, 16);
+
+function regen() {
+  shapes = generateShapes(seed);
+  depositCount = 0;
+}
+regen();
+draw();
+</script>
+</body>
+</html>

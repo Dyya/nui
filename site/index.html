@@ -1,0 +1,630 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<base href="/" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>NUI - A collection of experiments in interface design and interaction</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%23FAFAFA'/%3E%3Ccircle%20cx='16'%20cy='16'%20r='6'%20fill='%230A0A0A'/%3E%3C/svg%3E" />
+<meta name="description" content="NUI is a collection of experiments in interface design and interaction by Adi Dizdarevic: ready-to-use concepts in hand-written vanilla JavaScript, Canvas, WebGL, and Web Audio, with no frameworks and no templates. Open any one and read the source." />
+<meta name="author" content="Adi Dizdarevic" />
+<link rel="author" href="https://adidizdarevic.com/" />
+<link rel="canonical" href="https://www.adidizdarevic.com/nui/" />
+<meta name="theme-color" content="#FAFAFA" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0A0A0A" media="(prefers-color-scheme: dark)" />
+
+<!-- Open Graph -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="NUI" />
+<meta property="og:title" content="NUI" />
+<meta property="og:description" content="A collection of experiments in interface design and interaction. Ready-to-use concepts in hand-written vanilla JavaScript, no frameworks, no templates." />
+<meta property="og:url" content="https://www.adidizdarevic.com/nui/" />
+<meta property="og:image" content="https://www.adidizdarevic.com/nui/og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="NUI - a collection of experiments in interface design and interaction, by Adi Dizdarevic" />
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="NUI" />
+<meta name="twitter:description" content="A collection of experiments in interface design and interaction. Ready-to-use concepts in hand-written vanilla JavaScript, no frameworks, no templates." />
+<meta name="twitter:image" content="https://www.adidizdarevic.com/nui/og.png" />
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "NUI",
+  "url": "https://www.adidizdarevic.com/nui/",
+  "description": "NUI is a collection of experiments in interface design and interaction by Adi Dizdarevic: ready-to-use concepts in hand-written vanilla JavaScript, Canvas, WebGL, and Web Audio, with no frameworks and no templates.",
+  "inLanguage": "en",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" }
+}
+</script>
+<link rel="stylesheet" href="typography/core/fonts.css" />
+<style>
+  :root{
+    --bg:#FAFAFA; --fg:#0A0A0A;
+    --measure:66ch;  /* cover measure: the longest single sentence, so sentence lines never break */
+    --dim:rgba(10,10,10,.56); --dimmer:rgba(10,10,10,.34);
+    --line:rgba(0,0,0,.09);
+    --card-bg:rgba(255,255,255,.5); --card-brd:rgba(0,0,0,.06);
+    --card-bg-hover:rgba(255,255,255,.9); --card-brd-hover:rgba(0,0,0,.1);
+    --card-shadow:0 2px 10px rgba(0,0,0,.04);
+    --cat-bg:rgba(0,0,0,.05); --cat-bg-hover:rgba(0,0,0,.09);
+    --tagline-fg:rgba(10,10,10,.78); --foot-fg:rgba(10,10,10,.62);
+    --link-brd:rgba(0,0,0,.28); --toggle-brd:rgba(0,0,0,.22);
+    --invert-dim:rgba(250,250,250,.6);
+    --nav-frost:rgba(250,250,250,.42); --scrim:rgba(250,250,250,.16);
+    --notch-bg:rgba(255,255,255,.6); --notch-brd:rgba(0,0,0,.08); --notch-bg-hover:rgba(255,255,255,.8);
+    --focus:rgba(0,0,0,.4);
+    --sans:"FT Polar Mono",ui-monospace,monospace;
+    --mono:"FT Polar Mono",ui-monospace,monospace;
+    --radius:4px;  /* the one rectangular radius: cards and pills. Notch and dots stay round */
+    --ease:cubic-bezier(.5,.02,.15,1);
+    --nav:312px; --off:calc(-1 * var(--nav) - 24px);
+  }
+  body.dark{
+    --bg:#0A0A0A; --fg:#FAFAFA;
+    --dim:rgba(250,250,250,.56); --dimmer:rgba(250,250,250,.34);
+    --line:rgba(255,255,255,.09);
+    --card-bg:rgba(255,255,255,.05); --card-brd:rgba(255,255,255,.1);
+    --card-bg-hover:rgba(255,255,255,.1); --card-brd-hover:rgba(255,255,255,.2);
+    --card-shadow:0 2px 12px rgba(0,0,0,.4);
+    --cat-bg:rgba(255,255,255,.08); --cat-bg-hover:rgba(255,255,255,.14);
+    --tagline-fg:rgba(250,250,250,.78); --foot-fg:rgba(250,250,250,.62);
+    --link-brd:rgba(255,255,255,.28); --toggle-brd:rgba(255,255,255,.25);
+    --invert-dim:rgba(10,10,10,.6);
+    --nav-frost:rgba(10,10,10,.44); --scrim:rgba(10,10,10,.18);
+    --notch-bg:rgba(10,10,10,.5); --notch-brd:rgba(255,255,255,.12); --notch-bg-hover:rgba(24,24,24,.6);
+    --focus:rgba(255,255,255,.5);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg); color:var(--fg); font-family:var(--sans); overflow:hidden; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; transition:background .35s var(--ease), color .35s var(--ease)}
+  ::selection{background:var(--fg); color:var(--bg)}
+
+  /* ============ canvas ============ */
+  #stage{position:fixed; inset:0; background:var(--bg)}
+  #frame{position:absolute; inset:0; width:100%; height:100%; border:0; background:var(--bg); opacity:0; transition:opacity .55s var(--ease)}
+  #frame.ready{opacity:1}
+  /* clean browse field - no texture behind the cards */
+
+  /* ============ intro cover ============ */
+  /* the landing state: sits over the frame until a piece is opened, returns on Back-to-root */
+  /* `safe center` + scroll: the cover is centred while it fits, and becomes scrollable
+     rather than clipped on short viewports (a phone in landscape is ~390px tall) */
+  #intro{position:absolute; inset:0; z-index:5; display:grid; place-items:safe center;
+    overflow-y:auto; overscroll-behavior:contain;
+    background:var(--bg); padding:24px 7vw 24px calc(var(--nav) + 7vw);
+    padding-bottom:max(24px, env(safe-area-inset-bottom));
+    transition:opacity .5s var(--ease), visibility 0s .5s, background .35s var(--ease)}
+  #intro.gone{opacity:0; visibility:hidden; pointer-events:none}
+  /* the measure is resolved ONCE here, at the body-copy scale (matches .card-blurb in the
+     nav), so the smaller uppercase blocks below inherit the same pixel width instead of
+     re-resolving ch at their own size */
+  .intro-inner{font-size:11.5px; width:min(100%, var(--measure))}
+  .intro-mark{width:13px; height:13px; background:#FBF251}
+  .intro-tag{margin-top:22px; font-size:11px; font-weight:400; text-transform:uppercase; letter-spacing:.05em; line-height:1.5; color:var(--fg)}
+  /* one shared measure across the cover so every block wraps on the same right edge */
+  .intro-body{margin-top:16px; font-size:11.5px; letter-spacing:0; line-height:1.56; color:var(--foot-fg)}
+  .intro-why{margin-top:26px}
+  .intro-why p{font-size:11.5px; letter-spacing:0; line-height:1.56; color:var(--foot-fg)}
+  /* one sentence per line: the measure is cut to the longest sentence, so no sentence breaks */
+  .intro-why p span{display:block}
+  .intro-foot{margin-top:26px; display:flex; flex-direction:column; gap:8px; font-size:10px; text-transform:uppercase; letter-spacing:.03em; line-height:1.55; color:var(--foot-fg)}
+  .intro-copy{margin-top:24px; font-size:10px; text-transform:uppercase; letter-spacing:.03em; line-height:1.55; color:var(--foot-fg)}
+  .intro-start{margin-top:26px; display:flex; align-items:baseline; flex-wrap:wrap; gap:10px 18px;
+    font-size:10px; text-transform:uppercase; letter-spacing:.03em}
+  .intro-start .hint{color:var(--dimmer)}
+  .intro-start a{color:var(--fg); text-decoration:none; border-bottom:1px solid var(--link-brd); transition:border-color .18s}
+  .intro-start a:hover{border-color:var(--fg)}
+  @keyframes intro-rise{from{opacity:0; transform:translateY(14px)} to{opacity:1; transform:none}}
+  .intro-mark,.intro-tag,.intro-body,.intro-why,.intro-foot,.desktop-note,.browse,.intro-start,.intro-copy{animation:intro-rise .9s var(--ease) both}
+  .intro-tag{animation-delay:.04s} .intro-body{animation-delay:.12s} .intro-why{animation-delay:.19s} .intro-foot{animation-delay:.26s} .intro-start{animation-delay:.32s} .intro-copy{animation-delay:.38s}
+
+  /* ============ nav ============ */
+  #nav{
+    position:fixed; z-index:20; top:0; bottom:0; left:0; width:var(--nav); max-width:88vw;
+    display:flex; flex-direction:column; padding:0;
+    transition:transform .5s var(--ease), background .4s var(--ease), box-shadow .4s var(--ease);
+  }
+  /* no column slab - the rail is transparent so each card floats on its own glass over the experiment */
+  body.viewing #nav{
+    background:transparent;
+    box-shadow:none;
+  }
+  body.nav-hidden #nav{transform:translateX(var(--off)); box-shadow:none}
+
+  /* masthead - scrolls with the cards, no background */
+  .nav-top{padding:0}
+  .brand-row{display:flex; align-items:center; justify-content:space-between}
+  .brand{font-size:16px; font-weight:600; letter-spacing:0; line-height:1; color:var(--fg)}
+  /* the wordmark is the way back to the cover: a real link, so cmd-click and copy-link work */
+  .brand a{color:inherit; text-decoration:none; opacity:1; transition:opacity .18s var(--ease)}
+  .brand a:hover{opacity:.6}
+  .brand a:focus-visible{outline:1px solid var(--focus); outline-offset:3px}
+  /* global light/dark switch - caliper-style glass dot, 16px */
+  .theme{width:16px; height:16px; padding:0; border-radius:50%; cursor:pointer; display:grid; place-items:center;
+    background:var(--card-bg); border:1px solid var(--card-brd);
+    -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); transition:transform .2s var(--ease), background .2s, border-color .2s}
+  .theme::after{content:""; width:6px; height:6px; border-radius:50%; background:var(--fg); transition:background .3s var(--ease)}
+  .theme:hover{transform:scale(1.14); background:var(--card-bg-hover); border-color:var(--card-brd-hover)}
+  /* the rail's tagline is the cover tagline in another place: same type, same words */
+  .tagline{margin-top:16px; font-size:11px; font-weight:400; text-transform:uppercase; letter-spacing:.05em; line-height:1.5; color:var(--tagline-fg)}
+  .links{display:flex; gap:16px; margin-top:13px; font-size:11px; text-transform:uppercase; letter-spacing:.04em}
+  .links a{color:var(--dim); text-decoration:none; border-bottom:1px solid rgba(0,0,0,.22); padding-bottom:1px; transition:color .18s, border-color .18s}
+  .links a:hover{color:var(--fg); border-color:var(--fg)}
+
+  /* category filters */
+  .cats{display:flex; flex-wrap:wrap; gap:8px; margin-top:16px}
+  /* pills share the card treatment - neutral / hover / active all match .card */
+  .cat{
+    font-family:var(--sans); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--fg); cursor:pointer; padding:4px 8px; border-radius:var(--radius);
+    background:var(--card-bg); border:1px solid var(--card-brd); box-shadow:var(--card-shadow);
+    -webkit-backdrop-filter:blur(16px) saturate(1.5); backdrop-filter:blur(16px) saturate(1.5);
+    transition:color .18s, background .18s, border-color .18s; display:inline-flex; align-items:center; gap:8px;
+  }
+  .cat:hover{background:var(--card-bg-hover); border-color:var(--card-brd-hover)}
+  .cat .n{font-weight:400; color:var(--dimmer)}
+  .cat.active{background:var(--fg); border-color:var(--fg); color:var(--bg)}
+  .cat.active .n{color:var(--bg); opacity:.5}
+  .cat.empty{opacity:.4}
+
+  /* scroller holds masthead + cards; no mask (mask would isolate the cards' backdrop-filter), no visible handle */
+  .scroll{flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:16px 16px 24px; scrollbar-width:none}
+  .scroll::-webkit-scrollbar{display:none}
+  .cards{display:flex; flex-direction:column; gap:8px; margin-top:16px}
+
+  /* house glass card (light) */
+  .card{
+    position:relative; display:block; text-decoration:none; color:inherit; cursor:pointer;
+    padding:16px; border-radius:var(--radius); overflow:hidden;
+    background:var(--card-bg); border:1px solid var(--card-brd); box-shadow:var(--card-shadow);
+    -webkit-backdrop-filter:blur(16px) saturate(1.5); backdrop-filter:blur(16px) saturate(1.5);
+    transition:background .22s var(--ease), border-color .22s var(--ease), transform .22s var(--ease), box-shadow .22s var(--ease);
+  }
+  .card:hover{background:var(--card-bg-hover); border-color:var(--card-brd-hover); transform:translateX(3px); box-shadow:0 6px 24px rgba(0,0,0,.09)}
+  .card:focus-visible{outline:none; border-color:var(--card-brd-hover)}
+  /* currently-open experiment: inverted, monochrome */
+  .card.active, .card.active:hover{background:var(--fg); border-color:var(--fg)}
+  .card-tag{position:absolute; top:16px; right:16px; font-family:var(--mono); font-size:9.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--dimmer)}
+  /* titles take the cover's uppercase treatment (.intro-tag), carried at bold */
+  .card-name{font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; line-height:1.5; color:var(--fg)}
+  .card.active .card-name{color:var(--bg)}
+  .card.active .card-tag{color:var(--invert-dim)}
+  .card-blurb{margin-top:8px; font-size:11.5px; line-height:normal; color:var(--dim); max-width:31ch}
+  .card.active .card-blurb{color:var(--invert-dim)}
+
+  .placeholder{padding:24px 16px; font-family:var(--mono); font-size:12px; line-height:1.6; color:var(--dimmer)}
+
+  /* colophon at the very bottom of the scroll - same voice as the description */
+  .foot{margin-top:24px; padding:0; display:flex; flex-direction:column; gap:8px; font-size:10px; font-weight:400; text-transform:uppercase; letter-spacing:.02em; line-height:1.55; color:var(--foot-fg)}
+  .foot a{color:var(--fg); text-decoration:none; border-bottom:1px solid var(--link-brd); transition:border-color .18s}
+  .foot a:hover{border-color:var(--fg)}
+  .foot-links{display:flex; gap:14px; flex-wrap:wrap}
+
+  /* ============ notch: dot -> arrow, click or drag to open ============ */
+  #notch{
+    position:fixed; z-index:25; left:16px; top:50%; transform:translate(-160%,-50%);
+    display:grid; place-items:center; height:56px; width:16px; padding:0; cursor:grab; touch-action:none;
+    border-radius:999px; background:var(--notch-bg); border:1px solid var(--notch-brd);
+    box-shadow:0 2px 10px rgba(0,0,0,.08); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px);
+    opacity:0; pointer-events:none;
+    transition:transform .5s var(--ease), width .34s var(--ease), height .34s var(--ease), background .2s, opacity .4s var(--ease);
+  }
+  body.viewing.nav-hidden #notch{opacity:1; pointer-events:auto; transform:translate(0,-50%)}
+  #notch:active{cursor:grabbing}
+  #notch .dot{position:absolute; width:5px; height:5px; border-radius:50%; background:var(--dim); transition:opacity .18s var(--ease), transform .3s var(--ease)}
+  #notch .chev{position:absolute; width:18px; height:18px; stroke:var(--fg); fill:none; stroke-width:2; opacity:0; transform:translateX(-3px) scale(.7); transition:opacity .22s var(--ease), transform .28s var(--ease)}
+  #notch:hover{width:40px; height:64px; background:var(--notch-bg-hover)}
+  #notch:hover .dot{opacity:0; transform:scale(.4)}
+  #notch:hover .chev{opacity:.95; transform:none}
+
+  /* no blue system focus ring anywhere - monochrome, keyboard-only */
+  #notch:focus, .cat:focus, .foot a:focus, .card:focus, .theme:focus{outline:none}
+  #notch:focus-visible, .cat:focus-visible, .foot a:focus-visible, .theme:focus-visible{outline:2px solid var(--focus); outline-offset:2px}
+
+  #scrim{position:fixed; inset:0; z-index:15; background:transparent; opacity:0; pointer-events:none; transition:opacity .4s}
+  body.viewing:not(.nav-hidden) #scrim{opacity:1; pointer-events:auto; background:var(--scrim)}
+
+  @media (prefers-reduced-motion:no-preference){
+    .card{opacity:0; transform:translateY(10px); animation:rise .5s var(--ease) forwards}
+    @keyframes rise{to{opacity:1; transform:none}}
+    body.nav-hidden .card{animation:none; opacity:1; transform:none}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
+
+  /* between the desktop rail and the phone sheet: keep the cover clear of the rail,
+     just with tighter gutters (the old 860px rule dropped the offset and let the rail
+     sit on top of the cover text) */
+  @media (max-width:1024px){
+    #intro{padding:24px 5vw 24px calc(var(--nav) + 5vw)}
+  }
+
+  /* the phone-only controls, declared before the breakpoint that turns them on */
+  .desktop-note{display:none; margin-top:26px; font-size:10px; text-transform:uppercase;
+    letter-spacing:.03em; line-height:1.55; color:var(--dimmer)}
+  .brand-tools{display:flex; align-items:center; gap:14px}
+  .sheet-close{display:none; width:28px; height:28px; place-items:center; margin:-6px;
+    background:none; border:0; padding:0; cursor:pointer; color:var(--fg)}
+  .sheet-close svg{width:14px; height:14px; stroke:currentColor; stroke-width:1.5; fill:none}
+  .browse{display:none; align-items:center; gap:8px; margin-top:26px; padding:10px 14px;
+    font-family:var(--sans); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--fg); cursor:pointer; border-radius:var(--radius);
+    background:var(--card-bg); border:1px solid var(--card-brd); box-shadow:var(--card-shadow)}
+
+  /* ============ phones: the rail becomes a full-screen sheet ============ */
+  /* A 312px rail alongside an experiment leaves nothing to look at, so below this width
+     there are only ever two full-screen states: the piece, or the browse sheet over it. */
+  @media (max-width:760px){
+    :root{--nav:100vw}
+    #nav{max-width:none; background:var(--bg)}
+    body.viewing #nav{background:var(--bg)}   /* an opaque sheet, not a rail floating over the work */
+    #intro{padding:24px 7vw}                  /* the sheet is dismissed here, so no rail offset */
+    .scroll{padding:20px 20px 32px; padding-bottom:max(32px, env(safe-area-inset-bottom))}
+    .cards{gap:10px}
+    .card{padding:18px}
+    .card:hover{transform:none}               /* no hover on touch: it only ever reads as a jump */
+    #scrim{display:none}                      /* nothing to see through a full-screen sheet */
+    /* the sheet's own dismiss control, the cover's way in, and the honest caveat */
+    .sheet-close{display:grid}
+    .browse{display:inline-flex}
+    .desktop-note{display:block}
+    /* the notch is the way back to browse; give it a real thumb target */
+    #notch{height:64px; width:20px}
+    #notch::before{content:""; position:absolute; inset:-14px -16px; border-radius:999px}
+  }
+</style>
+</head>
+<body>
+  <main id="stage">
+    <iframe id="frame" title="Experiment" allow="fullscreen; xr-spatial-tracking; accelerometer; gyroscope"></iframe>
+    <div id="intro">
+      <div class="intro-inner">
+        <div class="intro-mark"></div>
+        <p class="intro-tag">Experiments in interaction design.</p>
+        <p class="intro-body">A growing collection of interaction concepts. Each explores a single idea, gesture, physical metaphor, or way of seeing or hearing through a functional interaction. No frameworks, no templates. Just hand-written vanilla JavaScript, Canvas, WebGL, and Web Audio, each as a self-contained file you can open in any browser and read from top to bottom.</p>
+        <div class="intro-why">
+          <p><span>Interaction has been optimized more than it has been invented.</span> <span>Much of today's interaction design refines established grammars.</span> <span>This work explores new ones.</span></p>
+        </div>
+        <div class="intro-foot">
+          <p>You're welcome to explore, study, and build on this work for non-commercial purposes. For commercial use, or to license a specific project, please get in touch.</p>
+        </div>
+        <p class="desktop-note">Most pieces work on touch devices. Some require a mouse, scroll wheel, or keyboard. For the full collection, use a desktop browser.</p>
+        <button class="browse" id="browse" type="button">Browse the work</button>
+        <div class="intro-start">
+          <a href="https://adidizdarevic.com" target="_blank" rel="noopener">Portfolio</a>
+          <a href="https://github.com/Dyya/nui" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://x.com/dyya" target="_blank" rel="noopener">X</a>
+        </div>
+        <p class="intro-copy">&copy;2026 AD&amp;. Licensed under CC BY-NC 4.0.</p>
+      </div>
+    </div>
+  </main>
+  <div id="scrim"></div>
+
+  <button id="notch" aria-label="Open projects" title="Projects - click or drag">
+    <span class="dot"></span>
+    <svg class="chev" viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg>
+  </button>
+
+  <nav id="nav">
+    <div class="scroll">
+      <div class="nav-top">
+        <div class="brand-row">
+          <h1 class="brand"><a href="./" id="home" aria-label="NUI home">NUI</a></h1>
+          <div class="brand-tools">
+            <button id="theme" class="theme" aria-label="Toggle light or dark theme" title="Toggle theme"></button>
+            <button id="sheet-close" class="sheet-close" type="button" aria-label="Close the list">
+              <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+          </div>
+        </div>
+        <p class="tagline">Experiments in interaction design.</p>
+        <div class="cats" id="cats"></div>
+      </div>
+      <div class="cards" id="list"></div>
+      <footer class="foot">
+        <p>&copy;2026 AD&amp;. Licensed under CC BY-NC 4.0.</p>
+        <div class="foot-links">
+          <a href="https://adidizdarevic.com" target="_blank" rel="noopener">Portfolio</a>
+          <a href="https://github.com/Dyya/nui" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://x.com/dyya" target="_blank" rel="noopener">X</a>
+        </div>
+      </footer>
+    </div>
+  </nav>
+
+<script>
+/* Categories are the lab's domains; each experiment carries its cat. Curated set: the published typography work plus the interaction primitives and research prototypes. */
+const CATEGORIES = [
+  {key:"typography",   label:"Typography"},
+  {key:"interaction",  label:"Interaction"},
+  {key:"games",        label:"Games"},
+  {key:"layout",       label:"Layout"},
+  {key:"canvas",       label:"Canvas"},
+  {key:"navigation",   label:"Navigation"},
+  {key:"intelligence", label:"Intelligence"},
+];
+const EXPERIMENTS = [
+  {cat:"games",       slug:"forge",           name:"Sentence forge",    tag:"game",       path:"games/forge.html",                    blurb:"A Wordle-meets-Snake: graze drifting letters into real words, dodge number hazards, and bank each word up into a live Pretext-typeset sentence whose growing edge is the wall closing in."},
+  {cat:"games",       slug:"typo-bomber",     name:"Typo bomber",       tag:"game",       path:"games/typo-bomber.html",              blurb:"Bomb the words you don't need; survivors settle into a poster."},
+  {cat:"games",       slug:"lexical-defenders", name:"Lexical defenders", tag:"game",     path:"games/lexical-defenders.html",        blurb:"A typographic arcade: fly a ship and shoot the drifting words to compose a manuscript typeset live by Pretext."},
+  {cat:"typography",  slug:"specimen",        name:"Specimen",          tag:"canvas",     path:"typography/specimen.html",            blurb:"Foundry-style specimen: glyph anatomy, weight and size ramps, full character sets."},
+  {cat:"typography",  slug:"kern",            name:"Kern",              tag:"canvas",     path:"typography/kern.html",                blurb:"Type a word and kern it by dragging the gaps, live weight and tracking."},
+  {cat:"typography",  slug:"measure",         name:"Measure",           tag:"pretext",    path:"typography/measure.html",             blurb:"A column re-typeset every frame: carve the river, words re-break line by line."},
+  {cat:"typography",  slug:"architecture",    name:"Architecture",      tag:"pretext",    path:"typography/architecture.html",        blurb:"Type as skyline: each tower is a paragraph whose line-breaks set its height."},
+  {cat:"typography",  slug:"spread",          name:"Spread",            tag:"canvas",     path:"typography/spread.html",              blurb:"Multi-column editorial compositor with drop caps and pull-quotes."},
+  {cat:"typography",  slug:"scale",           name:"Scale",             tag:"canvas",     path:"typography/scale.html",               blurb:"A modular scale builder laid out as a living type scale."},
+  {cat:"typography",  slug:"extrude",         name:"Extrude",           tag:"webgl",      path:"typography/extrude.html",             blurb:"Extruded dimensional letterforms, type pushed into depth and lit."},
+  {cat:"typography",  slug:"glass",           name:"Glass",             tag:"webgl",      path:"typography/glass.html",               blurb:"Type through glass, a WebGL refraction and chromatic-dispersion lens."},
+  {cat:"typography",  slug:"constellations",  name:"Constellations",    tag:"3d",         path:"typography/constellations.html",      blurb:"Letterforms scattered and linked in 3D space like star maps."},
+  {cat:"typography",  slug:"kinetic-forms",   name:"Kinetic forms",     tag:"matter.js",  path:"typography/kinetic-forms/index.html", blurb:"Matter.js physics type: letters as rigid bodies, particles collide."},
+  {cat:"interaction", slug:"anchor",          name:"Anchor",            tag:"bimanual",   path:"interaction/anchor.html",             blurb:"Pin a pivot with one hand, then rotate, scale, and mirror a shape around it with the other."},
+  {cat:"interaction", slug:"rope",            name:"Rope",              tag:"physics",    path:"interaction/rope.html",               blurb:"Tie a slack verlet rope between two shapes: pull it taut to drag, knot the end, stroke across to cut."},
+  {cat:"interaction", slug:"focus",           name:"Focus",             tag:"optics",     path:"interaction/focus.html",              blurb:"Rack a focal plane through depth; only in-focus shapes stay sharp and selectable, the rest fall into bokeh."},
+  {cat:"interaction", slug:"balance",         name:"Balance",           tag:"physics",    path:"interaction/balance.html",            blurb:"A balance scale that tips by torque: drop shapes into the pans to weigh and compare them."},
+  {cat:"interaction", slug:"tempo",           name:"Tempo",             tag:"rhythm",     path:"interaction/tempo.html",              blurb:"Tap a shape to set its tempo; separate tempos phase-lock into a living polyrhythm."},
+  {cat:"interaction", slug:"flick",           name:"Flick",             tag:"momentum",   path:"interaction/flick.html",              blurb:"Throw a shape with released momentum to run a command; catch it mid-flight to cancel."},
+  {cat:"interaction", slug:"mitosis",         name:"Mitosis",           tag:"gesture",    path:"interaction/mitosis.html",            blurb:"Stretch a cell to bud a copy, then pull it past the pinch to divide it in two."},
+  {cat:"interaction", slug:"crank",           name:"Crank",             tag:"gesture",    path:"interaction/crank.html",              blurb:"Circle a shape to wind a radial array, each turn adding a copy, release to place."},
+  {cat:"interaction", slug:"sweep",           name:"Sweep",             tag:"gesture",    path:"interaction/sweep.html",              blurb:"Drag across empty space to squeegee scattered shapes into an aligned, evenly spaced line."},
+  {cat:"interaction", slug:"caliper",         name:"Caliper",           tag:"constraint", path:"interaction/caliper.html",            blurb:"Measure the gap between two shapes and pin it as a live constraint that holds as they move."},
+  {cat:"interaction", slug:"hinge",           name:"Hinge",             tag:"physics",    path:"interaction/hinge.html",              blurb:"Drop pins to anchor and hinge planks, then swing the linkage, with gravity on tap."},
+  {cat:"interaction", slug:"take",            name:"Take",              tag:"motion",     path:"interaction/take.html",               blurb:"Record a shape's motion by dragging it, release to replay the take on a loop, scrub to review."},
+  {cat:"interaction", slug:"zoom",            name:"Zoom",              tag:"semantic",   path:"interaction/zoom.html",               blurb:"Semantic zoom: the zoom level changes what each element shows, from summary to full detail."},
+  {cat:"interaction", slug:"command-as-drag", name:"Command as drag",   tag:"gesture",    path:"interaction/command-as-drag.html",    blurb:"Drag a command chip onto a shape to apply it; pull farther to overdrive the effect."},
+  {cat:"interaction", slug:"export-gesture",  name:"Export as gesture", tag:"gesture",    path:"interaction/export-gesture.html",     blurb:"Export by flicking a shape off the edge: direction picks the format, distance sets the size."},
+  {cat:"interaction", slug:"pigment",          name:"Pigment",           tag:"color",      path:"interaction/pigment.html",            blurb:"Drag paint droplets to overlap and the lens mixes their colors live in OKLab; double-click to draw the blend off as new pigment."},
+  {cat:"interaction", slug:"nest",             name:"Nest",              tag:"layout",     path:"interaction/nest.html",               blurb:"Drag a shape into a frame to nest it: the frame auto-packs its children in a grid and resizes to fit, and frames nest in frames."},
+  {cat:"interaction", slug:"constellation",    name:"Constellation",     tag:"grouping",   path:"interaction/constellation.html",      blurb:"Marquee-select scattered objects into named groups, each drawn as a labeled constellation of linked stars."},
+  {cat:"interaction", slug:"inline-ai",        name:"Inline AI",         tag:"ai",         path:"interaction/inline-ai.html",          blurb:"Type / to summon an inline prompt auto-scoped to the objects nearest the cursor, then recolor, align, spread, or group them."},
+  {cat:"interaction", slug:"radar",            name:"Radar",             tag:"probe",      path:"interaction/radar.html",              blurb:"Double-click to emit an expanding ping that surfaces each object's hidden tag in the order the ring reaches it."},
+  {cat:"interaction", slug:"breadcrumb",       name:"Breadcrumb",        tag:"history",    path:"interaction/breadcrumb.html",         blurb:"Every edit drops a breadcrumb on the canvas: hover to ghost the scene as it was, click to jump back to that state."},
+  {cat:"interaction", slug:"object-memory",    name:"Object memory",     tag:"history",    path:"interaction/object-memory.html",      blurb:"Hold M to reveal each shape's move history as a dashed ghost trail, then click any ghost to revert to that position."},
+  {cat:"interaction", slug:"temperature",      name:"Temperature",       tag:"field",      path:"interaction/temperature.html",        blurb:"Drag to paint heat into a decaying field: warm objects snap to the cursor, cold ones lag behind."},
+  {cat:"interaction", slug:"weight",           name:"Weight",            tag:"mass",       path:"interaction/weight.html",             blurb:"Every object carries a mass from its size and effects, so heavy ones lag and drift while light ones snap to the cursor."},
+  {cat:"interaction", slug:"gravity",          name:"Gravity",           tag:"physics",    path:"interaction/gravity.html",            blurb:"Objects that share a trait gravitate together into self-organizing clusters; drag one and its kin follow."},
+  {cat:"interaction", slug:"resonance",        name:"Resonance",         tag:"ripple",     path:"interaction/resonance.html",          blurb:"Click an object to send a ripple that reaches related objects sooner, making the latent relationship graph legible as motion."},
+  {cat:"interaction", slug:"sediment",         name:"Sediment",          tag:"recency",    path:"interaction/sediment.html",           blurb:"Objects sink toward the floor and desaturate as they age, and float back up the moment you touch them."},
+  {cat:"interaction", slug:"echo-stamp",       name:"Echo stamp",        tag:"duplicate",  path:"interaction/echo-stamp.html",         blurb:"Hold E and drag an object to stamp a spaced trail of fading echo copies, committed as real objects; scroll sets the spacing."},
+  {cat:"interaction", slug:"depth-pick",       name:"Depth pick",        tag:"depth",      path:"interaction/depth-pick.html",         blurb:"Hold D to isolate a z-slice of the scene under the cursor, scroll to widen it, and click to commit it as a layer."},
+  {cat:"interaction", slug:"emphasis",         name:"Emphasis",          tag:"layers",     path:"interaction/emphasis.html",           blurb:"Scroll over any object to push it forward or back through soft emphasis layers, sharper and larger or muted and blurred."},
+  {cat:"interaction", slug:"relational-scale", name:"Relational scale",  tag:"relational", path:"interaction/relational-scale.html",   blurb:"Drag one shape's edge to resize it and watch the change ripple through related shapes by tone, proximity, or role."},
+  {cat:"interaction", slug:"parameter-siphon", name:"Parameter siphon",  tag:"transfer",   path:"interaction/parameter-siphon.html",   blurb:"Hold S to siphon a shape's tone, rotation, style, and form, then click others to paint the picked-up traits onto them."},
+  {cat:"interaction", slug:"proxy",            name:"Proxy",             tag:"proxy",      path:"interaction/proxy.html",              blurb:"Hover a tiny or far object to spawn an enlarged proxy at the cursor, then drag the proxy to move the real one at a distance."},
+  {cat:"interaction", slug:"cursor-gravity",   name:"Cursor gravity",    tag:"field",      path:"interaction/cursor-gravity.html",     blurb:"Shapes inside an adjustable radius bend toward the cursor on mass-weighted springs, and recover once it leaves."},
+  {cat:"interaction", slug:"pressure",         name:"Pressure",          tag:"pressure",   path:"interaction/pressure.html",           blurb:"Arm a parameter chip, then press and hold a shape to ramp that value toward its extreme as a progress ring fills."},
+  {cat:"interaction", slug:"light-cursor",     name:"Light as cursor",   tag:"reveal",     path:"interaction/light-cursor.html",       blurb:"The cursor is a light that reveals a hidden document; scroll sizes the beam, drag burns permanent pools of light in."},
+  // --- 2026-07-18 showcase expansion: layout / intelligence / canvas / navigation / games. ---
+  {cat:"layout",       slug:"settle",     name:"Settle",     tag:"grid",      path:"layout/settle.html",       blurb:"Compose a grid by priority, not coordinates: numbered tiles skyline-pack, and dragging the frame edge collapses the columns as the whole composition re-packs live. Copies responsive CSS grid."},
+  {cat:"layout",       slug:"subdivide",  name:"Subdivide",  tag:"partition", path:"layout/subdivide.html",    blurb:"Carve a surface into panels with a recursive binary space partition: click a region to split, drag a seam to reallocate, click a seam to merge. Always 100% filled, copies absolute-% CSS."},
+  {cat:"layout",       slug:"treemap",    name:"Treemap",    tag:"data",      path:"layout/treemap.html",      blurb:"Size is the data: each cell's area is its value, grouped by tier; scroll a cell to reweight it and the whole map re-flows live."},
+  {cat:"layout",       slug:"relax",      name:"Relax",      tag:"force",     path:"layout/relax.html",        blurb:"Arrange by affinity: a force-directed composition where the relaxation solve is the animation. Link cards to pull them together, drag to perturb and watch it re-settle."},
+  {cat:"layout",       slug:"flex",       name:"Flex",       tag:"css",       path:"layout/flex.html",         blurb:"Flexbox you can feel: a direct-manipulation flex container where the live reflow is the animation. Drag to reorder, cycle the flex properties, and copy real flexbox CSS."},
+  {cat:"layout",       slug:"massing",    name:"Massing",    tag:"2d+3d",     path:"layout/massing.html",      blurb:"The plan and the form in one: modules pack onto a floor grid and extrude so height is value; press to ease between the top-down plan and the axonometric massing, orbit to read the towers."},
+  {cat:"layout",       slug:"stack",      name:"Stack",      tag:"2d+3d",     path:"layout/stack.html",        blurb:"The composite and its layers: overlapping panels whose composition is their z-order; peel the flat design apart into an exploded axonometric layer stack and back. Copies real layered CSS."},
+  {cat:"layout",       slug:"crate",      name:"Crate",      tag:"2d+3d",     path:"layout/crate.html",        blurb:"Pack a volume: boxes gravity-drop into a bounded crate by a real 3D height-map pack; scroll to slice a cutaway, press for a top-down floor plan, copy the packing manifest."},
+  {cat:"intelligence", slug:"graft",      name:"Graft",      tag:"ai",        path:"intelligence/graft.html",  blurb:"Rearrange prose by moving ideas, not characters: drag a whole grammatical phrase, legal insertion slots dilate, and on drop the source wound closes while the graft site re-inflects itself."},
+  {cat:"intelligence", slug:"fit",        name:"Fit",        tag:"ai",        path:"intelligence/fit.html",    blurb:"The frame is the word budget: drag the edge shorter and the paragraph rewrites its own words to fit, walking a rewrite ladder with a live word-diff between rungs."},
+  {cat:"canvas",       slug:"chladni",    name:"Chladni",    tag:"cymatics",  path:"canvas/chladni.html",      blurb:"See a tone: thousands of sand grains shake off the antinodes of a standing-wave field and settle onto the nodal lines; drag anywhere to sweep the frequency like an invisible fader."},
+  {cat:"navigation",   slug:"shoal",      name:"Shoal",      tag:"search",    path:"navigation/shoal.html",    blurb:"Search as a place: items rest at stable home coordinates, and each keystroke swims the matches into a bright shoal around the query while non-matches drift out but never unmount."},
+  {cat:"games",        slug:"bearing",    name:"Bearing",    tag:"audio",     path:"games/bearing.html",       blurb:"Navigate a dark sea by ear: steer toward hidden beacons, each a fixed pitch panned by bearing and muffled when it's behind you; align the bow and its voice rings pure. Remove the sound and nothing is findable."},
+];
+/* Sort key: build/authoring date. Not displayed - it only orders the cards (newest first,
+   within each category). Interaction dates are the real file dates; the typography dates are
+   best-effort estimates (today's theme edits reset those files' timestamps) - correct as needed. */
+const DATES = {
+  // games
+  forge:"2026-07-15", "lexical-defenders":"2026-07-15", "typo-bomber":"2026-07-05",
+  // typography (estimates - only measure and kinetic-forms had a hard signal)
+  specimen:"2026-07-09", kern:"2026-07-08", spread:"2026-07-02",
+  scale:"2026-07-01", extrude:"2026-06-30", architecture:"2026-06-28", measure:"2026-06-27",
+  glass:"2026-06-25", constellations:"2026-06-24", "kinetic-forms":"2026-06-20",
+  // interaction (real file dates)
+  anchor:"2026-07-10", rope:"2026-07-12", focus:"2026-07-10",
+  balance:"2026-07-10", tempo:"2026-07-10", flick:"2026-07-10", mitosis:"2026-07-04", crank:"2026-07-04",
+  sweep:"2026-07-04", caliper:"2026-07-04", hinge:"2026-07-04", take:"2026-07-04",
+  zoom:"2026-07-10", "command-as-drag":"2026-07-12", "export-gesture":"2026-07-03",
+  // interaction research corpus (yellow/orange), promoted + relit to the house light theme; dated to sit below the flagship pieces
+  pigment:"2026-07-02", nest:"2026-07-01", constellation:"2026-06-30", "inline-ai":"2026-06-29",
+  radar:"2026-06-28", breadcrumb:"2026-06-27", "object-memory":"2026-06-26",
+  temperature:"2026-06-23", weight:"2026-06-22", gravity:"2026-06-21",
+  resonance:"2026-06-20", sediment:"2026-06-19", "echo-stamp":"2026-06-18",
+  "depth-pick":"2026-06-16", emphasis:"2026-06-15", "relational-scale":"2026-06-14",
+  "parameter-siphon":"2026-06-12", proxy:"2026-06-11", "cursor-gravity":"2026-06-10", pressure:"2026-06-09",
+  "light-cursor":"2026-06-07",
+  // layout (2026-07-16 base pack + 2026-07-17 2d+3d)
+  settle:"2026-07-16", subdivide:"2026-07-16", treemap:"2026-07-16", relax:"2026-07-16", flex:"2026-07-16",
+  massing:"2026-07-17", stack:"2026-07-17", crate:"2026-07-17",
+  // intelligence / canvas / navigation / games (2026-07-18 expansion)
+  graft:"2026-07-18", fit:"2026-07-18", chladni:"2026-07-17", shoal:"2026-07-18", bearing:"2026-07-18",
+};
+EXPERIMENTS.forEach(e=>{ e.date = DATES[e.slug] || "2000-01-01"; });
+EXPERIMENTS.sort((a,b)=> a.date<b.date ? 1 : a.date>b.date ? -1 : 0);   /* newest first; ties keep curated order */
+const byKey={}; EXPERIMENTS.forEach((e,i)=>{e.i=i; byKey[e.slug]=e;});
+const countOf=k=>EXPERIMENTS.filter(e=>e.cat===k).length;
+
+const $=s=>document.querySelector(s);
+const catsEl=$("#cats"), listEl=$("#list"), frame=$("#frame"), nav=$("#nav"), notch=$("#notch"), intro=$("#intro");
+const HOME_TITLE=document.title;
+let current=null;
+let activeCat=(CATEGORIES.find(c=>countOf(c.key))||CATEGORIES[0]).key;
+
+function renderCats(){
+  catsEl.innerHTML="";
+  CATEGORIES.filter(c=>countOf(c.key)>0).forEach(c=>{
+    const n=countOf(c.key);
+    const b=document.createElement("button");
+    b.className="cat"+(c.key===activeCat?" active":"");
+    b.innerHTML=`${c.label} <span class="n">${n}</span>`;
+    b.addEventListener("click",()=>{ activeCat=c.key; renderCats(); renderCards(); });
+    catsEl.appendChild(b);
+  });
+}
+function renderCards(){
+  const items=EXPERIMENTS.filter(e=>e.cat===activeCat);
+  listEl.innerHTML="";
+  if(!items.length){ listEl.innerHTML='<div class="placeholder">Nothing here yet.<br>This category is on the way.</div>'; return; }
+  items.forEach((e,n)=>{
+    const a=document.createElement("a");
+    a.className="card"+(current===e.slug?" active":""); a.href="#"+e.slug; a.dataset.slug=e.slug; a.tabIndex=0;
+    a.style.animationDelay=(0.03+n*0.026)+"s";
+    a.innerHTML=`<span class="card-tag">${e.tag}</span><div class="card-name">${e.name}</div><div class="card-blurb">${e.blurb}</div>`;
+    listEl.appendChild(a);
+  });
+}
+function updateActive(){ document.querySelectorAll(".card").forEach(c=>{
+  const on=c.dataset.slug===current; c.classList.toggle("active",on); if(on) c.scrollIntoView({block:"nearest"});
+}); }
+
+function open(slug,{push=true}={}){
+  const e=byKey[slug]; if(!e){ showNav(); return; }
+  current=slug;
+  intro.classList.add("gone");
+  if(e.cat!==activeCat){ activeCat=e.cat; renderCats(); renderCards(); }
+  if(frame.getAttribute("src")!==e.path){
+    frame.classList.remove("ready");
+    frame.onload=()=>{ frame.classList.add("ready"); hideFrameChrome(); syncFrameTheme(); };
+    frame.src=e.path;
+  } else { frame.classList.add("ready"); syncFrameTheme(); }   /* same piece re-opened (e.g. from the intro): no reload */
+  document.body.classList.add("viewing");   /* nav stays open - browse rail; close it (Esc / click the experiment) for full-bleed */
+  if(isPhone()) document.body.classList.add("nav-hidden");   /* phone: the piece takes the screen */
+  document.title=e.name+" - NUI";
+  updateActive();
+  if(!document.body.classList.contains("nav-hidden")){ const el=listEl.querySelector(".card.active"); if(el) el.focus({preventScroll:true}); }
+  if(push && slugFromURL()!==slug) history.pushState({slug}, "", BASE+"/"+slug);
+}
+function showNav(){ document.body.classList.remove("nav-hidden"); }
+/* Below this width the rail is a full-screen sheet, so it is never left standing open
+   next to a piece: opening one, or returning to the cover, always dismisses it. */
+const phone=window.matchMedia("(max-width:760px)");
+const isPhone=()=>phone.matches;
+/* the landing state: intro cover up, no piece selected. Rail open on desktop, sheet closed on a phone */
+function showIntro(){
+  intro.classList.remove("gone");
+  document.body.classList.remove("viewing");
+  current=null; updateActive();
+  document.title=HOME_TITLE;
+  if(isPhone()) document.body.classList.add("nav-hidden"); else showNav();
+}
+/* on a phone the sheet closes even with nothing open - the cover is behind it */
+function hideNav(){ if(current||isPhone()) document.body.classList.add("nav-hidden"); }
+const navOpen=()=>!document.body.classList.contains("nav-hidden");
+/* step selection within the active category (arrow keys, nav open only) */
+function stepSelect(dir){
+  const items=EXPERIMENTS.filter(e=>e.cat===activeCat); if(!items.length) return;
+  let i=items.findIndex(e=>e.slug===current);
+  i = i<0 ? (dir>0?0:items.length-1) : (i+dir+items.length)%items.length;
+  open(items[i].slug);
+}
+
+/* clean-path routing: www.adidizdarevic.com/nui/kern (History API). Needs the SPA fallback (see build.sh).
+   The deploy prefix is read off <base>, which build.sh stamps for the target mount point, so the same
+   source runs at the root (local preview) and under /nui (production) with no edit. pushState ignores
+   <base>, so these are the only paths that carry the prefix explicitly. BASE is "" or "/nui" - no
+   trailing slash, so BASE+"/"+slug composes cleanly at either mount. */
+const BASE=new URL(document.baseURI).pathname.replace(/\/+$/,"");
+const homePath=()=>BASE+"/";
+function slugFromURL(){
+  let p=location.pathname;
+  if(BASE && p.toLowerCase().indexOf(BASE.toLowerCase())===0) p=p.slice(BASE.length);
+  p=p.replace(/^\/+|\/+$/g,"");
+  return (!p||p==="index.html")?"":p.split("/")[0];
+}
+
+listEl.addEventListener("click",ev=>{ const a=ev.target.closest(".card"); if(!a)return; ev.preventDefault(); open(a.dataset.slug); });
+$("#scrim").addEventListener("click",hideNav);
+/* phone-only controls: the cover's way into the sheet, and the sheet's way out */
+$("#browse").addEventListener("click",showNav);
+$("#sheet-close").addEventListener("click",hideNav);
+/* crossing the breakpoint (rotation, or a resized window) must not strand a half-state:
+   re-assert whichever model the new width belongs to */
+phone.addEventListener("change",()=>{
+  if(isPhone()){ if(!current) document.body.classList.add("nav-hidden"); }
+  else showNav();
+});
+/* the wordmark goes home. Plain clicks route in-page (no reload); modified clicks and
+   middle-clicks fall through to the browser so "open in new tab" still behaves. */
+$("#home").addEventListener("click",ev=>{
+  if(ev.metaKey||ev.ctrlKey||ev.shiftKey||ev.altKey||ev.button!==0) return;
+  ev.preventDefault();
+  if(slugFromURL()) history.pushState(null,"",homePath());
+  showIntro();
+});
+window.addEventListener("popstate",()=>{ const s=slugFromURL();
+  if(s && byKey[s] && s!==current) open(s,{push:false}); else if(!s) showIntro(); });
+intro.addEventListener("click",ev=>{ const a=ev.target.closest("[data-slug]"); if(!a) return; ev.preventDefault(); open(a.dataset.slug); });
+/* Keyboard is scoped to the nav: only when it's open, so experiment shortcuts (e.g. Glass arrows) are never overwritten. */
+document.addEventListener("keydown",ev=>{
+  if(ev.metaKey||ev.ctrlKey||ev.altKey) return;
+  if(ev.key==="Escape"){ if(document.body.classList.contains("viewing")) navOpen()?hideNav():showNav(); return; }
+  if(navOpen() && (ev.key==="ArrowDown"||ev.key==="ArrowUp")){ ev.preventDefault(); stepSelect(ev.key==="ArrowDown"?1:-1); }
+});
+
+/* Embedded chrome: each experiment ships its own bottom-right theme dot (#toggle) for
+   standalone use. In the showcase the nav's switch drives theme, so the dot is hidden
+   in-iframe. Experiments hide it themselves before first paint (core/ui.js, or an inline
+   head script in kinetic-forms) so there's no flash. This onload pass is only a fallback
+   for anything that ships neither; it defers to their injection. The programmatic
+   #toggle.click() in syncFrameTheme still works on a display:none element. */
+function hideFrameChrome(){
+  try{
+    const doc=frame.contentDocument; if(!doc) return;
+    if(doc.getElementById("nui-embed-style")||doc.getElementById("adui-embed-toggle")) return;
+    const st=doc.createElement("style"); st.id="nui-embed-style";
+    st.textContent="#toggle{display:none!important}";
+    (doc.head||doc.documentElement).appendChild(st);
+  }catch(_){}
+}
+
+/* global light/dark theme. Light is the default. Also drives the open experiment. */
+function syncFrameTheme(){
+  try{
+    const doc=frame.contentDocument; if(!doc||!doc.body) return;
+    const want=document.body.classList.contains("dark"), is=doc.body.classList.contains("dark");
+    if(want===is) return;
+    const t=doc.getElementById("toggle");        // experiments with their own switch: use it - flips canvas + panel
+    if(t) t.click(); else doc.body.classList.toggle("dark", want);   // fallback for CSS-only themed experiments
+  }catch(_){}
+}
+function setTheme(dark){ document.body.classList.toggle("dark", dark); try{ localStorage.setItem("nui-theme", dark?"dark":"light"); }catch(_){} syncFrameTheme(); }
+$("#theme").addEventListener("click",()=> setTheme(!document.body.classList.contains("dark")));
+
+/* notch: click opens, or drag it rightward to peel the nav in */
+let drag=null, suppressClick=false;
+const navSpan=()=>nav.offsetWidth+24;
+notch.addEventListener("pointerdown",e=>{
+  drag={x:e.clientX, moved:0}; suppressClick=false;
+  notch.setPointerCapture(e.pointerId); nav.style.transition="none";
+});
+notch.addEventListener("pointermove",e=>{
+  if(!drag) return;
+  const dx=Math.max(0, e.clientX-drag.x); drag.moved=Math.max(drag.moved,dx);
+  const w=navSpan(); nav.style.transform=`translateX(${Math.min(0, -w+Math.min(dx,w))}px)`;
+});
+function endDrag(){
+  if(!drag) return;
+  const opened = drag.moved > navSpan()*0.32;
+  nav.style.transition=""; nav.style.transform="";
+  if(drag.moved>5){ suppressClick=true; opened?showNav():hideNav(); }
+  drag=null;
+}
+notch.addEventListener("pointerup",endDrag);
+notch.addEventListener("pointercancel",endDrag);
+notch.addEventListener("click",()=>{ if(suppressClick){ suppressClick=false; return; } showNav(); });
+
+try{ if(localStorage.getItem("nui-theme")==="dark") document.body.classList.add("dark"); }catch(_){}
+renderCats(); renderCards();
+const initial=slugFromURL();
+if(initial && byKey[initial]){ open(initial,{push:false}); hideNav(); }   /* a shared deep-link opens full-bleed */
+else if(initial) history.replaceState({}, "", homePath());                /* unknown slug -> clean root; bare root keeps the intro cover, rail open */
+if(!current && isPhone()) document.body.classList.add("nav-hidden");      /* phone lands on the cover, not the sheet */
+</script>
+</body>
+</html>

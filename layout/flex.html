@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<!--
+  Flex - flexbox you can feel
+  A direct-manipulation flexbox container: drag items to reorder, click to grow, cycle direction / justify / align, and watch the reflow. Export the real flexbox CSS.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Flex - flexbox you can feel</title>
+<meta name="description" content="A direct-manipulation flexbox container: drag items to reorder, click to grow, cycle direction / justify / align and watch the reflow. Export the real flexbox CSS.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Flex - flexbox you can feel">
+<meta property="og:description" content="A direct-manipulation flexbox container: drag to reorder, click to grow, cycle direction / justify / align, watch the reflow, export the CSS.">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Flex",
+  "applicationCategory": "DesignApplication",
+  "description": "A direct-manipulation flexbox layout composer: reorder items, toggle grow, cycle flex-direction / justify-content / align-items and gap, watch the reflow animate, and export real flexbox CSS.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "layout, flexbox, flex, CSS, direction, justify-content, align-items, grow, composition, interaction design, HTML canvas",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white: #FAFAFA; --c-grey: #8A8A8A; --c-black: #0A0A0A;
+  --obj: rgb(98,103,113);
+  --bg: var(--c-white); --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.16); --mid: rgba(10,10,10,0.4); --grid: rgba(10,10,10,0.06);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black); --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.16); --mid: rgba(250,250,250,0.4); --grid: rgba(250,250,250,0.05);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+#c { position: fixed; inset: 0; z-index: 1; }
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: transform 0.22s var(--ease), border-color 0.22s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.22s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; } .cursor .cross.v { width: 1px; height: 10px; }
+body.hovering .cursor .ring { border-color: var(--fg); transform: scale(1.2); }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(0.5); }
+body.dragging .cursor .cross { background: var(--fg); }
+@media (hover: none) and (pointer: coarse) { html, body { cursor: auto; } .cursor { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+const HINTS = 'Drag to reorder · Click an item to grow · D / J / A + [ ] set flex · C copy CSS';
+const ui = PT.ui({ title: 'Flex', hints: HINTS, theme: 'light' });
+const pill = document.querySelector('.adui-pill');
+const seg = (h) => '<span class="adui-seg">' + h + '</span>';
+const kkey = (t) => '<b class="adui-key">' + t + '</b>';
+let flashUntil = 0;
+function flashMsg(t, ms = 1700) { if (!pill) return; pill.innerHTML = seg(kkey(t)); flashUntil = performance.now() + ms; }
+function tickBar(now) { if (flashUntil && now > flashUntil) { ui.setHints(HINTS); flashUntil = 0; } }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// ───── Model ─────
+const JUSTIFY = ['flex-start', 'center', 'flex-end', 'space-between', 'space-around'];
+const ALIGN = ['stretch', 'flex-start', 'center', 'flex-end'];
+let dir = 'row', justify = 'center', align = 'stretch', gap = 14;
+let ITEMS = [];
+let cx = 0, cy = 0, cw = 0, ch = 0;      // container rect
+let mouseX = -1e4, mouseY = -1e4;
+let drag = null, dragMoved = false, downX = 0, downY = 0, dragCool = 0;
+let hoverItem = null;
+const PADDING = 18;
+
+function item(label, w, h) { return { label, w, h, grow: false, tx: 0, ty: 0, tw: 0, th: 0, ax: 0, ay: 0, aw: 0, ah: 0, placed: false }; }
+function seed() {
+  ITEMS = [ item('A', 120, 90), item('B', 90, 130), item('C', 150, 80), item('D', 100, 100), item('E', 80, 110) ];
+}
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const m = Math.max(28, Math.min(W, H) * 0.11);
+  cw = W - 2 * m; ch = H - 2 * m; cx = m; cy = m;
+}
+
+// ───── Flexbox layout (single line: grow / shrink / justify / align / gap / direction) ─────
+function computeFlex() {
+  const row = dir === 'row';
+  const innerX = cx + PADDING, innerY = cy + PADDING;
+  const mainLen = (row ? cw : ch) - PADDING * 2;
+  const crossLen = (row ? ch : cw) - PADDING * 2;
+  const n = ITEMS.length;
+  const mainOf = (it) => row ? it.w : it.h;
+  const crossOf = (it) => row ? it.h : it.w;
+
+  // 1) resolve main sizes: grow fills free space; else shrink to fit
+  const bases = ITEMS.map(mainOf);
+  const baseSum = bases.reduce((s, v) => s + v, 0);
+  const gaps = gap * Math.max(0, n - 1);
+  let free = mainLen - baseSum - gaps;
+  const sizes = bases.slice();
+  const growers = ITEMS.filter(it => it.grow).length;
+  if (free > 0 && growers > 0) { const per = free / growers; ITEMS.forEach((it, i) => { if (it.grow) sizes[i] += per; }); free = 0; }
+  else if (free < 0 && baseSum > 0) { ITEMS.forEach((it, i) => { sizes[i] = Math.max(30, bases[i] + free * (bases[i] / baseSum)); }); free = mainLen - sizes.reduce((s, v) => s + v, 0) - gaps; }
+
+  // 2) main-axis placement per justify-content
+  const usedFree = Math.max(0, free);
+  let pos = innerMainStart(justify, usedFree, mainLen);
+  const gapBetween = gap + extraGap(justify, usedFree, n);
+  const offsets = [];
+  for (let i = 0; i < n; i++) { offsets.push(pos); pos += sizes[i] + gapBetween; }
+
+  // 3) cross size + placement per align-items, then convert to x/y/w/h
+  for (let i = 0; i < n; i++) {
+    const it = ITEMS[i];
+    const cSize = align === 'stretch' ? crossLen : crossOf(it);
+    const cPos = align === 'flex-start' || align === 'stretch' ? 0
+               : align === 'center' ? (crossLen - cSize) / 2 : (crossLen - cSize);
+    if (row) { it.tx = innerX + offsets[i]; it.ty = innerY + cPos; it.tw = sizes[i]; it.th = cSize; }
+    else     { it.tx = innerX + cPos; it.ty = innerY + offsets[i]; it.tw = cSize; it.th = sizes[i]; }
+  }
+}
+function innerMainStart(j, free, mainLen) {
+  if (j === 'center') return free / 2;
+  if (j === 'flex-end') return free;
+  if (j === 'space-around') return free / (ITEMS.length * 2);
+  return 0;   // flex-start, space-between
+}
+function extraGap(j, free, n) {
+  if (n < 2) return 0;
+  if (j === 'space-between') return free / (n - 1);
+  if (j === 'space-around') return free / n;
+  return 0;
+}
+
+// ───── Frame ─────
+function step(now) {
+  tickBar(now);
+
+  // during a drag, walk the held item toward the pointer's slot (reserve a hole; others reflow)
+  if (drag) {
+    const cur = ITEMS.indexOf(drag);
+    const want = clamp(insertionIndex(), 0, ITEMS.length - 1);
+    if (want !== cur && now - dragCool > 90) { ITEMS.splice(cur, 1); ITEMS.splice(cur + Math.sign(want - cur), 0, drag); dragCool = now; }
+  }
+  computeFlex();
+
+  for (const it of ITEMS) {
+    if (drag && it === drag) { it.tx = mouseX - it.tw / 2; it.ty = mouseY - it.th / 2; }
+    if (!it.placed) { it.ax = it.tx; it.ay = it.ty; it.aw = it.tw; it.ah = it.th; it.placed = true; }
+    else { const e = 0.28; it.ax += (it.tx - it.ax) * e; it.ay += (it.ty - it.ay) * e; it.aw += (it.tw - it.aw) * e; it.ah += (it.th - it.ah) * e; }
+  }
+  draw();
+  requestAnimationFrame(step);
+}
+function insertionIndex() {
+  const row = dir === 'row';
+  const p = row ? mouseX : mouseY;
+  let idx = 0;
+  for (const it of ITEMS) { if (it === drag) continue; const mid = row ? it.tx + it.tw / 2 : it.ty + it.th / 2; if (p > mid) idx++; }
+  return idx;
+}
+
+function draw() {
+  const cs = getComputedStyle(document.body);
+  const bg = cs.getPropertyValue('--bg').trim();
+  const objc = cs.getPropertyValue('--obj').trim();
+  const dimc = cs.getPropertyValue('--dim').trim();
+  X.fillStyle = bg; X.fillRect(0, 0, W, H);
+
+  // the container
+  X.strokeStyle = dimc; X.lineWidth = 1;
+  X.strokeRect(Math.round(cx) + 0.5, Math.round(cy) + 0.5, Math.round(cw), Math.round(ch));
+
+  let charged = null;
+  for (const it of ITEMS) {
+    if (drag && it === drag) { charged = it; continue; }
+    drawItem(it, objc);
+  }
+  if (charged) {
+    X.save(); X.globalAlpha = 0.1; X.fillStyle = '#000'; roundRect(charged.ax + 3, charged.ay + 6, charged.aw, charged.ah, 6); X.fill(); X.restore();
+    drawItem(charged, '#FBF251', true);
+  }
+}
+function drawItem(it, fill, accent) {
+  roundRect(it.ax, it.ay, it.aw, it.ah, 6);
+  X.fillStyle = (it.grow && !accent) ? fill : fill; X.fill();
+  const ink = accent ? 'rgba(10,10,10,0.86)' : 'rgba(250,250,250,0.92)';
+  X.fillStyle = ink;
+  X.font = "500 15px 'DM Sans', sans-serif"; X.textAlign = 'center'; X.textBaseline = 'middle';
+  X.fillText(it.label, it.ax + it.aw / 2, it.ay + it.ah / 2);
+  if (it.grow) {   // a small mark so "this item grows" reads even when there's no free space
+    X.fillStyle = accent ? 'rgba(10,10,10,0.5)' : 'rgba(250,250,250,0.55)';
+    X.font = "600 10px 'IBM Plex Mono', ui-monospace, monospace"; X.textAlign = 'right'; X.textBaseline = 'top';
+    X.fillText('grow', it.ax + it.aw - 8, it.ay + 7);
+  }
+}
+function roundRect(x, y, w, h, r) { r = Math.min(r, w / 2, h / 2); X.beginPath(); X.moveTo(x + r, y); X.arcTo(x + w, y, x + w, y + h, r); X.arcTo(x + w, y + h, x, y + h, r); X.arcTo(x, y + h, x, y, r); X.arcTo(x, y, x + w, y, r); X.closePath(); }
+
+function itemAt(px, py) {
+  for (let i = ITEMS.length - 1; i >= 0; i--) { const it = ITEMS[i]; if (px >= it.ax && px <= it.ax + it.aw && py >= it.ay && py <= it.ay + it.ah) return it; }
+  return null;
+}
+
+// ───── Pointer ─────
+C.addEventListener('pointermove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  const cur = document.getElementById('cursor'); cur.style.left = e.clientX + 'px'; cur.style.top = e.clientY + 'px';
+  if (drag) { dragMoved = dragMoved || Math.hypot(mouseX - downX, mouseY - downY) > 4; return; }
+  hoverItem = itemAt(mouseX, mouseY);
+  document.body.classList.toggle('hovering', !!hoverItem);
+});
+C.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  mouseX = downX = e.clientX; mouseY = downY = e.clientY;
+  const it = itemAt(mouseX, mouseY);
+  if (it) { drag = it; dragMoved = false; dragCool = 0; document.body.classList.add('dragging'); document.body.classList.remove('hovering'); try { C.setPointerCapture(e.pointerId); } catch (err) {} }
+});
+C.addEventListener('pointerup', (e) => {
+  if (!drag) return;
+  const it = drag; drag = null; document.body.classList.remove('dragging');
+  if (!dragMoved) { it.grow = !it.grow; flashMsg(it.label + (it.grow ? ' grows' : ' fixed')); }   // a click toggles grow
+});
+
+// ───── Keys ─────
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  const k = e.key;
+  if (k === 'd' || k === 'D') { dir = dir === 'row' ? 'column' : 'row'; flashMsg('flex-direction: ' + dir); }
+  else if (k === 'j' || k === 'J') { justify = JUSTIFY[(JUSTIFY.indexOf(justify) + 1) % JUSTIFY.length]; flashMsg('justify-content: ' + justify); }
+  else if (k === 'a' || k === 'A') { align = ALIGN[(ALIGN.indexOf(align) + 1) % ALIGN.length]; flashMsg('align-items: ' + align); }
+  else if (k === ']' || k === '=' || k === '+') { gap = clamp(gap + 4, 0, 80); flashMsg('gap: ' + gap); }
+  else if (k === '[' || k === '-' || k === '_') { gap = clamp(gap - 4, 0, 80); flashMsg('gap: ' + gap); }
+  else if (k === 'c' || k === 'C') copyCSS();
+  else if (k === 's' || k === 'S') savePNG();
+  else if (k === 'r' || k === 'R') { seed(); flashMsg('Reset'); }
+});
+
+// Payoff: the exact flexbox CSS - container properties + which children grow.
+function copyCSS() {
+  let css = '.flex {\n  display: flex;\n  flex-direction: ' + dir + ';\n  justify-content: ' + justify + ';\n  align-items: ' + align + ';\n  gap: ' + gap + 'px;\n}\n';
+  ITEMS.forEach((it, i) => { if (it.grow) css += '.flex > :nth-child(' + (i + 1) + ') { flex-grow: 1; }  /* ' + it.label + ' */\n'; });
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(css).then(() => flashMsg('Copied flexbox CSS to clipboard'), () => flashMsg('Copy blocked - see console'));
+    console.log(css);
+  } else { console.log(css); flashMsg('CSS logged to console'); }
+}
+function savePNG() { C.toBlob((b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'flex.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }, 'image/png'); }
+
+document.getElementById('toggle').addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); ui.theme(dark ? 'dark' : 'light'); });
+window.addEventListener('resize', resize);
+resize();
+seed();
+requestAnimationFrame(step);
+</script>
+</body>
+</html>

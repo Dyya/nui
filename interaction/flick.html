@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<!--
+  Flick - throw a shape to run a command
+  Throw a shape with released momentum to run a command; catch it mid-flight to cancel.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Flick - throw a shape to run a command</title>
+<meta name="description" content="Throw a shape with released momentum to run a command; catch it mid-flight to cancel.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Flick - throw a shape to run a command">
+<meta property="og:description" content="Throw a shape with released momentum to run a command; catch it mid-flight to cancel.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Flick",
+  "applicationCategory": "DesignApplication",
+  "description": "Throw a shape with released momentum to run a command; catch it mid-flight to cancel.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "flick, interaction design, momentum, throw, gesture, command, physics, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* UI neutrals - the interface is monochrome: proper white / grey / black */
+  --c-white: #FAFAFA;
+  --c-grey:  #8A8A8A;
+  --c-black: #0A0A0A;
+  /* Objects render in a theme-aware neutral; the one charged element fills accent yellow. */
+  --obj: rgb(98,103,113);
+
+  /* Light is the default theme; add `dark` on <body> for the option. */
+  --bg: var(--c-white);
+  --doc: #EDEDEF;
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.16);
+  --mid: rgba(10,10,10,0.28);
+  --active: rgba(10,10,10,0.55);
+  --hover: rgba(10,10,10,0.80);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --doc: #16161A;
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.16);
+  --mid: rgba(250,250,250,0.28);
+  --active: rgba(250,250,250,0.55);
+  --hover: rgba(250,250,250,0.80);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+#c { position: fixed; inset: 0; z-index: 1; }
+
+/* Theme toggle: the same glass as the floating legend, but circular, with a
+   small solid white/black dot in the centre (the dot follows the theme). */
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+
+/* Cursor */
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: all 0.25s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.25s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; }
+.cursor .cross.v { width: 1px; height: 10px; }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(1.4); }
+body.dragging .cursor .cross { background: var(--fg); }
+body.dragging.armed .cursor .ring { border-color: var(--fg); transform: scale(1.7); }
+body.dragging.armed .cursor .cross { background: var(--fg); }
+
+/* Touch devices: the finger is the pointer, so no custom crosshair. */
+@media (hover: none) and (pointer: coarse) {
+  html, body { cursor: auto; }
+  .cursor { display: none; }
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="toggle" title="Toggle theme"></div>
+
+<div class="cursor" id="cursor">
+  <div class="ring"></div>
+  <div class="cross h"></div>
+  <div class="cross v"></div>
+</div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+const HINTS = 'Flick a shape to throw it · Aim at an edge to run a command · Catch a moving shape to cancel · R reset';
+const ui = PT.ui({ title: 'Flick', hints: HINTS, theme: 'light' });
+
+// The bottom legend doubles as a stage-reflective status bar: idle shows the how-to,
+// then flicking / in-flight / committed each swap in the relevant readout. We reuse
+// the panel's own glass pill + segment classes so it always looks native.
+const pill = document.querySelector('.adui-pill');
+const seg = (html) => '<span class="adui-seg">' + html + '</span>';
+const key = (t) => '<b class="adui-key">' + t + '</b>';
+let lastBar = '';
+function setBar(html) { if (pill && html !== lastBar) { pill.innerHTML = html; lastBar = html; } }
+function idleBar() { lastBar = ''; ui.setHints(HINTS); }
+let flashUntil = 0;                 // committed messages hold the bar until this timestamp
+function flashBar(html, ms) { setBar(html); flashUntil = performance.now() + ms; }
+
+// ───── Physics constants (all in NORMALIZED artboard space, per second) ─────
+const K       = 1.8;    // friction: v(t) = v0 * exp(-K t); closed-form stop = v0 / K
+const REST_E  = 0.68;   // wall restitution (elastic rubber-band, never escapes)
+const COMMIT  = 0.55;   // speed at a zone band needed to fire its command
+const SETTLE  = 0.055;  // below this a flying shape comes to rest
+const BAND     = 0.15;  // zone-band depth, fraction of the relevant edge
+const PIN_SCALE = 0.62; // pinned shapes shrink into the rail
+const PIN_Y    = 0.092; // pinned rail height, normalized from the top
+const DISMISS_DUR = 0.42;
+const MAX_SHAPES  = 11;
+const ZL = { pin: 'pin', duplicate: 'duplicate', dismiss: 'dismiss' };
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// ───── State (declared with defaults BEFORE the first resize() - no TDZ) ─────
+let shapes = [];
+let drag = null;                    // { id, offx, offy } while a shape is held
+let samples = [];                   // recent { t, nx, ny } for velocity sampling
+let pinnedOrder = [];               // ids, left-to-right along the rail
+let predictions = [];               // per-frame arcs for drag + flying shapes
+let armedZones = new Set();
+let flyingCount = 0;
+let idCounter = 0;
+let mouseX = -100, mouseY = -100;
+let lastTap = 0;
+const seed = 717171;
+
+let docX = 0, docY = 0, docW = 0, docH = 0, minDim = 0;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() {
+  // The artboard fills most of the viewport, leaving room for the edge zones.
+  const m = Math.max(24, Math.min(W, H) * 0.05);
+  docX = m; docY = m;
+  docW = W - 2 * m; docH = H - 2 * m;
+  minDim = Math.min(docW, docH);
+  // Positions live in normalized 0..1 space, so they need no rescale; only the
+  // pixel radius is recomputed from the shape's normalized size.
+  for (const s of shapes) s.r = s.nr * minDim;
+}
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) {
+  return function() {
+    let t = (s += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const byId = (id) => shapes.find(s => s.id === id);
+
+// Shapes are labelled by their form; shared forms get a reading-order index (identity only; every shape renders in the same neutral).
+const TYPES = ['circle', 'square', 'triangle'];
+
+function makeShape(nx, ny, nr, i) {
+  const type = TYPES[i % TYPES.length];
+  return {
+    id: ++idCounter,
+    x: nx, y: ny, nr, r: nr * minDim,
+    vx: 0, vy: 0,
+    state: 'rest',              // rest | fly | dismiss | pinned
+    scale: 1, alpha: 1,
+    cool: 0, dismissT: 0, _remove: false,
+    trail: [],
+    name: cap(type) + ' ' + (Math.floor(i / TYPES.length) + 1),
+    type,
+  };
+}
+
+function regen() {
+  const rng = mulberry32(seed);
+  shapes = []; pinnedOrder = []; idCounter = 0;
+  let tries = 0;
+  // Seed in the safe centre, clear of every zone band.
+  const lo = BAND + 0.06, hi = 1 - BAND - 0.06;
+  while (shapes.length < 6 && tries < 3000) {
+    const nx = lo + rng() * (hi - lo);
+    const ny = lo + rng() * (hi - lo);
+    const nr = 0.045 + rng() * 0.02;
+    let ok = true;
+    for (const o of shapes) if (Math.hypot(nx - o.x, ny - o.y) < nr + o.nr + 0.05) { ok = false; break; }
+    if (ok) shapes.push(makeShape(nx, ny, nr, shapes.length));
+    tries++;
+  }
+}
+regen();
+
+// ───── Zones ─────
+// Which command a point sits in (deepest band wins at a corner); null in the safe area.
+function zoneAt(x, y) {
+  let best = null, deep = 0;
+  if (y < BAND)     { const p = BAND - y;            if (p > deep) { deep = p; best = 'pin'; } }
+  if (x > 1 - BAND) { const p = x - (1 - BAND);      if (p > deep) { deep = p; best = 'duplicate'; } }
+  if (y > 1 - BAND) { const p = y - (1 - BAND);      if (p > deep) { deep = p; best = 'dismiss'; } }
+  return best;
+}
+
+// Forward-sim the trajectory with friction + wall bounces. Returns the arc points,
+// the zone it would fire (first band entry above COMMIT speed), and its stop point.
+function simulate(x, y, vx, vy, rx, ry, maxSteps = 600) {
+  const dt = 1 / 60;
+  let px = x, py = y, pvx = vx, pvy = vy;
+  const pts = [{ x: px, y: py }];
+  let zone = null;
+  for (let i = 0; i < maxSteps; i++) {
+    const decay = Math.exp(-K * dt);
+    pvx *= decay; pvy *= decay;
+    px += pvx * dt; py += pvy * dt;
+    if (px < rx)     { px = rx;     pvx = -pvx * REST_E; }
+    else if (px > 1 - rx) { px = 1 - rx; pvx = -pvx * REST_E; }
+    if (py < ry)     { py = ry;     pvy = -pvy * REST_E; }
+    else if (py > 1 - ry) { py = 1 - ry; pvy = -pvy * REST_E; }
+    pts.push({ x: px, y: py });
+    const sp = Math.hypot(pvx, pvy);
+    if (sp > COMMIT) { const z = zoneAt(px, py); if (z) { zone = z; break; } }
+    if (sp < SETTLE) break;
+  }
+  return { points: pts, zone, land: { x: px, y: py } };
+}
+
+// ───── Velocity sampling (ignore stale samples) ─────
+function sampleVel() {
+  if (samples.length < 2) return { vx: 0, vy: 0 };
+  const now = samples[samples.length - 1].t;
+  const win = samples.filter(s => now - s.t <= 0.09);
+  if (win.length < 2) return { vx: 0, vy: 0 };
+  const a = win[0], b = win[win.length - 1];
+  const dt = b.t - a.t;
+  if (dt <= 0) return { vx: 0, vy: 0 };
+  return { vx: (b.nx - a.nx) / dt, vy: (b.ny - a.ny) / dt };
+}
+
+// ───── Theme colours (cached; custom props don't transition, re-read only on toggle) ─────
+let COL = {};
+function readTheme() {
+  const cs = getComputedStyle(document.body);
+  COL = {
+    bg:     cs.getPropertyValue('--bg').trim(),
+    doc:    cs.getPropertyValue('--doc').trim(),
+    fg:     cs.getPropertyValue('--fg').trim(),
+    dim:    cs.getPropertyValue('--dim').trim(),
+    mid:    cs.getPropertyValue('--mid').trim(),
+    active: cs.getPropertyValue('--active').trim(),
+    obj:    cs.getPropertyValue('--obj').trim(),
+  };
+}
+readTheme();
+
+// ───── Pinned rail slot ─────
+function slotPos(i, n) {
+  const gap = Math.min(0.13, 0.72 / Math.max(1, n));
+  const start = 0.5 - gap * (n - 1) / 2;
+  return { x: start + gap * i, y: PIN_Y };
+}
+
+// ───── Commands ─────
+function doCommand(s, zone) {
+  fireGlow(zone, s);              // the target edge blooms a soft yellow light on fire
+  if (zone === 'pin') {
+    s.state = 'pinned'; s.vx = 0; s.vy = 0; s.trail.length = 0;
+    if (!pinnedOrder.includes(s.id)) pinnedOrder.push(s.id);
+    flashBar(seg(key('Pinned') + ' ' + s.name) + seg('Docked to the rail'), 1400);
+  } else if (zone === 'dismiss') {
+    s.state = 'dismiss'; s.dismissT = 0; s.vx = 0; s.vy = 0; s.trail.length = 0;
+    flashBar(seg(key('Dismissed') + ' ' + s.name), 1400);
+  } else if (zone === 'duplicate') {
+    if (shapes.length < MAX_SHAPES) {
+      const c = makeShape(clamp(s.x - 0.03, 0.02, 0.98), s.y, s.nr, shapes.length);
+      c.name = s.name; c.type = s.type;
+      c.state = 'fly'; c.scale = 0.3;
+      c.vx = -1.05; c.vy = (Math.random() - 0.5) * 0.7; c.cool = 0.7;
+      shapes.push(c);
+      flashBar(seg(key('Duplicated') + ' ' + s.name), 1400);
+    } else {
+      flashBar(seg(key('Full') + ' - max shapes reached'), 1200);
+    }
+    // The original rebounds inward off the right wall rather than committing again.
+    s.vx = -Math.abs(s.vx) * 0.55 - 0.25;
+    s.cool = 0.7;
+  }
+}
+
+// ───── Render ─────
+function shapePath(type, x, y, r) {
+  X.beginPath();
+  if (type === 'square') {
+    const h = r * 0.9;
+    X.rect(x - h, y - h, h * 2, h * 2);
+  } else if (type === 'triangle') {
+    const tr = r * 1.1;
+    for (let i = 0; i < 3; i++) {
+      const a = -Math.PI / 2 + i * (Math.PI * 2 / 3);
+      const px = x + tr * Math.cos(a), py = y + tr * Math.sin(a);
+      i ? X.lineTo(px, py) : X.moveTo(px, py);
+    }
+    X.closePath();
+  } else {
+    X.arc(x, y, r, 0, Math.PI * 2);
+  }
+}
+
+// Zones read as quiet monospace labels at rest (no shaded band, no boundary stroke -
+// those were the visual weight). When a command fires, its edge blooms a clean yellow
+// light from the impact point and fades out: the accent marks the action, nothing else.
+const GLOW_DUR = 700;                                  // ms, post-fire edge bloom
+let zoneFlash = { pin: null, duplicate: null, dismiss: null };
+function fireGlow(zone, s) {
+  zoneFlash[zone] = { t: performance.now(), p: zone === 'duplicate' ? s.y : s.x };
+}
+
+function drawEdgeGlow(edge, p, e) {
+  // Soft radial light seated on the edge at the along-edge position p (0..1).
+  let cx, cy;
+  if (edge === 'top')         { cx = docX + p * docW; cy = docY; }
+  else if (edge === 'bottom') { cx = docX + p * docW; cy = docY + docH; }
+  else                        { cx = docX + docW;     cy = docY + p * docH; } // right
+  const rad = minDim * 0.28;
+  const g = X.createRadialGradient(cx, cy, 0, cx, cy, rad);
+  g.addColorStop(0,    'rgba(251,242,81,' + (0.52 * e) + ')');
+  g.addColorStop(0.42, 'rgba(251,242,81,' + (0.13 * e) + ')');
+  g.addColorStop(1,    'rgba(251,242,81,0)');
+  X.save();
+  X.fillStyle = g;
+  X.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+  X.restore();
+}
+
+function drawZones(now) {
+  const zones = [
+    { id: 'pin',       label: 'Pin',       edge: 'top',    cx: docX + docW / 2,                 cy: docY + BAND * docH * 0.42 },
+    { id: 'duplicate', label: 'Duplicate', edge: 'right',  cx: docX + docW - BAND * docW * 0.5,  cy: docY + docH / 2, vert: true },
+    { id: 'dismiss',   label: 'Dismiss',   edge: 'bottom', cx: docX + docW / 2,                 cy: docY + docH - BAND * docH * 0.42 },
+  ];
+  X.save();
+  // 1) Yellow light - only while a recent fire is still decaying.
+  for (const z of zones) {
+    const f = zoneFlash[z.id];
+    if (!f) continue;
+    const el = now - f.t;
+    if (el < 0 || el >= GLOW_DUR) { zoneFlash[z.id] = null; continue; }
+    const k = 1 - el / GLOW_DUR;
+    drawEdgeGlow(z.edge, f.p, k * k * (3 - 2 * k));    // smoothstep fade-out
+  }
+  // 2) Labels only - the persistent, minimal affordance; brighten when armed.
+  X.font = '12px "IBM Plex Mono", monospace';
+  X.textAlign = 'center';
+  X.textBaseline = 'middle';
+  for (const z of zones) {
+    X.fillStyle = armedZones.has(z.id) ? COL.fg : COL.mid;
+    if (z.vert) {
+      X.save();
+      X.translate(z.cx, z.cy);
+      X.rotate(-Math.PI / 2);
+      X.fillText(z.label, 0, 0);
+      X.restore();
+    } else {
+      X.fillText(z.label, z.cx, z.cy);
+    }
+  }
+  X.restore();
+}
+
+function drawArc(sim, isDrag, zone) {
+  const pts = sim.points;
+  if (pts.length < 2) return;
+  X.save();
+  X.globalAlpha = isDrag ? 0.55 : 0.22;
+  X.strokeStyle = zone ? COL.fg : (isDrag ? COL.active : COL.mid);
+  X.lineWidth = isDrag ? 1.4 : 1;
+  X.setLineDash([4, 6]);
+  X.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    const px = docX + pts[i].x * docW, py = docY + pts[i].y * docH;
+    i ? X.lineTo(px, py) : X.moveTo(px, py);
+  }
+  X.stroke();
+  X.setLineDash([]);
+  // landing marker
+  const last = pts[pts.length - 1];
+  const lx = docX + last.x * docW, ly = docY + last.y * docH;
+  X.globalAlpha = isDrag ? 0.9 : 0.4;
+  X.strokeStyle = zone ? COL.fg : COL.active;
+  X.lineWidth = 1.4;
+  const mr = minDim * (zone ? 0.026 : 0.018);
+  X.beginPath(); X.arc(lx, ly, mr, 0, Math.PI * 2); X.stroke();
+  X.beginPath();
+  X.moveTo(lx - mr - 3, ly); X.lineTo(lx + mr + 3, ly);
+  X.moveTo(lx, ly - mr - 3); X.lineTo(lx, ly + mr + 3);
+  X.stroke();
+  X.restore();
+}
+
+function drawShape(s) {
+  const cx = docX + s.x * docW, cy = docY + s.y * docH;
+  const r = s.r * s.scale;
+  if (r <= 0.2 || s.alpha <= 0) return;
+  const charged = drag && drag.id === s.id;   // the held shape is the one charged thing
+  // motion trail (flying only) - hand-drawn fade, never ctx.filter
+  if (s.state === 'fly' && s.trail.length > 1) {
+    for (let i = 0; i < s.trail.length; i++) {
+      const t = s.trail[i];
+      X.globalAlpha = (i / s.trail.length) * 0.22 * s.alpha;
+      X.fillStyle = COL.obj;
+      const tr = r * (0.3 + 0.55 * i / s.trail.length);
+      shapePath(s.type, docX + t.x * docW, docY + t.y * docH, tr);
+      X.fill();
+    }
+    X.globalAlpha = 1;
+  }
+  X.save();
+  X.globalAlpha = s.alpha;
+  X.fillStyle = charged ? '#FBF251' : COL.obj;
+  shapePath(s.type, cx, cy, r);
+  X.fill();
+  X.restore();
+}
+
+// ───── Update ─────
+function update(dt) {
+  flyingCount = 0;
+  for (const s of shapes) {
+    if (s.state === 'dismiss') {
+      s.dismissT += dt;
+      const p = Math.min(1, s.dismissT / DISMISS_DUR);
+      s.scale = 1 - p * p;
+      s.alpha = 1 - p;
+      if (s.dismissT >= DISMISS_DUR) s._remove = true;
+      continue;
+    }
+    if (s.cool > 0) s.cool -= dt;
+    // scale + position easing
+    const target = s.state === 'pinned' ? PIN_SCALE : 1;
+    const ke = Math.min(1, dt * 9);
+    s.scale += (target - s.scale) * ke;
+    if (s.state === 'pinned') {
+      const idx = pinnedOrder.indexOf(s.id);
+      const t = slotPos(idx, pinnedOrder.length);
+      s.x += (t.x - s.x) * ke;
+      s.y += (t.y - s.y) * ke;
+    }
+    if (s.state === 'fly') {
+      flyingCount++;
+      const decay = Math.exp(-K * dt);
+      s.vx *= decay; s.vy *= decay;
+      s.x += s.vx * dt; s.y += s.vy * dt;
+      const rx = s.r / docW, ry = s.r / docH;
+      if (s.x < rx)        { s.x = rx;     s.vx = -s.vx * REST_E; }
+      else if (s.x > 1 - rx) { s.x = 1 - rx; s.vx = -s.vx * REST_E; }
+      if (s.y < ry)        { s.y = ry;     s.vy = -s.vy * REST_E; }
+      else if (s.y > 1 - ry) { s.y = 1 - ry; s.vy = -s.vy * REST_E; }
+      s.trail.push({ x: s.x, y: s.y });
+      if (s.trail.length > 12) s.trail.shift();
+      const sp = Math.hypot(s.vx, s.vy);
+      if (s.cool <= 0) {
+        const z = zoneAt(s.x, s.y);
+        if (z && sp > COMMIT) { doCommand(s, z); continue; }
+      }
+      if (sp < SETTLE) { s.state = 'rest'; s.vx = 0; s.vy = 0; s.trail.length = 0; }
+    } else if (s.trail.length) {
+      s.trail.length = 0;
+    }
+  }
+  if (shapes.some(s => s._remove)) shapes = shapes.filter(s => !s._remove);
+}
+
+function buildPredictions() {
+  predictions = []; armedZones.clear();
+  if (drag) {
+    const s = byId(drag.id);
+    if (s) {
+      const v = sampleVel();
+      const sim = simulate(s.x, s.y, v.vx, v.vy, s.r / docW, s.r / docH);
+      predictions.push({ s, sim, drag: true, sp: Math.hypot(v.vx, v.vy) });
+      if (sim.zone) armedZones.add(sim.zone);
+    }
+  }
+  for (const s of shapes) {
+    if (s.state === 'fly') {
+      // Flying arcs are a settling hint, not the aimed shot: cap the sim so a
+      // duplicate-spam swarm can't allocate 11 full 600-point arrays per frame.
+      const sim = simulate(s.x, s.y, s.vx, s.vy, s.r / docW, s.r / docH, 240);
+      predictions.push({ s, sim, drag: false, sp: Math.hypot(s.vx, s.vy) });
+      if (sim.zone) armedZones.add(sim.zone);
+    }
+  }
+}
+
+// ───── Bar readouts ─────
+const speedTxt = (sp) => Math.round(sp * minDim) + ' px/s';
+function dragBarHTML(p) {
+  const z = p.sim.zone;
+  return seg(key('Flick') + ' ' + p.s.name) + seg('Speed ' + speedTxt(p.sp)) +
+         (z ? seg(key(cap(z)) + ' armed') : seg('Free toss'));
+}
+function flightBarHTML(p) {
+  const z = p.sim.zone;
+  return seg(key('In flight') + ' ' + p.s.name) + seg('Speed ' + speedTxt(p.sp)) +
+         (z ? seg(key(cap(z)) + ' armed') : seg('Settling'));
+}
+
+// ───── Frame ─────
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  update(dt);
+  buildPredictions();
+
+  // cursor arms when a held flick would fire a command
+  document.body.classList.toggle('armed', !!drag && armedZones.size > 0);
+
+  // bar: committed message holds, else live state, else idle
+  if (now >= flashUntil) {
+    if (drag) {
+      const p = predictions.find(pr => pr.drag);
+      if (p) setBar(dragBarHTML(p));
+    } else if (flyingCount > 0) {
+      const p = predictions.filter(pr => !pr.drag).sort((a, b) => b.sp - a.sp)[0];
+      if (p) setBar(flightBarHTML(p));
+    } else if (lastBar !== '') {
+      idleBar();
+    }
+  }
+
+  // draw
+  X.clearRect(0, 0, W, H);
+  X.fillStyle = COL.bg;
+  X.fillRect(0, 0, W, H);
+  // Work zone: docX/docY/docW/docH stays as an invisible limit zone (no visible panel).
+
+  drawZones(now);
+  for (const p of predictions) drawArc(p.sim, p.drag, p.sim.zone);
+  for (const s of shapes) drawShape(s);
+
+  requestAnimationFrame(frame);
+}
+
+// ───── Input ─────
+const cursor = document.getElementById('cursor');
+const toggle = document.getElementById('toggle');
+
+function toNorm(px, py) {
+  return { nx: (px - docX) / docW, ny: (py - docY) / docH };
+}
+function hitShape(px, py) {
+  const p = toNorm(px, py);
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (s.state === 'dismiss') continue;
+    const dx = (p.nx - s.x) * docW, dy = (p.ny - s.y) * docH;
+    // generous catch radius on moving shapes; snug on resting ones
+    const grab = s.state === 'fly' ? Math.max(s.r * 1.9, minDim * 0.055) : s.r * 1.2;
+    if (Math.hypot(dx, dy) <= grab) return s;
+  }
+  return null;
+}
+function grab(s, px, py) {
+  const wasFlying = s.state === 'fly';
+  const p = toNorm(px, py);
+  // Catch to cancel: zero velocity, abort any armed command, then hold it.
+  s.state = 'rest'; s.vx = 0; s.vy = 0; s.trail.length = 0;
+  // A new gesture overrides any lingering committed flash so the live
+  // wind-up / flight readout resumes immediately (matches golden reference).
+  flashUntil = 0;
+  const pi = pinnedOrder.indexOf(s.id);
+  if (pi >= 0) pinnedOrder.splice(pi, 1);
+  drag = { id: s.id, offx: p.nx - s.x, offy: p.ny - s.y };
+  samples = [{ t: performance.now() / 1000, nx: p.nx, ny: p.ny }];
+  document.body.classList.add('dragging');
+  if (wasFlying) flashBar(seg(key('Caught') + ' ' + s.name) + seg('Throw again or drop'), 1100);
+}
+
+window.addEventListener('pointermove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top  = mouseY + 'px';
+  if (!drag) return;
+  const s = byId(drag.id);
+  if (!s) return;
+  const p = toNorm(mouseX, mouseY);
+  samples.push({ t: performance.now() / 1000, nx: p.nx, ny: p.ny });
+  if (samples.length > 10) samples.shift();
+  const rx = s.r / docW, ry = s.r / docH;
+  s.x = clamp(p.nx - drag.offx, rx, 1 - rx);
+  s.y = clamp(p.ny - drag.offy, ry, 1 - ry);
+});
+
+window.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  mouseX = e.clientX; mouseY = e.clientY;
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top  = mouseY + 'px';
+  const h = hitShape(mouseX, mouseY);
+  if (h) {
+    e.preventDefault();
+    grab(h, mouseX, mouseY);
+    try { C.setPointerCapture(e.pointerId); } catch (_) {}
+  } else {
+    // Double-tap empty artboard resets (touch fallback for the R key).
+    const t = performance.now();
+    if (t - lastTap < 320) { doReset(); lastTap = 0; }
+    else lastTap = t;
+  }
+});
+
+function release() {
+  if (!drag) return;
+  const s = byId(drag.id);
+  const v = sampleVel();
+  const sp = Math.hypot(v.vx, v.vy);
+  if (s) {
+    if (sp > SETTLE * 1.3) { s.state = 'fly'; s.vx = v.vx; s.vy = v.vy; s.trail.length = 0; }
+    else { s.state = 'rest'; s.vx = 0; s.vy = 0; }
+  }
+  drag = null;
+  document.body.classList.remove('dragging', 'armed');
+}
+
+window.addEventListener('pointerup', release);
+
+window.addEventListener('pointercancel', () => {
+  if (!drag) return;
+  const s = byId(drag.id);
+  if (s) { s.state = 'rest'; s.vx = 0; s.vy = 0; }
+  drag = null;
+  document.body.classList.remove('dragging', 'armed');
+});
+
+function doReset() {
+  drag = null; samples = []; flashUntil = 0;
+  document.body.classList.remove('dragging', 'armed');
+  regen();
+  idleBar();
+}
+
+window.addEventListener('keydown', (e) => {
+  if (!e.key) return;
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) doReset();
+});
+
+toggle.addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  ui.theme(dark ? 'dark' : 'light');
+  readTheme();
+});
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -4,8 +4,8 @@
   Pilot a little plane over a paragraph and drop bombs on the words you don't need; letters shatter by their own ink mass and what survives becomes a poster you can capture and share.
 
   Part of NUI - experiments in interface design and interaction.
-  Author · Adi Dizdarevic · AD& · http://adidizdarevic.com/
-  © 2026 Adi Dizdarevic. All rights reserved.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
 -->
 <html lang="en" data-theme="light">
 <head>
@@ -14,8 +14,8 @@
 <title>Typo bomber - bomb a paragraph into a poster</title>
 <meta name="description" content="An interactive erasure tool: pilot a little plane over a paragraph and drop bombs on the words you don't need. Letters shatter by their own ink mass and what survives settles into a poster you can capture and share.">
 <meta name="author" content="Adi Dizdarevic">
-<link rel="author" href="http://adidizdarevic.com/">
-<meta name="theme-color" content="#f0ebdf">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
 
 <!-- Open Graph (minimal) -->
 <meta property="og:type" content="website">
@@ -34,9 +34,9 @@
   "browserRequirements": "Requires JavaScript and HTML5 canvas",
   "inLanguage": "en",
   "keywords": "kinetic typography, typesetting, erasure poetry, type destruction, generative, poster, canvas, interactive, Pretext",
-  "license": "All rights reserved",
-  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "http://adidizdarevic.com/" },
-  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "http://adidizdarevic.com/" },
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
   "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
 }
 </script>
@@ -47,11 +47,11 @@
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg:    #f0ebdf;   /* cream paper */
-  --ink:   #1d1a14;   /* warm near-black */
-  --ink-2: rgba(29,26,20,.55);
-  --ink-3: rgba(29,26,20,.28);
-  --ink-4: rgba(29,26,20,.10);
+  --bg:    #FAFAFA;   /* base light: plain white */
+  --ink:   #0A0A0A;   /* near-black ink */
+  --ink-2: rgba(10,10,10,.55);
+  --ink-3: rgba(10,10,10,.28);
+  --ink-4: rgba(10,10,10,.10);
   --red:   #b93d2a;   /* bomb accent */
   --red-2: rgba(185,61,42,.55);
   --ember: #e8833a;   /* explosion warm */
@@ -59,11 +59,11 @@
   --serif: 'Instrument Serif', Georgia, serif;
 }
 [data-theme="dark"] {
-  --bg:    #17130c;
-  --ink:   #ede6d5;
-  --ink-2: rgba(237,230,213,.55);
-  --ink-3: rgba(237,230,213,.26);
-  --ink-4: rgba(237,230,213,.10);
+  --bg:    #0A0A0A;   /* base dark: near-black */
+  --ink:   #FAFAFA;   /* light ink */
+  --ink-2: rgba(250,250,250,.55);
+  --ink-3: rgba(250,250,250,.26);
+  --ink-4: rgba(250,250,250,.10);
   --red:   #d85542;
   --red-2: rgba(216,85,66,.65);
   --ember: #f0a453;
@@ -244,6 +244,13 @@ body.bombing .adui { opacity: .22; }
   opacity: 0; transition: opacity .18s;
 }
 #flash.on { opacity: .14; }
+
+/* ── theme toggle: base light/dark (nav-driven when embedded). T also flips it. ── */
+#toggle { position: fixed; bottom: 14px; right: 16px; z-index: 9998; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); background: rgba(255,255,255,.5); border: 1px solid rgba(0,0,0,.06); display: grid; place-items: center; transition: transform .2s cubic-bezier(.5,.02,.15,1); }
+body.dark #toggle { background: rgba(10,10,10,.35); border-color: rgba(255,255,255,.08); }
+#toggle::after { content: ''; width: 10px; height: 10px; border-radius: 50%; background: #0A0A0A; }
+body.dark #toggle::after { background: #FAFAFA; }
+#toggle:hover { transform: scale(1.08); }
 </style>
 </head>
 <body>
@@ -253,6 +260,7 @@ body.bombing .adui { opacity: .22; }
 </div>
 
 <canvas id="fx">Typo bomber, an interactive erasure tool. Requires JavaScript and an HTML5 canvas.</canvas>
+<div id="toggle" title="Toggle theme"></div>
 <div id="grain"></div>
 <div id="flash"></div>
 
@@ -271,7 +279,7 @@ body.bombing .adui { opacity: .22; }
   <div class="cmp-card" id="cmp-card"></div>
 </div>
 
-<script src="./core/ui.js"></script>
+<script src="../typography/core/ui.js"></script>
 <script type="module">
 import {
   prepareWithSegments,
@@ -1097,7 +1105,7 @@ const DEFAULT_HINTS = 'Click drop · Shift heavier · 1-4 level · N next · E s
 const ui = window.PT.ui({
   title: 'Typo bomber',
   hints: DEFAULT_HINTS,
-  theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
+  theme: 'light',
 });
 function syncTitle(){
   ui.setTitle('Typo bomber · ' + (ROMAN[textIdx] || (textIdx + 1)));
@@ -1128,7 +1136,7 @@ window.addEventListener('pointerdown', e => {
   // Clicks on the level picker or the completion screen drive their own
   // controls - they must NOT also drop a bomb on the spot.
   if (e.target && e.target.closest &&
-      (e.target.closest('#cleared') || e.target.closest('#complete'))) return;
+      (e.target.closest('#cleared') || e.target.closest('#complete') || e.target.closest('#toggle'))) return;
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   aimAt(e);                       // touch: tap position becomes the aim
   ensureAudio();
@@ -1176,14 +1184,27 @@ window.addEventListener('keydown', e => {
   }
 });
 
-function toggleTheme(){
-  const cur = document.documentElement.dataset.theme;
-  const next = cur === 'light' ? 'dark' : 'light';
-  document.documentElement.dataset.theme = next;
+// Base light/dark theme. The #toggle dot (nav-driven when embedded) is on top:
+// flipping it resets to the white/black base. applyTheme drives the CSS vars
+// (so the DOM glyphs recolor) and refreshes the canvas palette cache; the RAF
+// loop repaints from PAL every frame, so no explicit repaint is needed.
+function applyTheme(dark){
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   document.querySelector('meta[name=theme-color]')
-          ?.setAttribute('content', next === 'dark' ? '#17130c' : '#f0ebdf');
+          ?.setAttribute('content', dark ? '#0A0A0A' : '#FAFAFA');
   refreshPalette();
-  ui.theme(next);
+}
+document.getElementById('toggle').addEventListener('click', () => {
+  const d = document.body.classList.toggle('dark');
+  ui.theme(d ? 'dark' : 'light');
+  applyTheme(d);
+});
+
+// T key: same flip, kept in sync with the toggle dot + body.dark class.
+function toggleTheme(){
+  const d = document.body.classList.toggle('dark');
+  ui.theme(d ? 'dark' : 'light');
+  applyTheme(d);
 }
 
 function reset(){

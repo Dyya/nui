@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<!--
+  Take - record and replay motion
+  Record a shape's motion by dragging it, release to replay the take on a loop, scrub to review.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Take - record and replay motion</title>
+<meta name="description" content="Record a shape's motion by dragging it, release to replay the take on a loop, scrub to review.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Take - record and replay motion">
+<meta property="og:description" content="Record a shape's motion by dragging it, release to replay the take on a loop, scrub to review.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Take",
+  "applicationCategory": "DesignApplication",
+  "description": "Record a shape's motion by dragging it, release to replay the take on a loop, scrub to review.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "take, interaction design, motion, motion capture, replay, recording, loop, scrub, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white:#FAFAFA; --c-grey:#8A8A8A; --c-black:#0A0A0A;
+  --bg: var(--c-white);
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.12);
+  --mid: rgba(10,10,10,0.30);
+  --active: rgba(10,10,10,0.60);
+  --obj: rgb(98,103,113);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.12);
+  --mid: rgba(250,250,250,0.30);
+  --active: rgba(250,250,250,0.60);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); color:var(--fg); font-family:'DM Sans',sans-serif; cursor:none; transition:background .4s var(--ease); touch-action:none; overscroll-behavior:none; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+#c { position:fixed; inset:0; z-index:1; }
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+.cursor{position:fixed;z-index:50;pointer-events:none;width:28px;height:28px;transform:translate(-50%,-50%);}
+.cursor .ring{position:absolute;inset:0;border:1px solid var(--c-grey);border-radius:50%;transition:transform .2s var(--ease),border-color .2s var(--ease);}
+.cursor .cross{position:absolute;left:50%;top:50%;background:var(--c-grey);transform:translate(-50%,-50%);transition:background .2s var(--ease);}
+.cursor .cross.h{width:10px;height:1px;} .cursor .cross.v{width:1px;height:10px;}
+body.grabbing .cursor .ring{border-color:var(--fg);transform:scale(1.35);}
+body.grabbing .cursor .cross{background:var(--fg);}
+body.recording .cursor .ring{border-color:var(--fg);transform:scale(1.4);}
+body.recording .cursor .cross{background:var(--fg);}
+body.scrubbing .cursor .ring{border-color:var(--fg);border-radius:3px;transform:scaleY(0.4);}
+@media (hover:none) and (pointer:coarse){ html,body{cursor:auto;} .cursor{display:none;} }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+let W = 0, H = 0, prevW = 0, prevH = 0;
+
+const HINTS = 'Drag a shape to record its motion · Release to replay it looping · Drag empty space to scrub · Space play or pause · Shift-drag to move · R reset';
+const ui = PT.ui({ title: 'Take', hints: HINTS, theme: 'light' });
+const pill = document.querySelector('.adui-pill');
+const seg = h => '<span class="adui-seg">' + h + '</span>';
+const key = t => '<b class="adui-key">' + t + '</b>';
+let barTimer = null, lastBar = '';
+function setBar(h){ clearTimeout(barTimer); if (pill && h !== lastBar){ pill.innerHTML = h; lastBar = h; } }
+function idleBar(){ clearTimeout(barTimer); lastBar = ''; ui.setHints(HINTS); }
+function flashBar(h, ms){ setBar(h); barTimer = setTimeout(() => { if (!rec && !scrub && !move) statusBar(); }, ms); }
+
+const cursor = document.getElementById('cursor');
+const toggle = document.getElementById('toggle');
+
+let COL = {};
+function readTheme(){
+  const cs = getComputedStyle(document.body);
+  COL = { bg: cs.getPropertyValue('--bg').trim(), fg: cs.getPropertyValue('--fg').trim(),
+          dim: cs.getPropertyValue('--dim').trim(), mid: cs.getPropertyValue('--mid').trim(), active: cs.getPropertyValue('--active').trim(), obj: cs.getPropertyValue('--obj').trim() };
+}
+readTheme();
+
+const TYPES = ['circle', 'square', 'triangle'];
+
+let shapes = [];       // { x, y, r, type, color, take, homeX, homeY }
+let rec = null;        // { s, t0, last }
+let move = null;       // { s, ox, oy }
+let scrub = null;      // { x0, t0 }
+let playing = true;
+let time = 0, lastNow = 0;
+let mx = -100, my = -100;
+let shiftHeld = false;
+
+function resize(){
+  prevW = W || window.innerWidth; prevH = H || window.innerHeight;
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (shapes.length && prevW && prevH){
+    const sx = W / prevW, sy = H / prevH, sr = Math.min(sx, sy);
+    for (const s of shapes){
+      s.x *= sx; s.y *= sy; s.homeX *= sx; s.homeY *= sy; s.r *= sr;
+      if (s.take) for (const p of s.take.samples){ p.x *= sx; p.y *= sy; }
+    }
+  }
+}
+
+function seed(){
+  shapes = []; rec = null; move = null; scrub = null; time = 0; playing = true;
+  const S = Math.min(W, H);
+  const spots = [[0.28, 0.4], [0.55, 0.55], [0.74, 0.35]];
+  for (let i = 0; i < spots.length; i++){
+    const x = W * spots[i][0], y = H * spots[i][1];
+    shapes.push({ x, y, homeX: x, homeY: y, r: S * 0.035, type: TYPES[i % TYPES.length], take: null });
+  }
+}
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+function hitShape(x, y){ for (let i = shapes.length - 1; i >= 0; i--){ if (Math.hypot(x - shapes[i].x, y - shapes[i].y) < shapes[i].r + 6) return shapes[i]; } return null; }
+
+function posAt(take, t){
+  const s = take.samples;
+  if (t <= 0) return s[0];
+  if (t >= take.dur) return s[s.length - 1];
+  let lo = 0, hi = s.length - 1;
+  while (hi - lo > 1){ const m = (lo + hi) >> 1; if (s[m].t <= t) lo = m; else hi = m; }
+  const a = s[lo], b = s[hi], u = (t - a.t) / Math.max(1, b.t - a.t);
+  return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+}
+
+function statusBar(){
+  const takes = shapes.filter(s => s.take).length;
+  if (!takes){ idleBar(); return; }
+  setBar(seg(key(playing ? 'Playing' : 'Paused')) + seg(takes + (takes === 1 ? ' take' : ' takes')) + seg((time / 1000).toFixed(1) + 's'));
+}
+
+function shapePath(type, r){
+  X.beginPath();
+  if (type === 'square'){ const h = r * 0.88; X.rect(-h, -h, h * 2, h * 2); }
+  else if (type === 'triangle'){ const tr = r * 1.12; for (let i = 0; i < 3; i++){ const a = -Math.PI / 2 + i * (Math.PI * 2 / 3); const px = tr * Math.cos(a), py = tr * Math.sin(a); i ? X.lineTo(px, py) : X.moveTo(px, py); } X.closePath(); }
+  else X.arc(0, 0, r, 0, Math.PI * 2);
+}
+
+function drawTrail(s){
+  const smp = s.take.samples;
+  X.save();
+  X.strokeStyle = COL.obj; X.fillStyle = COL.obj; X.globalAlpha = 0.28; X.lineWidth = 1.4;
+  X.beginPath(); X.moveTo(smp[0].x, smp[0].y);
+  for (let i = 1; i < smp.length; i++) X.lineTo(smp[i].x, smp[i].y);
+  X.stroke();
+  X.globalAlpha = 0.5;
+  X.beginPath(); X.arc(smp[0].x, smp[0].y, 3, 0, Math.PI * 2); X.fill();
+  X.restore();
+}
+
+function drawShape(s, active){
+  X.save();
+  X.translate(s.x, s.y);
+  if (active){                                     // shape being recorded or moved = charged
+    X.fillStyle = '#FBF251';
+    shapePath(s.type, s.r);
+    X.fill();
+  } else {
+    X.fillStyle = COL.obj;
+    shapePath(s.type, s.r);
+    X.fill();
+  }
+  X.restore();
+}
+
+function draw(now){
+  const dt = lastNow ? now - lastNow : 0; lastNow = now;
+  if (playing && !scrub && !rec) time += dt;
+  // apply playback to shapes with a take (except the one being recorded/moved)
+  for (const s of shapes){
+    if (rec && rec.s === s) continue;
+    if (move && move.s === s) continue;
+    if (s.take && s.take.dur > 0){ const p = posAt(s.take, time % s.take.dur); s.x = p.x; s.y = p.y; }
+  }
+  X.fillStyle = COL.bg; X.fillRect(0, 0, W, H);
+  for (const s of shapes) if (s.take) drawTrail(s);
+  for (const s of shapes) drawShape(s, (rec && rec.s === s) || (move && move.s === s));
+  if (rec) setBar(seg(key('Recording')) + seg(((now - rec.t0) / 1000).toFixed(1) + 's') + seg(rec.s.take ? rec.s.take.samples.length + ' pts' : '...'));
+  else if (scrub) setBar(seg(key('Scrub')) + seg((time / 1000).toFixed(1) + 's'));
+  requestAnimationFrame(draw);
+}
+
+window.addEventListener('resize', resize);
+resize(); seed();
+requestAnimationFrame(function start(t){ lastNow = t; requestAnimationFrame(draw); });
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (rec){
+    const s = rec.s; s.x = mx; s.y = my;
+    const t = performance.now() - rec.t0;
+    const last = rec.last;
+    if (!last || t - last.t > 14 || Math.hypot(mx - last.x, my - last.y) > 3){
+      const pt = { t, x: mx, y: my }; rec.buf.push(pt); rec.last = pt;
+    }
+    return;
+  }
+  if (move){ move.s.x = mx - move.ox; move.s.y = my - move.oy; return; }
+  if (scrub){ time = Math.max(0, scrub.t0 + (mx - scrub.x0) * 4); }
+});
+
+window.addEventListener('pointerdown', e => {
+  if (e.target.closest('#toggle, .adui')) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  try { C.setPointerCapture(e.pointerId); } catch(_) {}
+  const s = hitShape(mx, my);
+  if (s){
+    if (shiftHeld){ move = { s, ox: mx - s.x, oy: my - s.y }; document.body.classList.add('grabbing'); }
+    else { rec = { s, t0: performance.now(), buf: [{ t: 0, x: mx, y: my }], last: null }; s.x = mx; s.y = my; document.body.classList.add('recording'); }
+  } else {
+    scrub = { x0: mx, t0: time }; playing = false; document.body.classList.add('scrubbing');
+  }
+});
+
+window.addEventListener('pointerup', () => {
+  if (rec){
+    const dur = performance.now() - rec.t0;
+    const buf = rec.buf;
+    let pathLen = 0; for (let i = 1; i < buf.length; i++) pathLen += Math.hypot(buf[i].x - buf[i - 1].x, buf[i].y - buf[i - 1].y);
+    if (buf.length > 3 && dur > 160 && pathLen > rec.s.r){
+      rec.s.take = { samples: buf, dur };
+      rec.s.homeX = buf[0].x; rec.s.homeY = buf[0].y;
+      playing = true; time = 0;
+      flashBar(seg(key('Recorded')) + seg((dur / 1000).toFixed(1) + 's, ' + buf.length + ' pts'), 1500);
+      navigator.vibrate && navigator.vibrate(8);
+    } else { rec.s.homeX = rec.s.x; rec.s.homeY = rec.s.y; statusBar(); }
+    rec = null; document.body.classList.remove('recording');
+  } else if (move){ move.s.homeX = move.s.x; move.s.homeY = move.s.y; move = null; document.body.classList.remove('grabbing'); statusBar(); }
+  else if (scrub){ scrub = null; document.body.classList.remove('scrubbing'); statusBar(); }
+});
+window.addEventListener('pointercancel', () => { rec = null; move = null; scrub = null; document.body.classList.remove('recording', 'grabbing', 'scrubbing'); statusBar(); });
+
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); ui.theme(dark ? 'dark' : 'light'); readTheme(); });
+
+window.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'Shift') shiftHeld = true;
+  if (e.key === ' '){ e.preventDefault(); if (!e.repeat){ playing = !playing; statusBar(); } }
+  if ((e.key === 'r' || e.key === 'R') && !e.repeat){ seed(); idleBar(); }
+});
+window.addEventListener('keyup', e => { if (e.key === 'Shift') shiftHeld = false; });
+</script>
+</body>
+</html>

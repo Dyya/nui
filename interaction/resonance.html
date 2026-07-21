@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<!--
+  Resonance - relationships made legible as ripples
+  Click an object to send a ripple that reaches related objects sooner, making the latent relationship graph legible as motion.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Resonance - relationships made legible as ripples</title>
+<meta name="description" content="Click an object to send a ripple that reaches related objects sooner, making the latent relationship graph legible as motion.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Resonance - relationships made legible as ripples">
+<meta property="og:description" content="Click an object to send a ripple that reaches related objects sooner, making the latent relationship graph legible as motion.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Resonance",
+  "applicationCategory": "DesignApplication",
+  "description": "Click an object to send a ripple that reaches related objects sooner, making the latent relationship graph legible as motion.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "resonance, interaction design, ripple, relationships, graph, propagation, reveal, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg: #0a0a0c; --fg: rgba(255,255,255,0.92); --fg-dim: rgba(255,255,255,0.45); --fg-faint: rgba(255,255,255,0.18);
+    --grid: rgba(255,255,255,0.018); --chrome-bg: rgba(20,20,24,0.85); --chrome-bd: rgba(255,255,255,0.08);
+    --accent: #FBF251;
+  }
+  body.light { --bg: #FAFAFA; --fg: rgba(0,0,0,0.88); --fg-dim: rgba(0,0,0,0.45); --fg-faint: rgba(0,0,0,0.15); --grid: rgba(0,0,0,0.03); --chrome-bg: rgba(255,255,255,0.88); --chrome-bd: rgba(0,0,0,0.08); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s; }
+  canvas { position: fixed; inset: 0; display: block; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+  #cursor { position: fixed; left: 0; top: 0; width: 20px; height: 20px; border: 1.5px solid var(--fg); border-radius: 50%; pointer-events: none; z-index: 100; transform: translate(-50%, -50%); transition: border-color 0.2s; }
+  #cursor::before, #cursor::after { content: ''; position: absolute; background: var(--fg); }
+  #cursor::before { top: 50%; left: -3px; right: -3px; height: 1px; transform: translateY(-50%); }
+  #cursor::after { left: 50%; top: -3px; bottom: -3px; width: 1px; transform: translateX(-50%); }
+  #cursor.touch { border-color: var(--fg); }
+  #cursor.drag { border-color: var(--fg); }
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <div id="toggle" title="Toggle theme"></div>
+  <div id="cursor"></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const cursor = document.getElementById('cursor');
+const readout = { set innerHTML(v){}, set textContent(v){} };
+
+const ui = PT.ui({ title: 'Resonance', hints: 'Click resonate · Drag move · R reseed · Esc clear', theme: 'light' });
+const toggle = document.getElementById('toggle');
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); document.body.classList.toggle('light', !dark); ui.theme(dark ? 'dark' : 'light'); });
+
+// state BEFORE resize
+let W = 0, H = 0;
+let seed = 717171;
+let shapes = [];
+let drag = null;
+let mx = -100, my = -100;
+let hoverId = null;
+let pressStart = null; // { id, x, y, t0 }
+let ripple = null; // { sourceId, arrivals: [{id, delay, strength, fired}], t0 }
+let dragDetected = false;
+
+const css = (v) => getComputedStyle(document.body).getPropertyValue(v).trim();
+// The resonance "value" trait (formerly hue) - a categorical grey-value ramp, theme-aware.
+// Same tier = kin (resonates strongest); only ever compared for equality.
+const TIERS_LIGHT = ['#2B2E34', '#484C53', '#666B74', '#878C95', '#A6ABB3'];
+const TIERS_DARK  = ['#EEF0F3', '#C4C8CF', '#9BA1AB', '#787D87', '#575C65'];
+const TIER_N = TIERS_LIGHT.length;
+const tierColor = (i) => (document.body.classList.contains('light') ? TIERS_LIGHT : TIERS_DARK)[i];
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() { if (shapes.length === 0) build(); }
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) { return function() { let t = (s += 0x6D2B79F5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function build() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  // 3 spatial groups, each with 4–5 members, colors mixed across groups so we have natural cross-group color affinity
+  const groups = [
+    { cx: 0.22, cy: 0.32, spread: 0.08, count: 5 },
+    { cx: 0.62, cy: 0.42, spread: 0.1, count: 5 },
+    { cx: 0.42, cy: 0.76, spread: 0.08, count: 4 },
+  ];
+  for (let g = 0; g < groups.length; g++) {
+    const gp = groups[g];
+    for (let i = 0; i < gp.count; i++) {
+      const angle = rng() * Math.PI * 2;
+      const radius = rng() * gp.spread;
+      const nx = gp.cx + Math.cos(angle) * radius;
+      const ny = gp.cy + Math.sin(angle) * radius;
+      shapes.push({
+        id: shapes.length + 1,
+        x: nx * W, y: ny * H,
+        size: 24 + rng() * 12,
+        tier: (rng() * TIER_N) | 0,
+        groupId: g + 1,
+      });
+    }
+  }
+}
+
+
+function computeRelationships(sourceId) {
+  const source = shapes.find(s => s.id === sourceId);
+  if (!source) return [];
+  const arrivals = [];
+  for (const s of shapes) {
+    if (s.id === sourceId) continue;
+    // Relationship strength
+    let strength = 0;
+    let rel = [];
+    if (s.tier === source.tier) { strength += 0.55; rel.push('TONE'); }
+    if (s.groupId === source.groupId) { strength += 0.3; rel.push('GROUP'); }
+    const d = Math.hypot(s.x - source.x, s.y - source.y);
+    const prox = clamp(1 - d / Math.hypot(W, H), 0, 1);
+    strength += prox * 0.25;
+    if (prox > 0.7 && rel.length === 0) rel.push('PROX');
+    // Delay inversely proportional to strength
+    // strong (1.0) = 120ms; weak (0.25) = 1200ms
+    const delay = 120 + (1 - clamp(strength, 0, 1)) * 1400;
+    arrivals.push({
+      id: s.id,
+      delay,
+      strength: clamp(strength, 0.05, 1),
+      rel: rel.length ? rel.join('+') : 'FAR',
+      fired: false,
+    });
+  }
+  arrivals.sort((a, b) => a.delay - b.delay);
+  return arrivals;
+}
+
+function touch(id) {
+  ripple = {
+    sourceId: id,
+    arrivals: computeRelationships(id),
+    t0: performance.now(),
+  };
+}
+
+function drawShape(s) {
+  const isSource = ripple?.sourceId === s.id;
+  const now = performance.now();
+  let pulseIntensity = 0;
+  let arrivalRel = null;
+  if (ripple) {
+    if (isSource) {
+      const age = now - ripple.t0;
+      if (age < 700) pulseIntensity = (1 - age / 700) * 1.0;
+    } else {
+      const arr = ripple.arrivals.find(a => a.id === s.id);
+      if (arr) {
+        const age = now - ripple.t0 - arr.delay;
+        if (age >= 0 && age < 700) {
+          pulseIntensity = (1 - age / 700) * arr.strength;
+          arrivalRel = arr.rel;
+        }
+      }
+    }
+  }
+  // Base shape - grey by tone tier; the touched source (or a dragged shape) is the one
+  // charged thing, filled with the bare accent.
+  const charged = isSource || (drag && drag.id === s.id);
+  X.save();
+  X.fillStyle = charged ? '#FBF251' : tierColor(s.tier);
+  X.beginPath(); X.arc(s.x, s.y, s.size, 0, Math.PI * 2); X.fill();
+  X.restore();
+  // Pulse ring - neutral ink, its alpha carries the resonance strength
+  if (pulseIntensity > 0) {
+    const radius = s.size + 4 + (1 - pulseIntensity) * 40;
+    const alpha = pulseIntensity;
+    X.save();
+    X.strokeStyle = css('--fg');
+    X.globalAlpha = alpha * 0.9;
+    X.lineWidth = 2;
+    X.beginPath(); X.arc(s.x, s.y, radius, 0, Math.PI * 2); X.stroke();
+    X.restore();
+    // Label showing relationship
+    if (arrivalRel && pulseIntensity > 0.15) {
+      X.save();
+      X.font = '8px "IBM Plex Mono", monospace';
+      X.fillStyle = css('--fg-dim');
+      X.globalAlpha = pulseIntensity * 0.9;
+      X.textAlign = 'center';
+      X.textBaseline = 'top';
+      X.fillText(arrivalRel, s.x, s.y + s.size + 6);
+      X.restore();
+    }
+  }
+  // Hover/drag outline
+  if (hoverId === s.id && !drag && !ripple) {
+    X.save();
+    X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+    X.lineWidth = 1;
+    X.setLineDash([3, 3]);
+    X.beginPath(); X.arc(s.x, s.y, s.size + 6, 0, Math.PI * 2); X.stroke();
+    X.restore();
+  }
+  if (drag && drag.id === s.id) {
+    X.save();
+    X.strokeStyle = css('--fg-dim');
+    X.lineWidth = 1;
+    X.beginPath(); X.arc(s.x, s.y, s.size + 6, 0, Math.PI * 2); X.stroke();
+    X.restore();
+  }
+}
+
+function drawRippleConnections() {
+  if (!ripple) return;
+  const source = shapes.find(s => s.id === ripple.sourceId);
+  if (!source) return;
+  const now = performance.now();
+  for (const arr of ripple.arrivals) {
+    const t = shapes.find(s => s.id === arr.id);
+    if (!t) continue;
+    const age = now - ripple.t0 - arr.delay;
+    // Line is visible briefly right as the pulse arrives
+    if (age < -200 || age > 500) continue;
+    let alpha;
+    if (age < 0) alpha = ((age + 200) / 200) * 0.15; // fading in before arrival
+    else alpha = (1 - age / 500) * arr.strength * 0.6;
+    X.save();
+    X.strokeStyle = tierColor(t.tier);
+    X.globalAlpha = alpha;
+    X.lineWidth = 1;
+    X.setLineDash([2, 3]);
+    X.beginPath();
+    X.moveTo(source.x, source.y);
+    X.lineTo(t.x, t.y);
+    X.stroke();
+    X.restore();
+  }
+}
+
+function draw() {
+  X.clearRect(0, 0, W, H);
+  drawRippleConnections();
+  for (const s of shapes) drawShape(s);
+  // Expire ripple after all arrivals + 1s
+  if (ripple) {
+    const maxDelay = ripple.arrivals.length ? ripple.arrivals[ripple.arrivals.length - 1].delay : 0;
+    const age = performance.now() - ripple.t0;
+    if (age > maxDelay + 800) ripple = null;
+  }
+  const activeArrivals = ripple ? ripple.arrivals.filter(a => {
+    const age = performance.now() - ripple.t0 - a.delay;
+    return age >= 0 && age < 700;
+  }).length : 0;
+  readout.innerHTML = `Objects <b>${shapes.length}</b>${ripple ? ` · Firing <b>${activeArrivals}</b>` : ' · Groups <b>3</b>'}`;
+}
+
+function loop() { draw(); requestAnimationFrame(loop); }
+loop();
+
+function hit(x, y) {
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (Math.hypot(x - s.x, y - s.y) < s.size + 3) return s;
+  }
+  return null;
+}
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (pressStart && !drag) {
+    // Detect drag: if movement > 5px, commit to drag mode (suppress ripple on release)
+    const d = Math.hypot(mx - pressStart.x, my - pressStart.y);
+    if (d > 5) {
+      dragDetected = true;
+      const s = shapes.find(x => x.id === pressStart.id);
+      if (s) {
+        drag = { id: s.id, offX: mx - s.x, offY: my - s.y };
+        cursor.classList.add('drag');
+      }
+    }
+  }
+  if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    if (s) { s.x = mx - drag.offX; s.y = my - drag.offY; }
+  } else {
+    hoverId = hit(mx, my)?.id ?? null;
+    cursor.classList.toggle('touch', !!hoverId && !pressStart);
+  }
+});
+window.addEventListener('pointerdown', e => {
+  const h = hit(e.clientX, e.clientY);
+  if (h) {
+    pressStart = { id: h.id, x: e.clientX, y: e.clientY, t0: performance.now() };
+    dragDetected = false;
+  }
+});
+window.addEventListener('pointerup', () => {
+  if (pressStart && !dragDetected) {
+    touch(pressStart.id);
+  }
+  pressStart = null;
+  drag = null;
+  dragDetected = false;
+  cursor.classList.remove('drag');
+});
+window.addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R') {
+    seed = Math.floor(Math.random() * 999999);
+    shapes = []; ripple = null;
+    build();
+  } else if (e.key === 'Escape') {
+    ripple = null;
+  }
+});
+</script>
+</body>
+</html>

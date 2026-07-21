@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<!--
+  Sweep - squeegee shapes into alignment
+  Drag across empty space to squeegee scattered shapes into an aligned, evenly spaced line.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Sweep - squeegee shapes into alignment</title>
+<meta name="description" content="Drag across empty space to squeegee scattered shapes into an aligned, evenly spaced line.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Sweep - squeegee shapes into alignment">
+<meta property="og:description" content="Drag across empty space to squeegee scattered shapes into an aligned, evenly spaced line.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Sweep",
+  "applicationCategory": "DesignApplication",
+  "description": "Drag across empty space to squeegee scattered shapes into an aligned, evenly spaced line.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "sweep, interaction design, gesture, align, distribute, squeegee, spacing, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white:#FAFAFA; --c-grey:#8A8A8A; --c-black:#0A0A0A;
+  --obj: rgb(98,103,113);   /* objects: theme-aware neutral; the charged element fills accent yellow */
+  /* Light is default; body.dark is the option. */
+  --bg: var(--c-white);
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.14);
+  --mid: rgba(10,10,10,0.30);
+  --active: rgba(10,10,10,0.60);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.14);
+  --mid: rgba(250,250,250,0.30);
+  --active: rgba(250,250,250,0.60);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); color:var(--fg); font-family:'DM Sans',sans-serif; cursor:none; transition:background .4s var(--ease); touch-action:none; overscroll-behavior:none; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+#c { position:fixed; inset:0; z-index:1; }
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+.cursor{position:fixed;z-index:50;pointer-events:none;width:28px;height:28px;transform:translate(-50%,-50%);}
+.cursor .ring{position:absolute;inset:0;border:1px solid var(--c-grey);border-radius:50%;transition:transform .2s var(--ease),border-color .2s var(--ease);}
+.cursor .cross{position:absolute;left:50%;top:50%;background:var(--c-grey);transform:translate(-50%,-50%);transition:background .2s var(--ease);}
+.cursor .cross.h{width:10px;height:1px;} .cursor .cross.v{width:1px;height:10px;}
+body.grabbing .cursor .ring{border-color:var(--fg);transform:scale(1.35);}
+body.grabbing .cursor .cross{background:var(--fg);}
+body.sweeping .cursor .ring{border-color:var(--fg);border-radius:3px;transform:scale(1.1);}
+body.sweeping .cursor .cross{background:var(--fg);}
+@media (hover:none) and (pointer:coarse){ html,body{cursor:auto;} .cursor{display:none;} }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+let W = 0, H = 0, prevW = 0, prevH = 0;
+
+const HINTS = 'Drag empty space to sweep shapes into line · Shift pack tight · Drag a shape to move · R reseed';
+const ui = PT.ui({ title: 'Sweep', hints: HINTS, theme: 'light' });
+const pill = document.querySelector('.adui-pill');
+const seg = h => '<span class="adui-seg">' + h + '</span>';
+const key = t => '<b class="adui-key">' + t + '</b>';
+let barTimer = null, lastBar = '';
+function setBar(h){ clearTimeout(barTimer); if (pill && h !== lastBar){ pill.innerHTML = h; lastBar = h; } }
+function idleBar(){ clearTimeout(barTimer); lastBar = ''; ui.setHints(HINTS); }
+function flashBar(h, ms){ setBar(h); barTimer = setTimeout(() => { if (!sweep && !dragObj) idleBar(); }, ms); }
+
+const cursor = document.getElementById('cursor');
+const toggle = document.getElementById('toggle');
+
+let COL = {};
+function readTheme(){
+  const cs = getComputedStyle(document.body);
+  COL = { bg: cs.getPropertyValue('--bg').trim(), fg: cs.getPropertyValue('--fg').trim(),
+          dim: cs.getPropertyValue('--dim').trim(), mid: cs.getPropertyValue('--mid').trim(),
+          active: cs.getPropertyValue('--active').trim(), obj: cs.getPropertyValue('--obj').trim() };
+}
+readTheme();
+
+const TYPES = ['circle', 'square', 'triangle'];
+
+let objs = [];
+let sweep = null;      // { x, y, nx, ny, hasDir }
+let settle = null;     // frozen bar after release
+let dragObj = null;    // { o, ox, oy }
+let shiftHeld = false;
+let mx = -100, my = -100;
+
+let BAR_LEN = 380, FACE_GAP = 8;
+
+function resize(){
+  prevW = W || window.innerWidth; prevH = H || window.innerHeight;
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  BAR_LEN = Math.min(W, H) * 0.62;
+  // Rescale existing content proportionally so it never drifts off-screen.
+  if (objs.length && prevW && prevH){
+    const sx = W / prevW, sy = H / prevH, sr = Math.min(sx, sy);
+    for (const o of objs){ o.x *= sx; o.y *= sy; o.tx *= sx; o.ty *= sy; o.r *= sr; }
+  }
+}
+
+function seed(){
+  const S = Math.min(W, H);
+  objs = [];
+  for (let i = 0; i < 12; i++){
+    objs.push({
+      type: TYPES[i % TYPES.length],
+      x: S * 0.12 + Math.random() * (W - S * 0.24),
+      y: S * 0.14 + Math.random() * (H - S * 0.28),
+      vx: 0, vy: 0,
+      angle: (Math.random() - 0.5) * 1.4, va: 0,
+      r: S * (0.024 + Math.random() * 0.016),
+      captured: false, prevS: 0, tx: 0, ty: 0, tAngle: 0, flash: 0,
+    });
+  }
+  sweep = null; settle = null;
+}
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const wrapAngle = a => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
+
+function hitObject(x, y){
+  for (let i = objs.length - 1; i >= 0; i--){
+    if (Math.hypot(x - objs[i].x, y - objs[i].y) < objs[i].r + 8) return objs[i];
+  }
+  return null;
+}
+
+function assignSlots(bx, by, nx, ny){
+  const tx = -ny, ty = nx;
+  const cap = objs.filter(o => o.captured);
+  if (!cap.length) return;
+  cap.sort((a, b) => ((a.x - bx) * tx + (a.y - by) * ty) - ((b.x - bx) * tx + (b.y - by) * ty));
+  let total = 0; for (const o of cap) total += o.r * 2;
+  const usable = BAR_LEN * 0.94;
+  const gap = shiftHeld ? 12 : clamp((usable - total) / Math.max(cap.length - 1, 1), 10, 56);
+  const rowW = total + gap * (cap.length - 1);
+  let meanU = 0; for (const o of cap) meanU += (o.x - bx) * tx + (o.y - by) * ty;
+  meanU /= cap.length;
+  const half = Math.max(0, BAR_LEN / 2 - rowW / 2);
+  const center = clamp(meanU, -half, half);
+  let u = center - rowW / 2;
+  const barAngle = Math.atan2(ty, tx);
+  for (const o of cap){
+    const slotU = u + o.r; u += o.r * 2 + gap;
+    const s = o.r + FACE_GAP;
+    o.tx = bx + nx * s + tx * slotU;
+    o.ty = by + ny * s + ty * slotU;
+    o.tAngle = o.type === 'circle' ? o.angle : barAngle;
+  }
+}
+
+function updateSweep(){
+  if (!sweep || !sweep.hasDir) return;
+  const { x, y, nx, ny } = sweep;
+  const tx = -ny, ty = nx;
+  let newCapture = false;
+  for (const o of objs){
+    if (dragObj && o === dragObj.o) continue;
+    const s = (o.x - x) * nx + (o.y - y) * ny;
+    const u = (o.x - x) * tx + (o.y - y) * ty;
+    if (!o.captured){
+      const face = o.r + FACE_GAP;
+      if (o.prevS > face && s <= face && Math.abs(u) < BAR_LEN / 2){ o.captured = true; o.flash = 1; newCapture = true; }
+      o.prevS = s;
+    }
+  }
+  assignSlots(x, y, nx, ny);
+  if (newCapture) navigator.vibrate && navigator.vibrate(4);
+}
+
+function physics(){
+  for (const o of objs){
+    if (o.flash > 0) o.flash = Math.max(0, o.flash - 0.03);
+    if (!o.captured) continue;
+    o.vx = o.vx * 0.72 + (o.tx - o.x) * 0.16;
+    o.vy = o.vy * 0.72 + (o.ty - o.y) * 0.16;
+    o.x += o.vx; o.y += o.vy;
+    o.va = o.va * 0.7 + wrapAngle(o.tAngle - o.angle) * 0.14;
+    o.angle += o.va;
+  }
+  if (settle && performance.now() > settle.until){ for (const o of objs) o.captured = false; settle = null; }
+}
+
+function shapePath(o, x, y, r){
+  X.beginPath();
+  if (o.type === 'square'){ const h = r * 0.88; X.rect(-h, -h, h * 2, h * 2); }
+  else if (o.type === 'triangle'){ const tr = r * 1.12; for (let i = 0; i < 3; i++){ const a = -Math.PI / 2 + i * (Math.PI * 2 / 3); const px = tr * Math.cos(a), py = tr * Math.sin(a); i ? X.lineTo(px, py) : X.moveTo(px, py); } X.closePath(); }
+  else X.arc(0, 0, r, 0, Math.PI * 2);
+}
+
+function drawObject(o){
+  X.save();
+  X.translate(o.x, o.y);
+  X.rotate(o.angle);
+  const charged = dragObj && dragObj.o === o;   // a shape dragged by hand is the one charged thing
+  X.fillStyle = charged ? '#FBF251' : COL.obj;
+  shapePath(o, 0, 0, o.r);
+  X.fill();
+  if (o.flash > 0){
+    X.rotate(-o.angle);
+    X.strokeStyle = COL.fg;
+    X.globalAlpha = o.flash * 0.8;
+    X.lineWidth = 1.5;
+    X.beginPath(); X.arc(0, 0, o.r + 6 + (1 - o.flash) * 10, 0, Math.PI * 2); X.stroke();
+  }
+  X.restore();
+}
+
+function drawBar(bx, by, nx, ny, alpha){
+  const tx = -ny, ty = nx;
+  const x1 = bx + tx * BAR_LEN / 2, y1 = by + ty * BAR_LEN / 2;
+  const x2 = bx - tx * BAR_LEN / 2, y2 = by - ty * BAR_LEN / 2;
+  X.save();
+  X.globalAlpha = alpha;
+  X.strokeStyle = COL.fg;
+  X.lineWidth = 2;
+  X.beginPath(); X.moveTo(x1, y1); X.lineTo(x2, y2); X.stroke();
+  X.strokeStyle = COL.mid;
+  X.lineWidth = 1;
+  const teeth = 14;
+  for (let i = 0; i <= teeth; i++){
+    const u = -BAR_LEN / 2 + BAR_LEN * i / teeth;
+    const px = bx + tx * u, py = by + ty * u;
+    X.beginPath(); X.moveTo(px, py); X.lineTo(px - nx * 7, py - ny * 7); X.stroke();
+  }
+  X.restore();
+}
+
+function drawGapLabels(bx, by, nx, ny, alpha){
+  const tx = -ny, ty = nx;
+  const cap = objs.filter(o => o.captured);
+  if (cap.length < 2) return;
+  cap.sort((a, b) => ((a.x - bx) * tx + (a.y - by) * ty) - ((b.x - bx) * tx + (b.y - by) * ty));
+  X.save();
+  X.globalAlpha = alpha;
+  X.font = '500 10px "IBM Plex Mono", monospace';
+  X.textAlign = 'center'; X.textBaseline = 'middle';
+  X.fillStyle = COL.active;
+  for (let i = 0; i < cap.length - 1; i++){
+    const a = cap[i], b = cap[i + 1];
+    const ua = (a.x - bx) * tx + (a.y - by) * ty;
+    const ub = (b.x - bx) * tx + (b.y - by) * ty;
+    const gapPx = Math.max(0, ub - ua - a.r - b.r);
+    const um = (ua + a.r + ub - b.r) / 2;
+    const s = a.r + FACE_GAP + 30;
+    X.fillText(String(Math.round(gapPx)), bx + nx * s + tx * um, by + ny * s + ty * um);
+  }
+  X.restore();
+}
+
+function draw(){
+  X.fillStyle = COL.bg;
+  X.fillRect(0, 0, W, H);
+  for (const o of objs) drawObject(o);
+  if (sweep && sweep.hasDir){
+    drawBar(sweep.x, sweep.y, sweep.nx, sweep.ny, 1);
+    drawGapLabels(sweep.x, sweep.y, sweep.nx, sweep.ny, 1);
+    const n = objs.filter(o => o.captured).length;
+    setBar(seg(key('Sweeping')) + seg(n + ' gathered') + (shiftHeld ? seg(key('Packed')) : seg('evenly spaced')));
+  } else if (settle){
+    const a = clamp((settle.until - performance.now()) / 1200, 0, 1);
+    drawBar(settle.x, settle.y, settle.nx, settle.ny, a * 0.7);
+    drawGapLabels(settle.x, settle.y, settle.nx, settle.ny, a);
+  }
+  requestAnimationFrame(draw);
+}
+
+function loop(){ updateSweep(); physics(); requestAnimationFrame(loop); }
+
+window.addEventListener('resize', resize);
+resize(); seed(); draw(); loop();
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (dragObj){ dragObj.o.x = mx - dragObj.ox; dragObj.o.y = my - dragObj.oy; return; }
+  if (sweep){
+    const dx = mx - sweep.x, dy = my - sweep.y, d = Math.hypot(dx, dy);
+    if (d > 2){
+      const nx = dx / d, ny = dy / d;
+      if (!sweep.hasDir){
+        if (d > 8){ sweep.nx = nx; sweep.ny = ny; sweep.hasDir = true; for (const o of objs) o.prevS = (o.x - sweep.x) * nx + (o.y - sweep.y) * ny; }
+      } else {
+        let bx = sweep.nx + (nx - sweep.nx) * 0.22, by = sweep.ny + (ny - sweep.ny) * 0.22;
+        const bl = Math.hypot(bx, by) || 1; sweep.nx = bx / bl; sweep.ny = by / bl;
+      }
+      sweep.x = mx; sweep.y = my;
+    }
+  }
+});
+
+window.addEventListener('pointerdown', e => {
+  if (e.target.closest('#toggle, .adui')) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  const o = hitObject(mx, my);
+  try { C.setPointerCapture(e.pointerId); } catch(_) {}
+  if (o){ o.captured = false; dragObj = { o, ox: mx - o.x, oy: my - o.y }; document.body.classList.add('grabbing'); }
+  else { for (const obj of objs) obj.captured = false; settle = null; sweep = { x: mx, y: my, nx: 0, ny: 0, hasDir: false }; document.body.classList.add('sweeping'); }
+});
+
+window.addEventListener('pointerup', () => {
+  if (sweep && sweep.hasDir){
+    settle = { x: sweep.x, y: sweep.y, nx: sweep.nx, ny: sweep.ny, until: performance.now() + 1600 };
+    assignSlots(sweep.x, sweep.y, sweep.nx, sweep.ny);
+    flashBar(seg(key('Aligned')) + seg(objs.filter(o => o.captured).length + ' shapes'), 1600);
+  } else idleBar();
+  sweep = null; dragObj = null;
+  document.body.classList.remove('sweeping', 'grabbing');
+});
+window.addEventListener('pointercancel', () => { sweep = null; dragObj = null; document.body.classList.remove('sweeping', 'grabbing'); idleBar(); });
+
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); ui.theme(dark ? 'dark' : 'light'); readTheme(); });
+
+window.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'Shift') shiftHeld = true;
+  if ((e.key === 'r' || e.key === 'R') && !e.repeat){ seed(); idleBar(); }
+});
+window.addEventListener('keyup', e => { if (e.key === 'Shift') shiftHeld = false; });
+</script>
+</body>
+</html>

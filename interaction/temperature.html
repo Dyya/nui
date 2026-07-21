@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<!--
+  Temperature - a decaying field of heat
+  Drag to paint heat into a decaying field: warm objects snap to the cursor, cold ones lag behind.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Temperature - a decaying field of heat</title>
+<meta name="description" content="Drag to paint heat into a decaying field: warm objects snap to the cursor, cold ones lag behind.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Temperature - a decaying field of heat">
+<meta property="og:description" content="Drag to paint heat into a decaying field: warm objects snap to the cursor, cold ones lag behind.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Temperature",
+  "applicationCategory": "DesignApplication",
+  "description": "Drag to paint heat into a decaying field: warm objects snap to the cursor, cold ones lag behind.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "temperature, interaction design, field, heat, decay, painting, dynamics, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg: #0a0a0c; --fg: rgba(255,255,255,0.92); --fg-dim: rgba(255,255,255,0.45); --fg-faint: rgba(255,255,255,0.18);
+    --grid: rgba(255,255,255,0.018); --chrome-bg: rgba(20,20,24,0.85); --chrome-bd: rgba(255,255,255,0.08);
+    --obj: rgb(132,137,148); --accent: #FBF251;
+  }
+  body.light { --bg: #FAFAFA; --fg: rgba(0,0,0,0.88); --fg-dim: rgba(0,0,0,0.45); --fg-faint: rgba(0,0,0,0.15); --grid: rgba(0,0,0,0.03); --chrome-bg: rgba(255,255,255,0.88); --chrome-bd: rgba(0,0,0,0.08); --obj: rgb(98,103,113); --accent: #FBF251; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s; }
+  canvas { position: fixed; inset: 0; display: block; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+  #cursor { position: fixed; left: 0; top: 0; width: 20px; height: 20px; border: 1.5px solid var(--fg); border-radius: 50%; pointer-events: none; z-index: 100; transform: translate(-50%, -50%); transition: border-color 0.2s, width 0.15s, height 0.15s; }
+  #cursor::before, #cursor::after { content: ''; position: absolute; background: var(--fg); }
+  #cursor::before { top: 50%; left: -3px; right: -3px; height: 1px; transform: translateY(-50%); }
+  #cursor::after { left: 50%; top: -3px; bottom: -3px; width: 1px; transform: translateX(-50%); }
+  #cursor.drag { border-color: var(--accent); }
+  #cursor.warm { border-color: var(--accent); box-shadow: 0 0 10px rgba(251,242,81,0.4); }
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <div id="toggle" title="Toggle theme"></div>
+  <div id="cursor"></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const cursor = document.getElementById('cursor');
+const readout = { set innerHTML(v){}, set textContent(v){} };
+
+const ui = PT.ui({ title: 'Temperature field', hints: 'Drag to heat · H toggle field · C cool all · R reseed', theme: 'light' });
+const toggle = document.getElementById('toggle');
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); document.body.classList.toggle('light', !dark); ui.theme(dark ? 'dark' : 'light'); });
+
+// state BEFORE resize
+let W = 0, H = 0;
+let seed = 515151;
+let shapes = [];
+let heatCells = []; // grid of { x, y, temp } centered on cell
+let GRID_RES = 14; // cells per ~100px
+let cellSize = 0;
+let cols = 0, rows = 0;
+let drag = null;
+let mx = -100, my = -100;
+let lastMx = -100, lastMy = -100;
+let showHeat = true;
+let hoverId = null;
+let objColor = ''; // theme-aware grey object fill, cached per frame
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() {
+  cellSize = 56;
+  cols = Math.ceil(W / cellSize) + 1;
+  rows = Math.ceil(H / cellSize) + 1;
+  if (heatCells.length !== cols * rows) {
+    heatCells = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        heatCells.push({ x: c * cellSize, y: r * cellSize, temp: 0 });
+      }
+    }
+  }
+  if (shapes.length === 0) build();
+}
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) { return function() { let t = (s += 0x6D2B79F5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+
+function build() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  let tries = 0;
+  while (shapes.length < 12 && tries < 3000) {
+    const x = 0.1 + rng() * 0.8;
+    const y = 0.15 + rng() * 0.7;
+    const size = 24 + rng() * 20;
+    let ok = true;
+    for (const o of shapes) {
+      const dx = (x - o.nx) * W, dy = (y - o.ny) * H;
+      if (Math.hypot(dx, dy) < size + o.size + 16) { ok = false; break; }
+    }
+    if (ok) {
+      shapes.push({
+        id: shapes.length + 1,
+        nx: x, ny: y,
+        x: x * W, y: y * H,
+        targetX: x * W, targetY: y * H, // where user wants it
+        size,
+        localTemp: 0, // sampled from field
+      });
+    }
+    tries++;
+  }
+}
+
+
+function addHeatAt(x, y, amount) {
+  // Deposit heat into cells within a radius using falloff
+  const radius = 110;
+  for (const cell of heatCells) {
+    const d = Math.hypot(cell.x + cellSize / 2 - x, cell.y + cellSize / 2 - y);
+    if (d > radius) continue;
+    const falloff = 1 - d / radius;
+    cell.temp = clamp(cell.temp + amount * falloff * falloff, 0, 1);
+  }
+}
+
+function decayHeat() {
+  // Slow decay per frame (baseline)
+  for (const cell of heatCells) {
+    cell.temp *= 0.995;
+    if (cell.temp < 0.002) cell.temp = 0;
+  }
+}
+
+function sampleTemp(x, y) {
+  // Bilinear-ish sample of the cell grid
+  const fc = x / cellSize;
+  const fr = y / cellSize;
+  const c0 = clamp(Math.floor(fc), 0, cols - 1);
+  const r0 = clamp(Math.floor(fr), 0, rows - 1);
+  const c1 = clamp(c0 + 1, 0, cols - 1);
+  const r1 = clamp(r0 + 1, 0, rows - 1);
+  const tx = fc - c0, ty = fr - r0;
+  const t00 = heatCells[r0 * cols + c0]?.temp || 0;
+  const t10 = heatCells[r0 * cols + c1]?.temp || 0;
+  const t01 = heatCells[r1 * cols + c0]?.temp || 0;
+  const t11 = heatCells[r1 * cols + c1]?.temp || 0;
+  const t0 = t00 * (1 - tx) + t10 * tx;
+  const t1 = t01 * (1 - tx) + t11 * tx;
+  return t0 * (1 - ty) + t1 * ty;
+}
+
+function drawHeatField() {
+  if (!showHeat) return;
+  // Render translucent blobs at each hot cell.
+  // Dark ground: 'screen' lets the accent bloom. Light ground (near-white Paper):
+  // 'screen' washes out, so fall back to a normal blend that reads as a warm tint.
+  X.save();
+  X.globalCompositeOperation = document.body.classList.contains('light') ? 'source-over' : 'screen';
+  for (const cell of heatCells) {
+    if (cell.temp < 0.05) continue;
+    const cx = cell.x + cellSize / 2;
+    const cy = cell.y + cellSize / 2;
+    const grad = X.createRadialGradient(cx, cy, 0, cx, cy, cellSize * 0.9);
+    const alpha = cell.temp * 0.35;
+    grad.addColorStop(0, `rgba(251,242,81,${alpha})`);
+    grad.addColorStop(0.6, `rgba(251,242,81,${alpha * 0.5})`);
+    grad.addColorStop(1, 'rgba(251,242,81,0)');
+    X.fillStyle = grad;
+    X.fillRect(cell.x - cellSize * 0.4, cell.y - cellSize * 0.4, cellSize * 1.8, cellSize * 1.8);
+  }
+  X.restore();
+}
+
+function drawShape(s, isDrag, isHover) {
+  // Base fill: solid grey, or bare accent yellow when charged (dragged)
+  X.save();
+  X.fillStyle = isDrag ? 'rgb(251,242,81)' : objColor;
+  X.beginPath(); X.arc(s.x, s.y, s.size, 0, Math.PI * 2); X.fill();
+  X.restore();
+  // Heat tint: warmth blends the accent yellow over the grey fill (alpha = localTemp)
+  if (s.localTemp > 0.05 && !isDrag) {
+    X.save();
+    X.globalAlpha = s.localTemp * 0.85;
+    X.fillStyle = 'rgb(251,242,81)';
+    X.beginPath(); X.arc(s.x, s.y, s.size, 0, Math.PI * 2); X.fill();
+    X.restore();
+  }
+  if (isDrag || isHover) {
+    X.save();
+    X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+    X.lineWidth = 1.2;
+    X.setLineDash(isDrag ? [] : [3, 3]);
+    X.beginPath(); X.arc(s.x, s.y, s.size + 9, 0, Math.PI * 2); X.stroke();
+    X.restore();
+  }
+  // Responsiveness label while dragging: show lag/temp
+  if (isDrag) {
+    X.save();
+    X.font = '9px "IBM Plex Mono", monospace';
+    X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg');
+    X.textAlign = 'center';
+    X.fillText(`Temp ${(s.localTemp * 100).toFixed(0)}° · ${(s.localTemp * 0.7 + 0.15).toFixed(2)}x`, s.x, s.y - s.size - 14);
+    X.restore();
+  }
+}
+
+function drawLegend() {
+  X.save();
+  X.font = '10px "IBM Plex Mono", monospace';
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+  X.textBaseline = 'bottom';
+  X.fillText(`Field · ${showHeat ? 'Visible' : 'Hidden'}`, 24, H - 58);
+  X.fillText('Warm = fast response · Cold = lag', 24, H - 44);
+  X.restore();
+}
+
+function draw() {
+  X.clearRect(0, 0, W, H);
+  objColor = getComputedStyle(document.body).getPropertyValue('--obj').trim();
+  drawHeatField();
+  // Deposit heat if pointer moving (always, not only during drag)
+  if (mx > 0 && my > 0 && lastMx > 0) {
+    const moved = Math.hypot(mx - lastMx, my - lastMy);
+    if (moved > 0.5) {
+      // More heat if dragging
+      const amount = drag ? 0.09 : 0.022;
+      addHeatAt(mx, my, amount * Math.min(moved / 8, 1));
+    }
+  }
+  decayHeat();
+  // Sample each shape's local temp and update its x/y toward target
+  let peakTemp = 0;
+  for (const s of shapes) {
+    s.localTemp = sampleTemp(s.x, s.y);
+    peakTemp = Math.max(peakTemp, s.localTemp);
+    // Responsiveness: warm = fast follow, cold = lag
+    // Only applies when target != actual (dragging or free to drift)
+    const ease = s.localTemp * 0.32 + 0.03;
+    if (drag && drag.id === s.id) {
+      // drag is authoritative for target
+      s.x += (s.targetX - s.x) * ease;
+      s.y += (s.targetY - s.y) * ease;
+    } else {
+      // No drag: shapes drift toward their target (usually equal to actual)
+      s.x += (s.targetX - s.x) * ease;
+      s.y += (s.targetY - s.y) * ease;
+    }
+  }
+  for (const s of shapes) {
+    const isDrag = drag && drag.id === s.id;
+    const isHover = hoverId === s.id;
+    drawShape(s, isDrag, isHover);
+  }
+  drawLegend();
+  // Chrome
+  let state = 'Cold';
+  if (peakTemp > 0.6) state = 'Hot';
+  else if (peakTemp > 0.25) state = 'Warm';
+  else if (peakTemp > 0.05) state = 'Cooling';
+  readout.innerHTML = `Objects <b>${shapes.length}</b> · Peak <b>${(peakTemp * 100).toFixed(0)}°</b> · <b>${state}</b>`;
+  cursor.classList.toggle('warm', peakTemp > 0.5);
+  lastMx = mx; lastMy = my;
+}
+
+function loop() { draw(); requestAnimationFrame(loop); }
+loop();
+
+function hit(x, y) {
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (Math.hypot(x - s.x, y - s.y) < s.size + 4) return s;
+  }
+  return null;
+}
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    if (s) {
+      s.targetX = mx - drag.offX;
+      s.targetY = my - drag.offY;
+    }
+  } else {
+    const h = hit(mx, my);
+    hoverId = h ? h.id : null;
+  }
+});
+window.addEventListener('pointerdown', e => {
+  const h = hit(e.clientX, e.clientY);
+  if (h) {
+    drag = { id: h.id, offX: e.clientX - h.x, offY: e.clientY - h.y };
+    cursor.classList.add('drag');
+  }
+});
+window.addEventListener('pointerup', () => {
+  if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    if (s) { s.targetX = s.x; s.targetY = s.y; } // lock target at current
+  }
+  drag = null;
+  cursor.classList.remove('drag');
+});
+window.addEventListener('keydown', e => {
+  if (e.key === 'h' || e.key === 'H') showHeat = !showHeat;
+  else if (e.key === 'c' || e.key === 'C') for (const cell of heatCells) cell.temp = 0;
+  else if (e.key === 'r' || e.key === 'R') { seed = Math.floor(Math.random() * 999999); shapes = []; for (const cell of heatCells) cell.temp = 0; build(); }
+});
+</script>
+</body>
+</html>

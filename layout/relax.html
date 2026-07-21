@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<!--
+  Relax - arrange by affinity
+  Cards you link pull together, separation keeps them from overlapping, a soft grid keeps it aligned. The relaxation solve is the animation; export the arrangement.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Relax - arrange by affinity</title>
+<meta name="description" content="A force-directed composition: cards you link pull together, separation keeps them from overlapping, a soft grid keeps it aligned. The relaxation solve is the animation.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Relax - arrange by affinity">
+<meta property="og:description" content="A force-directed composition: linked cards pull together, separation prevents overlap, a soft grid aligns it. The relaxation solve is the animation.">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Relax",
+  "applicationCategory": "DesignApplication",
+  "description": "A force-directed composition tool: link cards to pull them together, separation prevents overlap, a soft grid aligns them; drag to perturb and export the arrangement.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "layout, composition, force-directed, relaxation, affinity, graph layout, alignment, interaction design, HTML canvas, generative",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white: #FAFAFA; --c-grey: #8A8A8A; --c-black: #0A0A0A;
+  --obj: rgb(98,103,113);
+  --bg: var(--c-white); --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.16); --grid: rgba(10,10,10,0.06);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black); --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.16); --grid: rgba(250,250,250,0.05);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+#c { position: fixed; inset: 0; z-index: 1; }
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: transform 0.22s var(--ease), border-color 0.22s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.22s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; } .cursor .cross.v { width: 1px; height: 10px; }
+body.hovering .cursor .ring { border-color: var(--fg); transform: scale(1.2); }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(0.5); }
+body.dragging .cursor .cross { background: var(--fg); }
+@media (hover: none) and (pointer: coarse) { html, body { cursor: auto; } .cursor { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+const HINTS = 'Drag to rearrange · Click two cards to link them · C copy layout';
+const ui = PT.ui({ title: 'Relax', hints: HINTS, theme: 'light' });
+const pill = document.querySelector('.adui-pill');
+const seg = (h) => '<span class="adui-seg">' + h + '</span>';
+const kkey = (t) => '<b class="adui-key">' + t + '</b>';
+let flashUntil = 0;
+function flashMsg(t, ms = 1700) { if (!pill) return; pill.innerHTML = seg(kkey(t)); flashUntil = performance.now() + ms; }
+function tickBar(now) { if (flashUntil && now > flashUntil) { ui.setHints(HINTS); flashUntil = 0; } }
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+let rngState = 0x2545f491;
+function rng() { rngState |= 0; rngState = (rngState + 0x6d2b79f5) | 0;
+  let t = Math.imul(rngState ^ (rngState >>> 15), 1 | rngState);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
+
+// ───── Model ─────
+// Cards carry a position + velocity; LINKS are affinities that pull two cards together.
+// The layout is the fixed point of: affinity springs + all-pairs repulsion + hard separation.
+let CARDS = [], LINKS = [];
+let ax = 0, ay = 0, aw = 0, ah = 0;      // artboard
+let mouseX = -1e4, mouseY = -1e4;
+let drag = null, dragMoved = false, downX = 0, downY = 0;
+let selected = null;                      // first card of a pending link
+let hoverCard = null;
+let settleFrames = 0;                     // consecutive near-still frames -> freeze (no idle jitter)
+
+function card(label, w, h) { return { id: CARDS.length, label, w, h, x: 0, y: 0, vx: 0, vy: 0 }; }
+function seed() {
+  rngState = 0x2545f491;
+  CARDS = []; LINKS = [];
+  // three affinity clusters, each a small triangle of linked cards
+  const groups = [
+    ['Logo', 'Colour', 'Type'],
+    ['Hero', 'Nav', 'Footer'],
+    ['Chart', 'Table', 'Stats'],
+  ];
+  let base = 0;
+  for (const g of groups) {
+    const ids = [];
+    for (const name of g) { const c = card(name, 90 + Math.round(rng() * 70), 60 + Math.round(rng() * 40)); ids.push(c.id); CARDS.push(c); }
+    LINKS.push([ids[0], ids[1]], [ids[1], ids[2]], [ids[0], ids[2]]);
+    base += g.length;
+  }
+  // scatter near the centre; the relaxation pulls them into aligned clusters (the solve is the show)
+  for (const c of CARDS) { c.x = W / 2 + (rng() - 0.5) * Math.min(W, H) * 0.5; c.y = H / 2 + (rng() - 0.5) * Math.min(W, H) * 0.5; c.vx = c.vy = 0; }
+  wake();
+}
+const linked = (a, b) => LINKS.some(l => (l[0] === a.id && l[1] === b.id) || (l[0] === b.id && l[1] === a.id));
+function toggleLink(a, b) {
+  const i = LINKS.findIndex(l => (l[0] === a.id && l[1] === b.id) || (l[0] === b.id && l[1] === a.id));
+  if (i >= 0) LINKS.splice(i, 1); else LINKS.push([a.id, b.id]);
+  wake();
+}
+function wake() { settleFrames = 0; }
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const m = Math.max(26, Math.min(W, H) * 0.07);
+  ax = m; ay = m; aw = W - 2 * m; ah = H - 2 * m;
+}
+
+// ───── The relaxation ─────
+// Equilibrium of four forces: compaction (bias to centre) + all-pairs repulsion (spreads
+// unlinked cards, so clusters separate) + affinity springs (pull linked cards together) +
+// soft grid snap (alignment). Then a hard separation pass guarantees no overlap.
+function relax() {
+  const CX = ax + aw / 2, CY = ay + ah / 2, n = CARDS.length;
+  const fx = new Array(n).fill(0), fy = new Array(n).fill(0);
+
+  // compaction (gentle bias to centre keeps the whole arrangement from drifting apart)
+  for (let i = 0; i < n; i++) {
+    const c = CARDS[i];
+    fx[i] += (CX - c.x) * 0.0018; fy[i] += (CY - c.y) * 0.0022;
+  }
+  // all-pairs repulsion (bounded range, smoothly to 0 at the cutoff so no card jitters on
+  // the boundary) - this is what makes clusters spread apart
+  const RANGE = 360;
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    const a = CARDS[i], b = CARDS[j];
+    const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
+    if (d >= RANGE) continue;
+    const f = Math.min(1400 / d, 30) * (1 - d / RANGE), ux = dx / d, uy = dy / d;
+    fx[i] -= ux * f; fy[i] -= uy * f; fx[j] += ux * f; fy[j] += uy * f;
+  }
+  // affinity springs pull linked cards toward a comfortable gap
+  for (const [ia, ib] of LINKS) {
+    const a = CARDS[ia], b = CARDS[ib];
+    const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
+    const rest = (a.w + b.w) / 2 * 0.6 + (a.h + b.h) / 2 * 0.2 + 24;
+    const f = (d - rest) * 0.02, ux = dx / d, uy = dy / d;
+    fx[ia] += ux * f; fy[ia] += uy * f; fx[ib] -= ux * f; fy[ib] -= uy * f;
+  }
+  // integrate (damped -> settles, never springs)
+  for (let i = 0; i < n; i++) {
+    const c = CARDS[i];
+    if (drag && c === drag) continue;
+    c.vx = (c.vx + fx[i]) * 0.80; c.vy = (c.vy + fy[i]) * 0.80;
+    c.vx = clamp(c.vx, -16, 16); c.vy = clamp(c.vy, -16, 16);
+    c.x += c.vx; c.y += c.vy;
+  }
+  // 3) HARD separation - no two cards overlap at rest (position correction, a few passes)
+  for (let pass = 0; pass < 3; pass++) {
+    for (let i = 0; i < CARDS.length; i++) for (let j = i + 1; j < CARDS.length; j++) {
+      const a = CARDS[i], b = CARDS[j];
+      const ox = (a.w + b.w) / 2 + 10 - Math.abs(a.x - b.x);
+      const oy = (a.h + b.h) / 2 + 10 - Math.abs(a.y - b.y);
+      if (ox > 0 && oy > 0) {
+        if (ox < oy) { const s = (a.x < b.x ? -1 : 1) * ox / 2; if (!(drag && a === drag)) a.x += s; if (!(drag && b === drag)) b.x -= s; }
+        else { const s = (a.y < b.y ? -1 : 1) * oy / 2; if (!(drag && a === drag)) a.y += s; if (!(drag && b === drag)) b.y -= s; }
+      }
+    }
+  }
+  // 4) keep inside the artboard
+  for (const c of CARDS) { c.x = clamp(c.x, ax + c.w / 2, ax + aw - c.w / 2); c.y = clamp(c.y, ay + c.h / 2, ay + ah - c.h / 2); }
+}
+
+// ───── Frame ─────
+function step(now) {
+  tickBar(now);
+  if (drag) { drag.x = mouseX; drag.y = mouseY; wake(); }
+
+  // freeze when at rest so there is zero idle jitter; any interaction wakes it
+  if (settleFrames < 30) {
+    const before = CARDS.map(c => ({ x: c.x, y: c.y }));
+    relax();
+    let moved = 0;
+    for (let i = 0; i < CARDS.length; i++) moved += Math.abs(CARDS[i].x - before[i].x) + Math.abs(CARDS[i].y - before[i].y);
+    if (moved < 0.4 && !drag) settleFrames++; else settleFrames = 0;
+  }
+
+  draw();
+  requestAnimationFrame(step);
+}
+
+function draw() {
+  const cs = getComputedStyle(document.body);
+  const bg = cs.getPropertyValue('--bg').trim();
+  const objc = cs.getPropertyValue('--obj').trim();
+  const dimc = cs.getPropertyValue('--dim').trim();
+
+  X.fillStyle = bg; X.fillRect(0, 0, W, H);
+
+  // affinity links (under the cards)
+  X.strokeStyle = dimc; X.lineWidth = 1.5; X.beginPath();
+  for (const [ia, ib] of LINKS) { const a = CARDS[ia], b = CARDS[ib]; X.moveTo(a.x, a.y); X.lineTo(b.x, b.y); }
+  X.stroke();
+
+  // cards
+  for (const c of CARDS) {
+    const charged = c === drag || c === selected;
+    const x = c.x - c.w / 2, y = c.y - c.h / 2;
+    roundRect(x, y, c.w, c.h, 6);
+    X.fillStyle = charged ? '#FBF251' : objc; X.fill();
+    const ink = charged ? 'rgba(10,10,10,0.86)' : 'rgba(250,250,250,0.92)';
+    X.fillStyle = ink;
+    X.font = "500 14px 'DM Sans', sans-serif";
+    X.textAlign = 'center'; X.textBaseline = 'middle';
+    X.fillText(c.label, c.x, c.y);
+  }
+}
+function roundRect(x, y, w, h, r) { r = Math.min(r, w / 2, h / 2); X.beginPath(); X.moveTo(x + r, y); X.arcTo(x + w, y, x + w, y + h, r); X.arcTo(x + w, y + h, x, y + h, r); X.arcTo(x, y + h, x, y, r); X.arcTo(x, y, x + w, y, r); X.closePath(); }
+
+function cardAt(px, py) {
+  for (let i = CARDS.length - 1; i >= 0; i--) { const c = CARDS[i]; if (Math.abs(px - c.x) <= c.w / 2 && Math.abs(py - c.y) <= c.h / 2) return c; }
+  return null;
+}
+
+// ───── Pointer ─────
+C.addEventListener('pointermove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  const cur = document.getElementById('cursor'); cur.style.left = e.clientX + 'px'; cur.style.top = e.clientY + 'px';
+  if (drag) { dragMoved = dragMoved || Math.hypot(mouseX - downX, mouseY - downY) > 4; return; }
+  hoverCard = cardAt(mouseX, mouseY);
+  document.body.classList.toggle('hovering', !!hoverCard);
+});
+C.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  mouseX = downX = e.clientX; mouseY = downY = e.clientY;
+  const c = cardAt(mouseX, mouseY);
+  if (c) { drag = c; dragMoved = false; document.body.classList.add('dragging'); document.body.classList.remove('hovering'); try { C.setPointerCapture(e.pointerId); } catch (err) {} wake(); }
+  else { selected = null; }   // click empty clears a pending link
+});
+C.addEventListener('pointerup', (e) => {
+  if (drag) {
+    const c = drag; drag = null; document.body.classList.remove('dragging');
+    if (!dragMoved) {                         // a click (not a drag): link selection
+      if (selected && selected !== c) { toggleLink(selected, c); selected = null; flashMsg(LINKS.length + ' links'); }
+      else selected = (selected === c) ? null : c;
+    } else { selected = null; }
+    wake();
+  }
+});
+
+// ───── Keys ─────
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  const k = e.key;
+  if (k === 'c' || k === 'C') copyLayout();
+  else if (k === 's' || k === 'S') savePNG();
+  else if (k === 'r' || k === 'R') { seed(); flashMsg('Reshuffled'); }
+});
+
+// Payoff: the arrangement the solver found - each card's centre + size, plus the links.
+function copyLayout() {
+  const data = {
+    cards: CARDS.map(c => ({ label: c.label, x: Math.round(c.x - ax), y: Math.round(c.y - ay), w: c.w, h: c.h })),
+    links: LINKS.map(l => [CARDS[l[0]].label, CARDS[l[1]].label]),
+  };
+  const json = JSON.stringify(data, null, 2);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(json).then(() => flashMsg('Copied layout to clipboard'), () => flashMsg('Copy blocked - see console'));
+    console.log(json);
+  } else { console.log(json); flashMsg('Layout logged to console'); }
+}
+function savePNG() { C.toBlob((b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'relax.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }, 'image/png'); }
+
+document.getElementById('toggle').addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); ui.theme(dark ? 'dark' : 'light'); });
+window.addEventListener('resize', () => { resize(); wake(); });
+resize();
+seed();
+requestAnimationFrame(step);
+</script>
+</body>
+</html>

@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<!--
+  Pressure - press and hold to ramp a value
+  Arm a parameter chip, then press and hold a shape to ramp that value toward its extreme as a progress ring fills.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Pressure - press and hold to ramp a value</title>
+<meta name="description" content="Arm a parameter chip, then press and hold a shape to ramp that value toward its extreme as a progress ring fills.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Pressure - press and hold to ramp a value">
+<meta property="og:description" content="Arm a parameter chip, then press and hold a shape to ramp that value toward its extreme as a progress ring fills.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Pressure",
+  "applicationCategory": "DesignApplication",
+  "description": "Arm a parameter chip, then press and hold a shape to ramp that value toward its extreme as a progress ring fills.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "pressure, interaction design, hold, ramp, parameter, progress, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg: #0a0a0c; --fg: rgba(255,255,255,0.92); --fg-dim: rgba(255,255,255,0.45); --fg-faint: rgba(255,255,255,0.18);
+    --grid: rgba(255,255,255,0.018); --chrome-bg: rgba(20,20,24,0.85); --chrome-bd: rgba(255,255,255,0.08);
+    --accent: #FBF251; --obj: rgb(132,137,148);
+  }
+  body.light { --bg: #FAFAFA; --fg: rgba(0,0,0,0.88); --fg-dim: rgba(0,0,0,0.45); --fg-faint: rgba(0,0,0,0.15); --grid: rgba(0,0,0,0.03); --chrome-bg: rgba(255,255,255,0.88); --chrome-bd: rgba(0,0,0,0.08); --accent: #FBF251; --obj: rgb(98,103,113); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s; }
+  canvas { position: fixed; inset: 0; display: block; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+  #cursor { position: fixed; left: 0; top: 0; width: 20px; height: 20px; border: 1.5px solid var(--fg); border-radius: 50%; pointer-events: none; z-index: 100; transform: translate(-50%, -50%); transition: border-color 0.2s, width 0.15s, height 0.15s; }
+  #cursor::before, #cursor::after { content: ''; position: absolute; background: var(--fg); }
+  #cursor::before { top: 50%; left: -3px; right: -3px; height: 1px; transform: translateY(-50%); }
+  #cursor::after { left: 50%; top: -3px; bottom: -3px; width: 1px; transform: translateX(-50%); }
+  #cursor.press { border-color: var(--fg); }
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <div id="toggle" title="Toggle theme"></div>
+  <div id="cursor"></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const cursor = document.getElementById('cursor');
+const readout = { set innerHTML(v){}, set textContent(v){} };
+
+const ui = PT.ui({ title: 'Pressure as parameter', hints: 'Hover shape for controls · Click chip to select · Hold shape to ramp · Shift reverse · R reset', theme: 'light' });
+const toggle = document.getElementById('toggle');
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); document.body.classList.toggle('light', !dark); ui.theme(dark ? 'dark' : 'light'); });
+
+// state BEFORE resize
+let W = 0, H = 0;
+let seed = 616262;
+let shapes = [];
+let press = null; // { id, t0, direction: +1 or -1, startValue }
+let mx = -100, my = -100;
+let hoverId = null;
+let shiftDown = false;
+// Each shape has a current value of each param, and a lastParam reference
+// Params: blur (0..40), scale (0.3..2), rotation (-180..180)
+
+const PARAMS = ['blur', 'scale', 'rotate'];
+const PARAM_CONFIG = {
+  blur: { label: 'B', min: 0, max: 40, unit: 'px', precision: 1, default: 0 },
+  scale: { label: 'S', min: 0.3, max: 2, unit: '×', precision: 2, default: 1 },
+  rotate: { label: 'R', min: -180, max: 180, unit: '°', precision: 0, default: 0 },
+};
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() { if (shapes.length === 0) build(); else for (const s of shapes) { s.x = s.nx * W; s.y = s.ny * H; } }
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) { return function() { let t = (s += 0x6D2B79F5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+
+function build() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  const positions = [[0.22, 0.38], [0.5, 0.32], [0.78, 0.38], [0.32, 0.68], [0.68, 0.68]];
+  for (let i = 0; i < 5; i++) {
+    const [nx, ny] = positions[i];
+    const w = 104 + rng() * 26;
+    const h = 64 + rng() * 16;
+    shapes.push({
+      id: i + 1,
+      nx, ny,
+      x: nx * W, y: ny * H,
+      w, h,
+      rad: Math.hypot(w, h) / 2, // bounding radius - clears the rect at any rotation
+      params: { blur: 0, scale: 1, rotate: 0 },
+      activeParam: null, // which is selected for this shape
+    });
+  }
+}
+
+
+function drawShape(s) {
+  X.save();
+  X.translate(s.x, s.y);
+  X.rotate(s.params.rotate * Math.PI / 180);
+  X.scale(s.params.scale, s.params.scale);
+  if (s.params.blur > 0.1) X.filter = `blur(${s.params.blur.toFixed(2)}px)`;
+  // The shape being pressed is the one charged thing - fill it accent; else neutral object grey.
+  const charged = press && press.id === s.id;
+  X.fillStyle = charged ? '#FBF251' : getComputedStyle(document.body).getPropertyValue('--obj');
+  X.beginPath(); X.roundRect(-s.w / 2, -s.h / 2, s.w, s.h, 8); X.fill();
+  X.restore();
+  X.filter = 'none';
+}
+
+function drawChips(s) {
+  // Three chips above the shape, each a param selector
+  const chipW = 44, chipH = 20, gap = 4;
+  const totalW = chipW * 3 + gap * 2;
+  const cx = s.x - totalW / 2;
+  // Sit the chip row a clear gap ABOVE the pressure ring (radius + stroke), and never let it ride
+  // up under the top masthead. Layers of UI get breathing room - no overlaps, ever.
+  const ringOuter = s.rad * s.params.scale + 18;   // ring radius (+16) + stroke
+  const cy = Math.max(64, s.y - ringOuter - 16 - chipH);
+  s._chips = [];
+  for (let i = 0; i < 3; i++) {
+    const pname = PARAMS[i];
+    const cfg = PARAM_CONFIG[pname];
+    const x = cx + i * (chipW + gap);
+    const y = cy;
+    const isActive = s.activeParam === pname;
+    const value = s.params[pname];
+    // Fill track proportional to value - active chip = solid ink, inactive = translucent panel (monochrome).
+    X.save();
+    X.fillStyle = isActive ? getComputedStyle(document.body).getPropertyValue('--fg') : (document.body.classList.contains('light') ? 'rgba(255,255,255,0.94)' : 'rgba(40,40,48,0.94)');
+    X.globalAlpha = isActive ? 1 : 0.85;
+    X.fillRect(x, y, chipW, chipH);
+    // Internal fill
+    const pct = (value - cfg.min) / (cfg.max - cfg.min);
+    if (!isActive && pct > 0.01) {
+      X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+      X.globalAlpha = 0.35;
+      X.fillRect(x, y, chipW * pct, chipH);
+    }
+    // Border
+    X.strokeStyle = isActive ? getComputedStyle(document.body).getPropertyValue('--fg') : getComputedStyle(document.body).getPropertyValue('--chrome-bd');
+    X.lineWidth = 1;
+    X.globalAlpha = 1;
+    X.strokeRect(x + 0.5, y + 0.5, chipW - 1, chipH - 1);
+    // Label - knockout on the active chip, foreground on inactive.
+    X.font = '600 9px "IBM Plex Mono", monospace';
+    X.textBaseline = 'middle';
+    X.textAlign = 'center';
+    X.fillStyle = isActive ? getComputedStyle(document.body).getPropertyValue('--bg') : getComputedStyle(document.body).getPropertyValue('--fg');
+    let lblText = '';
+    if (pname === 'blur') lblText = `B ${value.toFixed(0)}`;
+    else if (pname === 'scale') lblText = `S ${value.toFixed(2)}`;
+    else lblText = `R ${Math.round(value)}°`;
+    X.fillText(lblText, x + chipW / 2, y + chipH / 2 + 1);
+    X.restore();
+    s._chips.push({ x, y, w: chipW, h: chipH, param: pname });
+  }
+}
+
+function drawPressureRing(s) {
+  if (!press || press.id !== s.id) return;
+  const now = performance.now();
+  const elapsed = (now - press.t0) / 1000; // seconds
+  // Ramp: 0 to 1 over 1.8 seconds
+  const pct = clamp(elapsed / 1.8, 0, 1);
+  X.save();
+  X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg');
+  X.lineWidth = 2;
+  X.globalAlpha = 0.85;
+  X.beginPath();
+  X.arc(s.x, s.y, s.rad * s.params.scale + 16, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2);
+  X.stroke();
+  X.restore();
+  // Direction arrow
+  X.save();
+  X.font = '10px "IBM Plex Mono", monospace';
+  X.textAlign = 'center';
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg');
+  const arrow = press.direction > 0 ? '↑' : '↓';
+  X.fillText(`${arrow} ${Math.round(pct * 100)}%`, s.x, s.y + s.rad * s.params.scale + 30);
+  X.restore();
+}
+
+function updatePressure() {
+  if (!press) return;
+  const s = shapes.find(x => x.id === press.id);
+  if (!s || !s.activeParam) return;
+  const now = performance.now();
+  const elapsed = (now - press.t0) / 1000;
+  const pct = clamp(elapsed / 1.8, 0, 1);
+  const cfg = PARAM_CONFIG[s.activeParam];
+  // Direction: +1 increases, -1 decreases
+  const startV = press.startValue;
+  const range = cfg.max - cfg.min;
+  // Pressure moves from startV toward direction's extreme
+  const targetV = press.direction > 0 ? cfg.max : cfg.min;
+  const newV = startV + (targetV - startV) * pct;
+  s.params[s.activeParam] = clamp(newV, cfg.min, cfg.max);
+}
+
+function draw() {
+  updatePressure();
+  X.clearRect(0, 0, W, H);
+  for (const s of shapes) {
+    drawShape(s);
+    // chips only surface for the shape you're hovering (and stay while you press it)
+    const showChips = hoverId === s.id || (press && press.id === s.id);
+    if (showChips) drawChips(s); else s._chips = null;
+    drawPressureRing(s);
+    const isHover = hoverId === s.id;
+    if (isHover && !press) {
+      const sc = s.params.scale;
+      X.save();
+      X.translate(s.x, s.y);
+      X.rotate(s.params.rotate * Math.PI / 180);
+      X.scale(sc, sc);
+      X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+      X.setLineDash([3, 3]);
+      X.lineWidth = 1 / sc;
+      X.beginPath(); X.roundRect(-s.w / 2 - 8, -s.h / 2 - 8, s.w + 16, s.h + 16, 10); X.stroke();
+      X.restore();
+    }
+  }
+  // Readout
+  const s = press ? shapes.find(x => x.id === press.id) : (hoverId ? shapes.find(x => x.id === hoverId) : null);
+  if (s && s.activeParam) {
+    const cfg = PARAM_CONFIG[s.activeParam];
+    const v = s.params[s.activeParam];
+    const valStr = cfg.precision === 0 ? Math.round(v) : v.toFixed(cfg.precision);
+    const pname = s.activeParam.charAt(0).toUpperCase() + s.activeParam.slice(1);
+    readout.innerHTML = `Shape <b>${s.id}</b> · Param <b>${pname}</b> · Value <b>${valStr}${cfg.unit}</b>`;
+  } else {
+    readout.innerHTML = `Active param <b>none</b>`;
+  }
+}
+
+function loop() { draw(); requestAnimationFrame(loop); }
+loop();
+
+function hitBody(s, x, y) {
+  // point-in-rotated-rect - accounts for the shape's rotation and scale
+  const sc = s.params.scale;
+  const dx = x - s.x, dy = y - s.y;
+  const a = -s.params.rotate * Math.PI / 180;
+  const rx = dx * Math.cos(a) - dy * Math.sin(a);
+  const ry = dx * Math.sin(a) + dy * Math.cos(a);
+  return Math.abs(rx) <= s.w / 2 * sc + 4 && Math.abs(ry) <= s.h / 2 * sc + 4;
+}
+function overShape(s, x, y) {
+  // hover region = the shape body plus the chip strip and the gap above it,
+  // so the chips stay open while the cursor travels up to reach them
+  if (hitBody(s, x, y)) return true;
+  const sc = s.params.scale;
+  const halfW = Math.max(140, s.w * sc) / 2 + 10; // 140 = chip row width
+  const top = s.y - s.rad * sc - 46;
+  return x >= s.x - halfW && x <= s.x + halfW && y >= top && y <= s.y;
+}
+
+function hit(x, y) {
+  // Prefer chip hits first (they're above the shape)
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (!s._chips) continue;
+    for (const c of s._chips) {
+      if (x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h) return { type: 'chip', shape: s, param: c.param };
+    }
+  }
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (hitBody(s, x, y)) return { type: 'shape', shape: s };
+  }
+  return null;
+}
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (!press) {
+    hoverId = null;
+    for (let i = shapes.length - 1; i >= 0; i--) {
+      if (overShape(shapes[i], mx, my)) { hoverId = shapes[i].id; break; }
+    }
+  }
+});
+window.addEventListener('pointerdown', e => {
+  const h = hit(e.clientX, e.clientY);
+  if (!h) return;
+  if (h.type === 'chip') {
+    h.shape.activeParam = h.param;
+    return;
+  }
+  if (h.type === 'shape' && h.shape.activeParam) {
+    press = {
+      id: h.shape.id,
+      t0: performance.now(),
+      direction: shiftDown ? -1 : 1,
+      startValue: h.shape.params[h.shape.activeParam],
+    };
+    cursor.classList.add('press');
+  }
+});
+window.addEventListener('pointerup', () => {
+  if (press) {
+    press = null;
+    cursor.classList.remove('press');
+  }
+});
+window.addEventListener('keydown', e => {
+  if (e.key === 'Shift') {
+    shiftDown = true;
+    if (press) press.direction = -1;
+  }
+  if (e.key === 'r' || e.key === 'R') {
+    for (const s of shapes) { s.params = { blur: 0, scale: 1, rotate: 0 }; s.activeParam = null; }
+  }
+});
+window.addEventListener('keyup', e => {
+  if (e.key === 'Shift') {
+    shiftDown = false;
+    if (press) press.direction = 1;
+  }
+});
+</script>
+</body>
+</html>

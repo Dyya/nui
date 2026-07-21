@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<!--
+  Command as drag - commands you drag onto shapes
+  Drag a command chip onto a shape to apply it; pull farther to overdrive the effect.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Command as drag - commands you drag onto shapes</title>
+<meta name="description" content="Drag a command chip onto a shape to apply it; pull farther to overdrive the effect.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Command as drag - commands you drag onto shapes">
+<meta property="og:description" content="Drag a command chip onto a shape to apply it; pull farther to overdrive the effect.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Command as drag",
+  "applicationCategory": "DesignApplication",
+  "description": "Drag a command chip onto a shape to apply it; pull farther to overdrive the effect.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "command as drag, interaction design, gesture, command, drag, direct manipulation, effect, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* UI neutrals - the interface is monochrome: proper white / grey / black */
+  --c-white: #FAFAFA;
+  --c-grey:  #8A8A8A;
+  --c-black: #0A0A0A;
+
+  /* Light is the default theme; add `dark` on <body> for the option. */
+  --bg: var(--c-white);
+  --doc: #EDEDEF;
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.16);
+  --mid: rgba(10,10,10,0.28);
+  --active: rgba(10,10,10,0.55);
+  --hover: rgba(10,10,10,0.80);
+  --obj: rgb(98,103,113);   /* shapes: theme-aware neutral fill */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --doc: #16161A;
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.16);
+  --mid: rgba(250,250,250,0.28);
+  --active: rgba(250,250,250,0.55);
+  --hover: rgba(250,250,250,0.80);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+#c { position: fixed; inset: 0; z-index: 1; }
+
+/* Command palette - a glass toolbar of draggable chips. `top` is set in layout()
+   to sit centred in the band between the screen's top edge and the artboard. */
+.palette {
+  position: fixed; top: 52px; left: 50%; transform: translate(-50%, -50%); z-index: 20;
+  display: flex; gap: 3px; padding: 5px 6px; border-radius: 20px;
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  background: rgba(255,255,255,.5); border: 1px solid rgba(0,0,0,.06);
+}
+body.dark .palette { background: rgba(10,10,10,.35); border-color: rgba(255,255,255,.08); }
+.chip {
+  padding: 5px 11px; border-radius: 15px;
+  font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.08em;
+  color: var(--active); cursor: grab; touch-action: none; white-space: nowrap;
+  transition: color 0.18s var(--ease), background 0.18s var(--ease);
+}
+.chip:hover { color: var(--fg); background: var(--dim); }
+.chip.dragging { opacity: 0.4; }
+
+/* Theme toggle: the same glass as the floating legend, but circular, with a
+   small solid white/black dot in the centre (the dot follows the theme). */
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+
+/* Cursor - grey at rest, foreground when dragging, pulsing in overdrive */
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: border-color 0.25s var(--ease), transform 0.25s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.25s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; }
+.cursor .cross.v { width: 1px; height: 10px; }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(1.35); border-style: dashed; }
+body.dragging .cursor .cross { background: var(--fg); }
+body.dragging.overdrive .cursor .ring { animation: ring-pulse 0.9s ease-in-out infinite; }
+body.dragging.overdrive .cursor .cross { background: var(--fg); }
+@keyframes ring-pulse { 0%, 100% { transform: scale(1.35); } 50% { transform: scale(1.68); } }
+
+/* Touch devices: the finger is the pointer, so no custom crosshair. */
+@media (hover: none) and (pointer: coarse) {
+  html, body { cursor: auto; }
+  .cursor { display: none; }
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="palette" id="palette">
+  <div class="chip" data-cmd="BLUR">Blur</div>
+  <div class="chip" data-cmd="ROTATE">Rotate</div>
+  <div class="chip" data-cmd="SCALE">Scale</div>
+  <div class="chip" data-cmd="SHADOW">Shadow</div>
+  <div class="chip" data-cmd="GLOW">Glow</div>
+</div>
+
+<div id="toggle" title="Toggle theme"></div>
+
+<div class="cursor" id="cursor">
+  <div class="ring"></div>
+  <div class="cross h"></div>
+  <div class="cross v"></div>
+</div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });   // opaque - the canvas is fully painted every frame
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+let W = 0, H = 0;
+
+const HINTS = 'Drag chip onto shape · Pull far overdrive · R clear effects · X new shapes';
+const ui = PT.ui({ title: 'Command as drag', hints: HINTS, theme: 'light' });
+
+// The bottom legend doubles as a stage-reflective status bar: idle shows the how-to,
+// dragging shows the live command + target + value (+ overdrive), applying flashes a
+// confirmation. We reuse the panel's own glass pill + segment classes so it looks native.
+const pill = document.querySelector('.adui-pill');
+const seg = (html) => '<span class="adui-seg">' + html + '</span>';
+const key = (t) => '<b class="adui-key">' + t + '</b>';
+let barTimer = null, lastBar = '';
+function setBar(html) { clearTimeout(barTimer); if (pill && html !== lastBar) { pill.innerHTML = html; lastBar = html; } }
+function idleBar() { clearTimeout(barTimer); lastBar = ''; ui.setHints(HINTS); }
+function flashBar(html, ms) { setBar(html); barTimer = setTimeout(() => { if (!drag) idleBar(); }, ms); }
+
+let shapes = [];
+let drag = null;        // active drag: { cmd, origin:{x,y}, current:{x,y}, targetId }
+let mouseX = -100, mouseY = -100;
+let seed = 808404;
+
+let docX = 0, docY = 0, docSize = 0, OD_THRESH = 200;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() {
+  docSize = Math.min(W, H) * 0.74;
+  docX = (W - docSize) / 2;
+  docY = (H - docSize) / 2;
+  // Overdrive threshold scales with the viewport so it stays reachable on phones.
+  OD_THRESH = Math.min(W, H) * 0.26;
+  // Keep shapes proportional to the (re)sized doc so they never drift outside it.
+  for (const s of shapes) { s.x = s.nx * docSize; s.y = s.ny * docSize; s.r = s.nr * docSize; }
+  // Centre the command palette in the band above the artboard (screen top -> docY).
+  const pal = document.getElementById('palette');
+  if (pal) pal.style.top = Math.round(docY / 2) + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+function mulberry32(s) {
+  return function() {
+    let t = (s += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Shape names - one primitive per shape (cycled); labelled by form, shared forms get a reading-order index.
+const TYPES = ['circle', 'square', 'triangle'];
+const formName = (i) => { const t = TYPES[i % TYPES.length]; return t.charAt(0).toUpperCase() + t.slice(1) + ' ' + (Math.floor(i / TYPES.length) + 1); };
+
+function generate(s) {
+  const rng = mulberry32(s);
+  const out = [];
+  let tries = 0;
+  while (out.length < 7 && tries < 2000) {
+    const nx = 0.16 + rng() * 0.68;
+    const ny = 0.20 + rng() * 0.60;
+    const nr = 0.055 + rng() * 0.025;
+    let ok = true;
+    for (const o of out) if (Math.hypot(nx - o.nx, ny - o.ny) < nr + o.nr + 0.06) { ok = false; break; }
+    if (ok) {
+      const i = out.length;
+      out.push({
+        id: i + 1,
+        nx, ny, nr,
+        x: nx * docSize, y: ny * docSize, r: nr * docSize,
+        name: formName(i),
+        type: TYPES[i % TYPES.length],
+        blur: 0, rotation: 0, scale: 1,
+        shadowX: 0, shadowY: 0, shadowBlur: 0, glow: 0,
+        flashUntil: 0,
+      });
+    }
+    tries++;
+  }
+  return out;
+}
+function regen() { shapes = generate(seed); }
+regen();
+
+function clearEffects() {
+  for (const s of shapes) {
+    s.blur = 0; s.rotation = 0; s.scale = 1;
+    s.shadowX = 0; s.shadowY = 0; s.shadowBlur = 0; s.glow = 0;
+    s.flashUntil = performance.now() + 280;
+  }
+}
+
+// ───── Param computation ─────  { params, overdrive 0..1 }
+function computeParams(cmd, origin, current, target) {
+  const dx = current.x - origin.x, dy = current.y - origin.y;
+  const dist = Math.hypot(dx, dy);
+  const od = clamp((dist - OD_THRESH) / OD_THRESH, 0, 1);   // 0 = normal, 1 = fully saturated
+
+  if (cmd === 'BLUR') { const norm = clamp(dist / 5, 0, 40); return { params: { blur: norm + od * 40 }, od }; }
+  if (cmd === 'GLOW') { const norm = clamp(dist / 4, 0, 50); return { params: { glow: norm + od * 50 }, od }; }
+  if (cmd === 'SCALE') {
+    const base = clamp(1 + (-dy) / 150, 0.2, 3.5);           // drag up grows, down shrinks
+    const extra = od * 1.5 * Math.sign(-dy || 1);            // overdrive pushes further
+    return { params: { scale: clamp(base + extra, 0.2, 5) }, od };  // stay positive - never flips or crashes
+  }
+  if (cmd === 'ROTATE') {
+    let angle;
+    if (target) { const t = { x: docX + target.x, y: docY + target.y }; angle = Math.atan2(current.y - t.y, current.x - t.x) * 180 / Math.PI; }
+    else angle = Math.atan2(dy, dx) * 180 / Math.PI;
+    return { params: { rotation: angle }, od };
+  }
+  if (cmd === 'SHADOW') {
+    let sx, sy;
+    if (target) { const t = { x: docX + target.x, y: docY + target.y }; sx = clamp((current.x - t.x) * 0.55, -120, 120); sy = clamp((current.y - t.y) * 0.55, -120, 120); }
+    else { sx = clamp(dx * 0.35, -80, 80); sy = clamp(dy * 0.35, -80, 80); }
+    const mag = Math.hypot(sx, sy);
+    return { params: { shadowX: sx, shadowY: sy, shadowBlur: clamp(mag * 0.3, 0, 40) + od * 20 }, od };
+  }
+  return { params: {}, od: 0 };
+}
+
+function applyParams(s, cmd, p) {
+  if ('blur' in p) s.blur = p.blur;
+  if ('glow' in p) s.glow = p.glow;
+  if ('scale' in p) s.scale = p.scale;
+  if ('rotation' in p) s.rotation = p.rotation;
+  if ('shadowX' in p) { s.shadowX = p.shadowX; s.shadowY = p.shadowY; s.shadowBlur = p.shadowBlur; }
+}
+function previewOf(s, cmd, p) {
+  const m = { ...s };
+  applyParams(m, cmd, p);
+  return m;
+}
+
+// ───── Hit test (canvas-space; accounts for the shape's applied scale) ─────
+function hitShape(cx, cy) {
+  const px = cx - docX, py = cy - docY;
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    const dx = px - s.x, dy = py - s.y, rr = s.r * (s.scale || 1);
+    if (s.type === 'square') { if (Math.abs(dx) <= rr && Math.abs(dy) <= rr) return s; }
+    else if (Math.hypot(dx, dy) <= rr * 1.1) return s;   // circle + triangle (circumcircle)
+  }
+  return null;
+}
+
+// ───── Theme colours (cached; custom props don't transition, so re-read only on toggle) ─────
+let COL = {};
+function readTheme() {
+  const cs = getComputedStyle(document.body);
+  COL = {
+    bg:     cs.getPropertyValue('--bg').trim(),
+    doc:    cs.getPropertyValue('--doc').trim(),
+    fg:     cs.getPropertyValue('--fg').trim(),
+    mid:    cs.getPropertyValue('--mid').trim(),
+    active: cs.getPropertyValue('--active').trim(),
+    obj:    cs.getPropertyValue('--obj').trim(),
+    shadow: document.body.classList.contains('dark') ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.3)',
+  };
+}
+readTheme();
+
+// ───── Render ─────
+function shapePath(type, x, y, r) {
+  X.beginPath();
+  if (type === 'square') {
+    const h = r * 0.9;
+    X.rect(x - h, y - h, h * 2, h * 2);
+  } else if (type === 'triangle') {
+    const tr = r * 1.1;
+    for (let i = 0; i < 3; i++) {
+      const a = -Math.PI / 2 + i * (Math.PI * 2 / 3);   // equilateral, pointing up
+      const px = x + tr * Math.cos(a), py = y + tr * Math.sin(a);
+      i ? X.lineTo(px, py) : X.moveTo(px, py);
+    }
+    X.closePath();
+  } else {
+    X.arc(x, y, r, 0, Math.PI * 2);
+  }
+}
+
+function renderShape(s, alpha = 1, extraScale = 1, charged = false) {
+  const sc = (s.scale || 1) * extraScale;
+  X.save();
+  X.globalAlpha = alpha;
+  X.translate(docX + s.x, docY + s.y);
+  X.rotate(s.rotation * Math.PI / 180);
+  X.scale(sc, sc);
+
+  // Drop shadow (a real black shadow, independent of the monochrome UI).
+  if (s.shadowBlur > 0 || Math.abs(s.shadowX) > 0.1 || Math.abs(s.shadowY) > 0.1) {
+    X.shadowColor = COL.shadow;
+    X.shadowOffsetX = s.shadowX;
+    X.shadowOffsetY = s.shadowY;
+    X.shadowBlur = s.shadowBlur;
+  }
+  // Glow (a soft neutral halo, no offset - the effect, not a hue).
+  if (s.glow > 0) { X.shadowColor = COL.obj; X.shadowBlur = s.glow; X.shadowOffsetX = 0; X.shadowOffsetY = 0; }
+  // Blur (the demonstrated effect; scoped by save/restore).
+  if (s.blur > 0.1) X.filter = `blur(${s.blur}px)`;
+
+  X.fillStyle = charged ? '#FBF251' : COL.obj;     // charged = the shape the command is landing on
+  shapePath(s.type, 0, 0, s.r);
+  X.fill();
+  X.restore();
+}
+
+function draw() {
+  X.clearRect(0, 0, W, H);
+  X.fillStyle = COL.bg;
+  X.fillRect(0, 0, W, H);
+
+  // Work zone: docX/docY/docSize stays as an invisible limit zone (no visible panel).
+
+  const now = performance.now();
+
+  let previewParams = null, od = 0;
+  if (drag) {
+    const target = drag.targetId ? shapes.find(s => s.id === drag.targetId) : null;
+    const cp = computeParams(drag.cmd, drag.origin, drag.current, target);
+    previewParams = cp.params;
+    od = cp.od;
+  }
+
+  for (const s of shapes) {
+    const isTarget = drag && drag.targetId === s.id;
+    let flashExtra = 1;
+    if (s.flashUntil && now < s.flashUntil) flashExtra = 1 + ((s.flashUntil - now) / 280) * 0.12;
+
+    if (isTarget && previewParams) {
+      const preview = previewOf(s, drag.cmd, previewParams);
+      renderShape(preview, 1, flashExtra, true);
+      // Target halo - brighter in overdrive (value, not colour).
+      X.save();
+      X.strokeStyle = od > 0 ? COL.fg : COL.active;
+      X.lineWidth = 1.5;
+      X.setLineDash([4, 4]);
+      X.beginPath();
+      X.arc(docX + s.x, docY + s.y, Math.max(2, s.r * preview.scale * 1.4), 0, Math.PI * 2);
+      X.stroke();
+      X.setLineDash([]);
+      X.restore();
+    } else {
+      renderShape(s, 1, flashExtra);
+    }
+
+    // Flash ring on a fresh application.
+    if (s.flashUntil && now < s.flashUntil) {
+      const t = (s.flashUntil - now) / 280;
+      X.save();
+      X.globalAlpha = t * 0.9;
+      X.strokeStyle = COL.fg;
+      X.lineWidth = 1.5;
+      X.beginPath();
+      X.arc(docX + s.x, docY + s.y, s.r * 1.6 + (1 - t) * 12, 0, Math.PI * 2);
+      X.stroke();
+      X.restore();
+    }
+  }
+
+  // Drag vector: a dashed trail from the origin to the cursor, with an origin dot.
+  if (drag) {
+    X.save();
+    X.strokeStyle = od > 0 ? COL.fg : COL.mid;
+    X.lineWidth = 1.2;
+    X.setLineDash([5, 5]);
+    X.beginPath();
+    X.moveTo(drag.origin.x, drag.origin.y);
+    X.lineTo(drag.current.x, drag.current.y);
+    X.stroke();
+    X.setLineDash([]);
+
+    X.fillStyle = COL.fg;
+    X.beginPath();
+    X.arc(drag.origin.x, drag.origin.y, 3, 0, Math.PI * 2);
+    X.fill();
+    X.restore();
+  }
+
+  requestAnimationFrame(draw);
+}
+
+// ───── Bottom-bar status ─────
+const cmdName = (cmd) => cmd.charAt(0) + cmd.slice(1).toLowerCase();
+const labelOf = (s) => 'G' + String(s.id).padStart(2, '0') + ' ' + s.name;
+function formatParams(cmd, p) {
+  if (!p) return '';
+  if (cmd === 'BLUR')   return p.blur.toFixed(1) + 'px';
+  if (cmd === 'GLOW')   return p.glow.toFixed(1) + 'px';
+  if (cmd === 'SCALE')  return p.scale.toFixed(2) + '×';
+  if (cmd === 'ROTATE') return Math.round(p.rotation) + '°';
+  if (cmd === 'SHADOW') return Math.round(p.shadowX) + ',' + Math.round(p.shadowY) + ' / ' + Math.round(p.shadowBlur) + 'px';
+  return '';
+}
+function dragBar() {
+  if (!drag) return;
+  const name = cmdName(drag.cmd);
+  const target = drag.targetId ? shapes.find(s => s.id === drag.targetId) : null;
+  if (!target) { setBar(seg(key(name)) + seg(key('Drag') + ' onto a shape')); return; }
+  const cp = computeParams(drag.cmd, drag.origin, drag.current, target);
+  const odSeg = cp.od > 0 ? seg(key('Overdrive') + ' ' + Math.round(cp.od * 100) + '%') : '';
+  setBar(seg(key(name)) + seg(labelOf(target)) + seg(formatParams(drag.cmd, cp.params)) + odSeg);
+}
+
+// ───── Input ─────
+const cursor  = document.getElementById('cursor');
+const toggle  = document.getElementById('toggle');
+const palette = document.getElementById('palette');
+
+palette.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    mouseX = e.clientX; mouseY = e.clientY;
+    cursor.style.left = mouseX + 'px';
+    cursor.style.top  = mouseY + 'px';
+    drag = { cmd: chip.dataset.cmd, origin: { x: e.clientX, y: e.clientY }, current: { x: e.clientX, y: e.clientY }, targetId: 0 };
+    chip.classList.add('dragging');
+    document.body.classList.add('dragging');
+    try { chip.setPointerCapture(e.pointerId); } catch (_) {}
+    dragBar();
+  });
+});
+
+window.addEventListener('pointermove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top  = mouseY + 'px';
+  if (drag) {
+    drag.current.x = mouseX; drag.current.y = mouseY;
+    const h = hitShape(mouseX, mouseY);
+    drag.targetId = h ? h.id : 0;
+    const dist = Math.hypot(mouseX - drag.origin.x, mouseY - drag.origin.y);
+    document.body.classList.toggle('overdrive', dist > OD_THRESH);
+    dragBar();
+  }
+});
+
+function endDrag() {
+  palette.querySelectorAll('.chip').forEach(c => c.classList.remove('dragging'));
+  document.body.classList.remove('dragging', 'overdrive');
+  drag = null;
+}
+
+window.addEventListener('pointerup', () => {
+  if (!drag) return;
+  const target = drag.targetId ? shapes.find(s => s.id === drag.targetId) : null;
+  if (target) {
+    const { params } = computeParams(drag.cmd, drag.origin, drag.current, target);
+    const name = cmdName(drag.cmd), val = formatParams(drag.cmd, params);
+    applyParams(target, drag.cmd, params);
+    target.flashUntil = performance.now() + 320;
+    endDrag();
+    flashBar(seg(key('Applied ' + name)) + seg(labelOf(target)) + seg(val), 1300);
+  } else {
+    endDrag();
+    idleBar();
+  }
+});
+
+window.addEventListener('pointercancel', () => {
+  if (!drag) return;
+  endDrag();
+  idleBar();
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;   // let browser shortcuts through (Cmd+R reload, Cmd+X, etc.)
+  const k = e.key.toLowerCase();
+  if (k === 'r') { clearEffects(); flashBar(seg(key('Effects cleared')), 900); }
+  else if (k === 'x') { seed = (seed * 1103515245 + 12345) & 0x7fffffff; regen(); flashBar(seg(key('New shapes')), 900); }
+  else if (e.key === 'Escape' && drag) { endDrag(); idleBar(); }
+});
+
+toggle.addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  ui.theme(dark ? 'dark' : 'light');
+  readTheme();
+});
+
+draw();
+</script>
+</body>
+</html>

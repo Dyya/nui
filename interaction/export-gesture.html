@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<!--
+  Export as gesture - export by flicking off the edge
+  Export by flicking a shape off the edge: direction picks the format, distance sets the size.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Export as gesture - export by flicking off the edge</title>
+<meta name="description" content="Export by flicking a shape off the edge: direction picks the format, distance sets the size.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Export as gesture - export by flicking off the edge">
+<meta property="og:description" content="Export by flicking a shape off the edge: direction picks the format, distance sets the size.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Export as gesture",
+  "applicationCategory": "DesignApplication",
+  "description": "Export by flicking a shape off the edge: direction picks the format, distance sets the size.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "export as gesture, interaction design, gesture, export, flick, format, direct manipulation, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* UI neutrals - the interface is monochrome: proper white / grey / black */
+  --c-white: #FAFAFA;
+  --c-grey:  #8A8A8A;
+  --c-black: #0A0A0A;
+
+  /* Light is the default theme; add `dark` on <body> for the option. */
+  --bg: var(--c-white);
+  --doc: #EDEDEF;
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.16);
+  --mid: rgba(10,10,10,0.28);
+  --active: rgba(10,10,10,0.55);
+  --hover: rgba(10,10,10,0.80);
+  --obj: rgb(98,103,113);   /* theme-aware object grey (shape fills) */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --doc: #16161A;
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.16);
+  --mid: rgba(250,250,250,0.28);
+  --active: rgba(250,250,250,0.55);
+  --hover: rgba(250,250,250,0.80);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+#c { position: fixed; inset: 0; z-index: 1; }
+
+/* Theme toggle: the same glass as the floating legend, but circular, with a
+   small solid white/black dot in the centre (the dot follows the theme). */
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+
+/* Cursor */
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: all 0.25s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.25s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; }
+.cursor .cross.v { width: 1px; height: 10px; }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(1.4); }
+body.dragging .cursor .cross { background: var(--fg); }
+body.dragging.beyond .cursor .ring { border-color: var(--fg); transform: scale(1.6); border-style: dashed; }
+body.dragging.beyond .cursor .cross { background: var(--fg); }
+
+/* Touch devices: the finger is the pointer, so no custom crosshair. */
+@media (hover: none) and (pointer: coarse) {
+  html, body { cursor: auto; }
+  .cursor { display: none; }
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="toggle" title="Toggle theme"></div>
+
+<div class="cursor" id="cursor">
+  <div class="ring"></div>
+  <div class="cross h"></div>
+  <div class="cross v"></div>
+</div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+const HINTS = 'Drag move · Past edge export · Direction format · Distance size';
+const ui = PT.ui({ title: 'Export as gesture', hints: HINTS, theme: 'light' });
+
+// The bottom legend doubles as a stage-reflective status bar: idle shows the how-to,
+// then moving / exporting / committed each swap in the relevant info. We reuse the
+// panel's own glass pill + segment classes so it always looks native.
+const pill = document.querySelector('.adui-pill');
+const seg = (html) => '<span class="adui-seg">' + html + '</span>';
+const key = (t) => '<b class="adui-key">' + t + '</b>';
+let barTimer = null, lastBar = '';
+function setBar(html) { clearTimeout(barTimer); if (pill && html !== lastBar) { pill.innerHTML = html; lastBar = html; } }
+function idleBar() { clearTimeout(barTimer); lastBar = ''; ui.setHints(HINTS); }
+function flashBar(html, ms) { setBar(html); barTimer = setTimeout(() => { if (!drag) idleBar(); }, ms); }
+const fileOf = (s, fmt) => 'G' + String(s.id).padStart(2, '0') + '_' + s.name.toLowerCase().replace(/\s+/g, '-') + '.' + fmt.toLowerCase();
+const labelOf = (s) => 'G' + String(s.id).padStart(2, '0') + ' ' + s.name;
+const moveBar = (s) => setBar(seg(key('Moving') + ' ' + labelOf(s)) + seg(key('Past') + ' an edge to export'));
+
+let shapes = [];
+let mouseX = -100, mouseY = -100;
+let drag = null;        // active drag: { id, dx, dy, homeX, homeY }
+const seed = 313131;
+
+let docX = 0, docY = 0, docSize = 0;
+let TIER2 = 0, TIER4 = 0;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() {
+  docSize = Math.min(W, H) * 0.56;
+  docX = (W - docSize) / 2;
+  docY = (H - docSize) / 2;
+  // Export size tiers scale to the smallest doc-to-edge margin, so the 2x and 4x
+  // zones stay reachable on every screen - phone portrait through desktop.
+  const marginMin = Math.min(docX, docY);
+  TIER2 = marginMin * 0.36;
+  TIER4 = marginMin * 0.72;
+  // Keep shapes proportional to the (re)sized doc so they never drift outside it.
+  for (const s of shapes) { s.x = s.nx * docSize; s.y = s.ny * docSize; s.r = s.nr * docSize; }
+}
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) {
+  return function() {
+    let t = (s += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// Shape names label the exported file; each is its form, shared forms get a reading-order index (the fill is a neutral object grey).
+const TYPES = ['circle', 'square', 'triangle'];
+const formName = (i) => { const t = TYPES[i % TYPES.length]; return t.charAt(0).toUpperCase() + t.slice(1) + ' ' + (Math.floor(i / TYPES.length) + 1); };
+
+function regen() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  let tries = 0;
+  while (shapes.length < 5 && tries < 2000) {
+    const nx = 0.18 + rng() * 0.64;
+    const ny = 0.18 + rng() * 0.64;
+    const nr = 0.10 + rng() * 0.045;
+    let ok = true;
+    for (const o of shapes) if (Math.hypot(nx - o.nx, ny - o.ny) < nr + o.nr + 0.06) { ok = false; break; }
+    if (ok) {
+      const i = shapes.length;                 // cycle the three primitives
+      shapes.push({
+        id: i + 1,
+        nx, ny, nr,
+        x: nx * docSize, y: ny * docSize, r: nr * docSize,
+        name: formName(i),
+        type: TYPES[i % TYPES.length],
+      });
+    }
+    tries++;
+  }
+}
+regen();
+
+function hitShape(sx, sy) {
+  const px = sx - docX, py = sy - docY;
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    const dx = px - s.x, dy = py - s.y;
+    if (s.type === 'square') { if (Math.abs(dx) <= s.r && Math.abs(dy) <= s.r) return s; }
+    else if (Math.hypot(dx, dy) <= s.r) return s;   // circle + triangle (circumcircle)
+  }
+  return null;
+}
+
+// ───── Edge detection ─────
+function classifyCursor(cx, cy) {
+  // Returns { beyond: bool, edge: 'top'|'right'|'bottom'|'left', dist, format, tier }
+  const inside =
+    cx >= docX && cx <= docX + docSize &&
+    cy >= docY && cy <= docY + docSize;
+  if (inside) return { beyond: false };
+
+  const distTop    = docY - cy;
+  const distBottom = cy - (docY + docSize);
+  const distLeft   = docX - cx;
+  const distRight  = cx - (docX + docSize);
+
+  // Pick the dominant direction (greatest positive distance)
+  let best = 'top', bestD = -Infinity;
+  if (distTop    > bestD) { best = 'top';    bestD = distTop; }
+  if (distRight  > bestD) { best = 'right';  bestD = distRight; }
+  if (distBottom > bestD) { best = 'bottom'; bestD = distBottom; }
+  if (distLeft   > bestD) { best = 'left';   bestD = distLeft; }
+
+  const format = { top: 'PNG', right: 'SVG', bottom: 'JPG', left: 'PDF' }[best];
+  // Size tier from distance
+  let tier = 1;
+  if (bestD > TIER4) tier = 4;
+  else if (bestD > TIER2) tier = 2;
+
+  return { beyond: true, edge: best, dist: bestD, format, tier };
+}
+
+// ───── Theme colours (cached; custom props don't transition, so re-read only on toggle) ─────
+let COL = {};
+function readTheme() {
+  const cs = getComputedStyle(document.body);
+  COL = {
+    bg:     cs.getPropertyValue('--bg').trim(),
+    doc:    cs.getPropertyValue('--doc').trim(),
+    fg:     cs.getPropertyValue('--fg').trim(),
+    mid:    cs.getPropertyValue('--mid').trim(),
+    active: cs.getPropertyValue('--active').trim(),
+    obj:    cs.getPropertyValue('--obj').trim(),
+  };
+}
+readTheme();
+
+// ───── Render ─────
+function shapePath(type, x, y, r) {
+  X.beginPath();
+  if (type === 'square') {
+    const h = r * 0.9;
+    X.rect(x - h, y - h, h * 2, h * 2);
+  } else if (type === 'triangle') {
+    const tr = r * 1.1;
+    for (let i = 0; i < 3; i++) {
+      const a = -Math.PI / 2 + i * (Math.PI * 2 / 3);   // equilateral, pointing up
+      const px = x + tr * Math.cos(a), py = y + tr * Math.sin(a);
+      i ? X.lineTo(px, py) : X.moveTo(px, py);
+    }
+    X.closePath();
+  } else {
+    X.arc(x, y, r, 0, Math.PI * 2);
+  }
+}
+
+function drawShapeAt(s, x, y, alpha = 1, scale = 1, charged = false) {
+  X.save();
+  X.globalAlpha = alpha;
+  // Objects are a neutral theme-aware grey; the one charged (dragged / flying) shape fills accent.
+  X.fillStyle = charged ? '#FBF251' : COL.obj;
+  shapePath(s.type, x, y, s.r * scale);
+  X.fill();
+  X.restore();
+}
+
+function draw() {
+  X.clearRect(0, 0, W, H);
+  X.fillStyle = COL.bg;
+  X.fillRect(0, 0, W, H);
+
+  // Artboard - a flat grey panel, no border (the fill alone defines it).
+  X.fillStyle = COL.doc;
+  X.fillRect(docX, docY, docSize, docSize);
+
+  // Export zone indicators (only visible during drag)
+  if (drag) {
+    const info = classifyCursor(mouseX, mouseY);
+    const edges = ['top', 'right', 'bottom', 'left'];
+    const EDGE_LABEL = { top: 'PNG', right: 'SVG', bottom: 'JPG', left: 'PDF' };
+    X.save();
+    X.font = '11px "IBM Plex Mono", monospace';
+    X.textAlign = 'center';
+    X.textBaseline = 'middle';
+    for (const e of edges) {
+      const active = info.beyond && info.edge === e;
+      X.fillStyle = active ? COL.fg : COL.mid;
+      let lx, ly;
+      if (e === 'top')    { lx = docX + docSize / 2; ly = docY - 20; }
+      if (e === 'right')  { lx = docX + docSize + 24; ly = docY + docSize / 2; }
+      if (e === 'bottom') { lx = docX + docSize / 2; ly = docY + docSize + 20; }
+      if (e === 'left')   { lx = docX - 24; ly = docY + docSize / 2; }
+      X.save();
+      if (e === 'right' || e === 'left') { X.translate(lx, ly); X.rotate(-Math.PI / 2); X.fillText(EDGE_LABEL[e], 0, 0); }
+      else X.fillText(EDGE_LABEL[e], lx, ly);
+      X.restore();
+    }
+    X.restore();
+  }
+
+  // Shapes
+  for (const s of shapes) {
+    const isDragging = drag && drag.id === s.id;
+    if (isDragging) {
+      const info = classifyCursor(mouseX, mouseY);
+      if (info.beyond) {
+        // Outside: render ghost at home position; render FLYING preview at cursor
+        drawShapeAt(s, docX + drag.homeX, docY + drag.homeY, 0.22);
+        // Flying ghost at cursor, scaled by tier - this is the charged element
+        const tierScale = 1 + (info.tier - 1) * 0.15;
+        drawShapeAt(s, mouseX, mouseY, 0.95, tierScale, true);
+        // Dashed line from home to cursor
+        X.save();
+        X.strokeStyle = COL.active;
+        X.lineWidth = 1;
+        X.setLineDash([4, 6]);
+        X.beginPath();
+        X.moveTo(docX + drag.homeX, docY + drag.homeY);
+        X.lineTo(mouseX, mouseY);
+        X.stroke();
+        X.setLineDash([]);
+        X.restore();
+      } else {
+        // Inside: render at cursor-driven position (the dragged shape is the charged one)
+        drawShapeAt(s, docX + s.x, docY + s.y, 1, 1, true);
+      }
+    } else {
+      drawShapeAt(s, docX + s.x, docY + s.y, 1);
+    }
+  }
+
+  requestAnimationFrame(draw);
+}
+
+// ───── Bottom-bar export preview ─────
+const BASE_PX = 1080;
+function exportBar(shape, info) {
+  const size = BASE_PX * info.tier;
+  setBar(
+    seg(key('Export')) +
+    seg(fileOf(shape, info.format)) +
+    seg(size + ' × ' + size) +
+    seg(info.tier + '×')
+  );
+}
+
+// ───── Input ─────
+const cursor  = document.getElementById('cursor');
+const toggle  = document.getElementById('toggle');
+
+window.addEventListener('pointermove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top  = mouseY + 'px';
+  if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    const c = classifyCursor(mouseX, mouseY);
+    if (c.beyond) {
+      // In the export zone: the shape "leaves" - its actual x/y stay at home.
+      document.body.classList.add('beyond');
+      if (s) exportBar(s, c);
+    } else {
+      document.body.classList.remove('beyond');
+      if (s) {
+        moveBar(s);
+        s.x = clamp((mouseX - docX) - drag.dx, s.r, docSize - s.r);
+        s.y = clamp((mouseY - docY) - drag.dy, s.r, docSize - s.r);
+      }
+    }
+  }
+});
+
+window.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  if (e.button !== 0) return;
+  const h = hitShape(e.clientX, e.clientY);
+  if (!h) return;
+  e.preventDefault();
+  // Seed the position now: touch has no prior hover, so the flying preview needs it immediately.
+  mouseX = e.clientX; mouseY = e.clientY;
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top  = mouseY + 'px';
+  drag = {
+    id: h.id,
+    dx: (e.clientX - docX) - h.x,
+    dy: (e.clientY - docY) - h.y,
+    homeX: h.x,
+    homeY: h.y,
+  };
+  try { C.setPointerCapture(e.pointerId); } catch (_) {}
+  document.body.classList.add('dragging');
+  moveBar(h);
+});
+
+window.addEventListener('pointerup', () => {
+  if (!drag) return;
+  const s = shapes.find(x => x.id === drag.id);
+  const home = { x: drag.homeX, y: drag.homeY };
+  const c = classifyCursor(mouseX, mouseY);
+
+  drag = null;
+  document.body.classList.remove('dragging', 'beyond');
+
+  if (c.beyond && s) {
+    // Commit export: shape snaps home, the bottom bar confirms, then reverts to the how-to.
+    s.x = home.x; s.y = home.y;
+    s.nx = s.x / docSize; s.ny = s.y / docSize;
+    const size = BASE_PX * c.tier;
+    flashBar(
+      seg(key('Exported')) +
+      seg(fileOf(s, c.format)) +
+      seg(size + ' × ' + size) +
+      seg(c.tier + '×'),
+      1800
+    );
+  } else {
+    // Normal move - x/y already updated via pointermove; sync normalized coords.
+    if (s) { s.nx = s.x / docSize; s.ny = s.y / docSize; }
+    idleBar();
+  }
+});
+
+window.addEventListener('pointercancel', () => {
+  if (!drag) return;
+  const s = shapes.find(x => x.id === drag.id);
+  if (s) { s.nx = s.x / docSize; s.ny = s.y / docSize; }
+  drag = null;
+  document.body.classList.remove('dragging', 'beyond');
+  idleBar();
+});
+
+toggle.addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  ui.theme(dark ? 'dark' : 'light');
+  readTheme();
+});
+
+draw();
+</script>
+</body>
+</html>

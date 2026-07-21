@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<!--
+  Nest - self-packing nested frames
+  Drag a shape into a frame to nest it: the frame auto-packs its children in a grid and resizes to fit, and frames nest in frames.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Nest - self-packing nested frames</title>
+<meta name="description" content="Drag a shape into a frame to nest it: the frame auto-packs its children in a grid and resizes to fit, and frames nest in frames.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Nest - self-packing nested frames">
+<meta property="og:description" content="Drag a shape into a frame to nest it: the frame auto-packs its children in a grid and resizes to fit, and frames nest in frames.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Nest",
+  "applicationCategory": "DesignApplication",
+  "description": "Drag a shape into a frame to nest it: the frame auto-packs its children in a grid and resizes to fit, and frames nest in frames.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "nest, interaction design, layout, nesting, containment, auto layout, packing, frames, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white:#FAFAFA; --c-grey:#8A8A8A; --c-black:#0A0A0A;
+  --bg: var(--c-white);
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.12);
+  --mid: rgba(10,10,10,0.30);
+  --active: rgba(10,10,10,0.60);
+  --panel: rgba(10,10,10,0.05);
+  --obj: rgb(98,103,113);   /* theme-aware object grey (shape fills) */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.12);
+  --mid: rgba(250,250,250,0.30);
+  --active: rgba(250,250,250,0.60);
+  --panel: rgba(250,250,250,0.05);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); color:var(--fg); font-family:'DM Sans',sans-serif; cursor:none; transition:background .4s var(--ease); touch-action:none; overscroll-behavior:none; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+#c { position:fixed; inset:0; z-index:1; }
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+.cursor{position:fixed;z-index:50;pointer-events:none;width:28px;height:28px;transform:translate(-50%,-50%);}
+.cursor .ring{position:absolute;inset:0;border:1px solid var(--c-grey);border-radius:50%;transition:transform .2s var(--ease),border-color .2s var(--ease);}
+.cursor .cross{position:absolute;left:50%;top:50%;background:var(--c-grey);transform:translate(-50%,-50%);transition:background .2s var(--ease);}
+.cursor .cross.h{width:10px;height:1px;} .cursor .cross.v{width:1px;height:10px;}
+body.grabbing .cursor .ring{border-color:var(--fg);transform:scale(1.35);}
+body.grabbing .cursor .cross{background:var(--fg);}
+@media (hover:none) and (pointer:coarse){ html,body{cursor:auto;} .cursor{display:none;} }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+let W = 0, H = 0, prevW = 0, prevH = 0;
+
+const HINTS = 'Drag a shape into a frame to nest it · The frame packs and resizes to fit · Drag a child out to release · Frames nest in frames · R reset';
+const ui = PT.ui({ title: 'Nest', hints: HINTS, theme: 'light' });
+const pill = document.querySelector('.adui-pill');
+const seg = h => '<span class="adui-seg">' + h + '</span>';
+const key = t => '<b class="adui-key">' + t + '</b>';
+let barTimer = null, lastBar = '';
+function setBar(h){ clearTimeout(barTimer); if (pill && h !== lastBar){ pill.innerHTML = h; lastBar = h; } }
+function idleBar(){ clearTimeout(barTimer); lastBar = ''; ui.setHints(HINTS); }
+function flashBar(h, ms){ setBar(h); barTimer = setTimeout(() => { if (!drag) idleBar(); }, ms); }
+
+const cursor = document.getElementById('cursor');
+const toggle = document.getElementById('toggle');
+
+let COL = {};
+function readTheme(){
+  const cs = getComputedStyle(document.body);
+  COL = { bg: cs.getPropertyValue('--bg').trim(), fg: cs.getPropertyValue('--fg').trim(),
+          dim: cs.getPropertyValue('--dim').trim(), mid: cs.getPropertyValue('--mid').trim(),
+          active: cs.getPropertyValue('--active').trim(), panel: cs.getPropertyValue('--panel').trim(),
+          obj: cs.getPropertyValue('--obj').trim() };
+}
+readTheme();
+
+const TYPES = ['circle', 'square', 'triangle'];
+
+let nodes = [], byId = {}, uid = 0;
+let drag = null;   // { id, ox, oy }
+let dropTarget = null;
+let mx = -100, my = -100;
+let SCALE = 1;
+
+function addShape(x, y, type){ const n = { id: ++uid, type: 'shape', x, y, r: 0, baseR: 1, type2: type, parent: null, w: 0, h: 0 }; nodes.push(n); byId[n.id] = n; return n; }
+function addFrame(x, y, name){ const n = { id: ++uid, type: 'frame', x, y, name, parent: null, children: [], w: 0, h: 0 }; nodes.push(n); byId[n.id] = n; return n; }
+
+function resize(){
+  prevW = W || window.innerWidth; prevH = H || window.innerHeight;
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  SCALE = Math.min(W, H) / 900;
+  if (nodes.length && prevW && prevH){
+    const sr = Math.min(W / prevW, H / prevH), ocx = prevW / 2, ocy = prevH / 2, ncx = W / 2, ncy = H / 2;
+    for (const n of nodes){ if (n.parent == null){ n.x = ncx + (n.x - ocx) * sr; n.y = ncy + (n.y - ocy) * sr; } }
+  }
+}
+
+function seed(){
+  nodes = []; byId = {}; uid = 0; drag = null; dropTarget = null;
+  const S = Math.min(W, H);
+  const R = S * 0.03;
+  const fA = addFrame(W * 0.3, H * 0.42, 'Frame A');
+  const s1 = addShape(0, 0, 'circle'); s1.baseR = R;
+  const s2 = addShape(0, 0, 'square'); s2.baseR = R;
+  attach(s1, fA); attach(s2, fA);
+  addFrame(W * 0.7, H * 0.5, 'Frame B');
+  const loose = [[0.15, 0.72, 'triangle'], [0.5, 0.74, 'circle'], [0.84, 0.28, 'square'], [0.62, 0.2, 'triangle']];
+  for (const [nx, ny, t] of loose){ const s = addShape(W * nx, H * ny, t); s.baseR = R; }
+}
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+function roots(){ return nodes.filter(n => n.parent == null); }
+
+function attach(child, frame){ detach(child); child.parent = frame.id; frame.children.push(child.id); }
+function detach(child){ if (child.parent != null){ const p = byId[child.parent]; if (p) p.children = p.children.filter(id => id !== child.id); child.parent = null; } }
+function isDescendant(id, ancestorId){ let n = byId[id]; while (n && n.parent != null){ if (n.parent === ancestorId) return true; n = byId[n.parent]; } return false; }
+
+// Post-order sizing.
+function sizeNode(n){
+  if (n.type === 'shape'){ n.r = n.baseR * SCALE; n.w = n.r * 2.3; n.h = n.r * 2.3; return; }
+  const kids = n.children.map(id => byId[id]);
+  for (const k of kids) sizeNode(k);
+  const pad = 16 * SCALE, gap = 12 * SCALE, labelH = 22 * SCALE;
+  if (!kids.length){ n.w = 140 * SCALE; n.h = 104 * SCALE; n.cols = 0; return; }
+  const cols = Math.ceil(Math.sqrt(kids.length)), rows = Math.ceil(kids.length / cols);
+  let cw = 0, ch = 0; for (const k of kids){ cw = Math.max(cw, k.w); ch = Math.max(ch, k.h); }
+  n.cellW = cw; n.cellH = ch; n.cols = cols; n.pad = pad; n.gap = gap; n.labelH = labelH;
+  n.w = pad * 2 + cols * cw + (cols - 1) * gap;
+  n.h = pad * 2 + labelH + rows * ch + (rows - 1) * gap;
+}
+// Pre-order placement (centers).
+function placeChildren(n){
+  if (n.type !== 'frame' || !n.children.length) return;
+  const kids = n.children.map(id => byId[id]);
+  const ox = n.x - n.w / 2 + n.pad, oy = n.y - n.h / 2 + n.pad + n.labelH;
+  for (let i = 0; i < kids.length; i++){
+    const col = i % n.cols, row = Math.floor(i / n.cols);
+    kids[i].x = ox + col * (n.cellW + n.gap) + n.cellW / 2;
+    kids[i].y = oy + row * (n.cellH + n.gap) + n.cellH / 2;
+    placeChildren(kids[i]);
+  }
+}
+function layout(){ for (const r of roots()) sizeNode(r); for (const r of roots()) placeChildren(r); }
+
+function pointInFrame(n, x, y){ return Math.abs(x - n.x) <= n.w / 2 && Math.abs(y - n.y) <= n.h / 2; }
+function pointInShape(n, x, y){ return Math.hypot(x - n.x, y - n.y) <= n.r + 4; }
+
+function nodeAt(n, x, y){
+  if (n.type === 'frame'){
+    for (let i = n.children.length - 1; i >= 0; i--){ const r = nodeAt(byId[n.children[i]], x, y); if (r) return r; }
+    return pointInFrame(n, x, y) ? n : null;
+  }
+  return pointInShape(n, x, y) ? n : null;
+}
+function topNodeAt(x, y){ const rs = roots(); for (let i = rs.length - 1; i >= 0; i--){ const r = nodeAt(rs[i], x, y); if (r) return r; } return null; }
+
+function frameAt(n, x, y, excludeId){
+  if (n.type !== 'frame' || n.id === excludeId) return null;
+  for (let i = n.children.length - 1; i >= 0; i--){ const f = frameAt(byId[n.children[i]], x, y, excludeId); if (f) return f; }
+  return pointInFrame(n, x, y) ? n : null;
+}
+function topFrameAt(x, y, excludeId){ const rs = roots(); for (let i = rs.length - 1; i >= 0; i--){ const f = frameAt(rs[i], x, y, excludeId); if (f) return f; } return null; }
+
+function shapePath(type, r){
+  X.beginPath();
+  if (type === 'square'){ const h = r * 0.88; X.rect(-h, -h, h * 2, h * 2); }
+  else if (type === 'triangle'){ const tr = r * 1.12; for (let i = 0; i < 3; i++){ const a = -Math.PI / 2 + i * (Math.PI * 2 / 3); const px = tr * Math.cos(a), py = tr * Math.sin(a); i ? X.lineTo(px, py) : X.moveTo(px, py); } X.closePath(); }
+  else X.arc(0, 0, r, 0, Math.PI * 2);
+}
+
+function drawNode(n, depth){
+  if (n.type === 'frame'){
+    X.save();
+    X.fillStyle = COL.panel;
+    X.beginPath(); X.roundRect(n.x - n.w / 2, n.y - n.h / 2, n.w, n.h, 12 * SCALE); X.fill();
+    if (dropTarget && dropTarget.id === n.id){ X.strokeStyle = COL.fg; X.lineWidth = 1.5; X.stroke(); }
+    X.fillStyle = COL.active;
+    X.font = '600 ' + Math.round(11 * SCALE) + 'px "IBM Plex Mono", monospace';
+    X.textBaseline = 'middle'; X.textAlign = 'left';
+    X.fillText(n.name + '  ' + n.children.length, n.x - n.w / 2 + 14 * SCALE, n.y - n.h / 2 + 13 * SCALE);
+    X.restore();
+    for (const id of n.children) drawNode(byId[id], depth + 1);
+  } else {
+    X.save();
+    X.translate(n.x, n.y);
+    const charged = drag && drag.id === n.id;   // the dragged shape is the one charged thing
+    X.fillStyle = charged ? '#FBF251' : COL.obj;
+    shapePath(n.type2, n.r);
+    X.fill();
+    X.restore();
+  }
+}
+
+function draw(){
+  layout();
+  // keep dragged node under cursor (root during drag)
+  if (drag){ const n = byId[drag.id]; n.x = mx - drag.ox; n.y = my - drag.oy; }
+  X.fillStyle = COL.bg; X.fillRect(0, 0, W, H);
+  for (const r of roots()) drawNode(r, 0);
+  requestAnimationFrame(draw);
+}
+
+window.addEventListener('resize', resize);
+resize(); seed(); draw();
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (drag){
+    dropTarget = topFrameAt(mx, my, drag.id);
+    setBar(dropTarget ? seg(key('Drop into')) + seg(dropTarget.name) : seg(key('Release')) + seg('as free node'));
+  }
+});
+
+window.addEventListener('pointerdown', e => {
+  if (e.target.closest('#toggle, .adui')) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  const n = topNodeAt(mx, my);
+  if (!n) return;
+  try { C.setPointerCapture(e.pointerId); } catch(_) {}
+  // Pull out of any parent, becoming a free root at its current position.
+  if (n.parent != null) detach(n);
+  // bring to end (top of z-order among roots)
+  nodes = nodes.filter(x => x !== n); nodes.push(n);
+  drag = { id: n.id, ox: mx - n.x, oy: my - n.y };
+  document.body.classList.add('grabbing');
+});
+
+window.addEventListener('pointerup', () => {
+  if (drag){
+    const n = byId[drag.id];
+    const f = topFrameAt(mx, my, drag.id);
+    if (f && !isDescendant(f.id, n.id)){
+      attach(n, f);
+      flashBar(seg(key('Nested')) + seg('into ' + f.name), 1400);
+      navigator.vibrate && navigator.vibrate(6);
+    } else {
+      n.x = clamp(n.x, 40, W - 40); n.y = clamp(n.y, 70, H - 60);
+      if (lastBar.indexOf('Drop') >= 0 || lastBar.indexOf('Release') >= 0) flashBar(seg(key('Released')) + seg('to canvas'), 1200);
+      else idleBar();
+    }
+  }
+  drag = null; dropTarget = null;
+  document.body.classList.remove('grabbing');
+});
+window.addEventListener('pointercancel', () => { drag = null; dropTarget = null; document.body.classList.remove('grabbing'); idleBar(); });
+
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); ui.theme(dark ? 'dark' : 'light'); readTheme(); });
+
+window.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if ((e.key === 'r' || e.key === 'R') && !e.repeat){ seed(); idleBar(); }
+});
+</script>
+</body>
+</html>

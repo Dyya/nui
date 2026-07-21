@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<!--
+  Sentence forge - spell the sentence, dodge the numbers
+  A casual word-arcade. Each round hands you a fixed sentence to spell, one word at a
+  time: steer the head to the glowing letters and gather each word, while dodging the
+  drifting number blocks (a hit scatters the word you are mid-spelling). The round's
+  goal sentence is typeset live by Pretext in the side panel; complete it to advance.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · http://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Sentence forge - spell the sentence, dodge the numbers</title>
+<meta name="description" content="A casual word-arcade: each round gives you a sentence to spell one word at a time. Steer to the glowing letters and dodge the drifting numbers. The goal sentence is typeset live by Pretext.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="http://adidizdarevic.com/">
+<meta name="theme-color" content="#0A0A0A">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Sentence forge - spell the sentence, dodge the numbers">
+<meta property="og:description" content="Spell each round's sentence one word at a time, steering to the glowing letters while you dodge the drifting numbers. Goal sentence typeset by Pretext.">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Sentence forge",
+  "applicationCategory": "GameApplication",
+  "description": "A casual word-arcade game. Each round gives a fixed sentence to spell one word at a time: steer a head to the glowing letters and gather each word while dodging drifting number blocks that scatter the word you are mid-spelling. The round's goal sentence is typeset live by Pretext in a side panel. Complete it to advance to a longer round.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "typography, typesetting, pretext, line-breaking, game, arcade, snake, spelling, kinetic, canvas",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "http://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "http://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400..600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  html,body{margin:0;height:100%;background:#0A0A0A;overflow:hidden;}
+  #stage{position:fixed;inset:0;display:block;background:#0A0A0A;touch-action:none;}
+  /* House mono system: accent is fill-only (never text), so the masthead link hovers to Paper. */
+  .adui-mark:hover{color:#FAFAFA !important;}
+</style>
+
+<script src="../typography/core/ui.js"></script>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<script type="module">
+// Pretext still does real work here: it line-breaks each round's GOAL SENTENCE to the side
+// panel's width (incremental line API), so the sentence you are spelling is genuinely typeset,
+// not hand-wrapped. The play loop is a casual letter-gather + dodge; the panel is the score card.
+import { prepareWithSegments, layoutNextLineRange, materializeLineRange }
+  from 'https://esm.sh/@chenglou/pretext@0.0.7';
+
+/* ============================================================ ROUNDS
+   Fixed sentences, one per round, escalating in length. All lowercase, common words -
+   you spell them word by word, left to right. After the last, they cycle while the
+   hazard pressure keeps climbing with the round number. */
+const SENTENCES = [
+  "type is order",
+  "form follows flow",
+  "letters find a place",
+  "the quick brown fox",
+  "a page breathes with space",
+  "read the shape then the sound",
+  "white space is a design tool",
+  "order emerges under gentle pressure",
+  "motion is the source of every form",
+  "good type stays invisible until you look",
+];
+const ALPHA = 'abcdefghijklmnopqrstuvwxyz';
+const FREQ_POOL = 'eeeeaaaariiioootttnnnsssllcdumphgbyfvkwz';   // ambient letter soup, vowel-biased
+
+/* ============================================================ CANVAS + LAYOUT */
+const cv = document.getElementById('stage');
+const ctx = cv.getContext('2d', { alpha:false });
+let W=0, H=0, DPR=1;
+
+// play square (left) - snake, letters, hazards all live inside these bounds
+let px=0, py=0, ps=0;                         // square origin + side
+let fieldLeft=0, fieldRight=0, fieldTop=0, fieldBottom=0;   // inset play bounds
+const INSET = 16;
+
+// info panel (right, or below on narrow screens) - round, goal sentence, tray, score
+let panelX=0, panelY=0, panelW=0, panelH=0;
+const PP = 16;                                 // panel inner padding
+
+// Pretext typesetting of the goal sentence (targets the panel text column)
+let MEASURE_W=200, colX=0, colTop=0, sentFS=18, sentLH=26, SENT_FONT='500 18px "DM Sans"';
+
+function computeMetrics(){
+  const topBar = 62;                           // clearance under the masthead pill
+  const botBar = 56;                           // clearance above the legend pill
+  const padX = 26;
+  const availTop = topBar, availBot = H - botBar, bandH = availBot - availTop;
+
+  if (W >= 760){
+    // square CENTERED on screen; the panel sits in the right gutter, mirrored by an equal
+    // empty left gutter, so the play field reads as centred rather than left-shifted.
+    panelW = Math.round(clamp(W*0.22, 210, 300));
+    const gap = 26;
+    ps = Math.round(Math.min(bandH, W - 2*(gap+panelW)));
+    px = Math.round((W - ps)/2);
+    py = Math.round(availTop + (bandH - ps)/2);
+    panelX = px + ps + gap;
+    panelY = py;
+    panelH = ps;
+  } else {
+    // stacked: square on top, panel below
+    ps = Math.round(Math.min(bandH*0.60, W - 2*padX));
+    px = Math.round((W - ps)/2);
+    py = availTop;
+    panelX = padX;
+    panelY = py + ps + 18;
+    panelW = W - 2*padX;
+    panelH = Math.max(96, availBot - panelY);
+  }
+  fieldLeft = px+INSET; fieldRight = px+ps-INSET;
+  fieldTop = py+INSET; fieldBottom = py+ps-INSET;
+
+  // Pretext column = the panel text width; size the face to the panel
+  sentFS = Math.round(clamp(panelW*0.072, 15, 20));
+  sentLH = Math.round(sentFS*1.42);
+  SENT_FONT = `500 ${sentFS}px "DM Sans"`;
+  MEASURE_W = panelW - 2*PP;
+  colX = panelX + PP;
+  colTop = panelY + 46;
+  wwCache.clear(); prepCache.clear();
+  layout = computeWordLayout(words.join(' '));
+}
+
+function resize(){
+  DPR = Math.min(2, window.devicePixelRatio||1);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = Math.round(W*DPR); cv.height = Math.round(H*DPR);
+  cv.style.width = W+'px'; cv.style.height = H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  computeMetrics();
+  if (state==='play'){
+    head.x = clamp(head.x, fieldLeft+8, fieldRight-8);
+    head.y = clamp(head.y, fieldTop+8, fieldBottom-8);
+  }
+}
+window.addEventListener('resize', resize);
+
+/* ============================================================ FONTS */
+let fontsReady=false;
+async function loadFonts(){
+  try{
+    await Promise.race([ Promise.all([
+      document.fonts.load('500 22px "DM Sans"'),
+      document.fonts.load('600 22px "DM Sans"'),
+      document.fonts.load('500 20px "IBM Plex Mono"'),
+      document.fonts.load('600 20px "IBM Plex Mono"'),
+    ]), new Promise(r=>setTimeout(r,3000)) ]);
+    await Promise.race([ document.fonts.ready, new Promise(r=>setTimeout(r,3000)) ]);
+  }catch(e){}
+  fontsReady=true;
+}
+
+/* ============================================================ PRETEXT ADAPTER
+   prepare() cached; the incremental line-break loop runs on a resize / word advance,
+   never every frame. The panel is left-ragged (Pretext still decides the breaks). */
+const prepCache = new Map();
+const wwCache = new Map();
+function getPrep(sentence){
+  let p = prepCache.get(sentence);
+  if (!p){ p = prepareWithSegments(sentence, SENT_FONT, { whiteSpace:'normal' }); prepCache.set(sentence,p); }
+  return p;
+}
+function wordW(w){
+  let v = wwCache.get(w);
+  if (v===undefined){ ctx.font = SENT_FONT; v = ctx.measureText(w).width; wwCache.set(w,v); }
+  return v;
+}
+function computeWordLayout(sentence){
+  if (!sentence) return { lineCount:0, wordPos:[], lines:[] };
+  ctx.font = SENT_FONT;
+  const prep = getPrep(sentence);
+  const lineTexts = [];
+  let cursor = { segmentIndex:0, graphemeIndex:0 }, guard=0;
+  while (true){
+    const range = layoutNextLineRange(prep, cursor, MEASURE_W);
+    if (range===null) break;
+    lineTexts.push(materializeLineRange(prep, range).text);
+    cursor = range.end;
+    if (++guard > 400) break;
+  }
+  const space = ctx.measureText(' ').width;
+  const wordPos = [], lines = [];
+  for (let li=0; li<lineTexts.length; li++){
+    const ws = lineTexts[li].split(/\s+/).filter(Boolean);
+    const y = colTop + sentFS + li*sentLH;
+    let cx = colX; const lineWords = [];
+    for (const w of ws){
+      const ww = wordW(w);
+      const wp = { x:cx, y, w:ww, word:w };
+      wordPos.push(wp); lineWords.push(wp);
+      cx += ww + space;
+    }
+    lines.push({ y, words:lineWords });
+  }
+  return { lineCount: lineTexts.length, wordPos, lines };
+}
+
+/* ============================================================ GAME STATE */
+let state = 'loading';          // loading | title | play
+let round = 0;
+let words = [];                 // current sentence split to words
+let wordIdx = 0;                // which word we are spelling
+let target = '';                // words[wordIdx]
+let got = 0;                    // letters of target collected so far
+let score = 0, best = 0;
+let layout = { lineCount:0, wordPos:[], lines:[] };
+
+// snake
+const head = { x:0, y:0 };
+let heading = -Math.PI/2, targetHeading = -Math.PI/2, speed = 200;
+let path = [];
+let pathLen = 0;
+let tail = [];                  // {ch, dx, dy} - the letters of the current word, collected
+const HEAD_R=7, TOK_R=14, HAZ_R=13, TAIL_SP=20, NECK=6, TURN_RATE=7.6;
+
+// field contents (all inside the play square)
+let tokens = [];                // {ch, x,y, vx,vy, morph} - instances of the NEXT needed letter
+let ambient = [];               // {ch, x,y, vx,vy, morph} - dim letter-soup texture (non-collectible)
+let hazards = [];               // {n, x,y, vx,vy, morph} - drifting number blocks
+let seq = 0;
+const AMBIENT_N = 11, TOKEN_N = 3;
+function HAZARD_N(){ return clamp(2 + Math.floor(round*0.8), 2, 8); }
+function hazSpeed(){ return 16 + round*2.2; }
+
+// juice
+let beat=0, bpm=92;
+let shake=0, scatterFx=[], impact=null;
+let collectCooldown=0;
+let roundBanner=null;           // {t, dur, text}
+let hint=null;                  // first-collection nudge
+
+// input
+let steerMode='key';
+let pointer = { x:0, y:0, touch:false };
+const keys = new Set();
+
+/* ---------- utils ---------- */
+function clamp(v,a,b){ return v<a?a:v>b?b:v; }
+function lerp(a,b,t){ return a+(b-a)*t; }
+function rand(a,b){ return a + Math.random()*(b-a); }
+function easeOutCubic(t){ return 1-Math.pow(1-t,3); }
+function angleDelta(a,b){ let d=b-a; while(d>Math.PI)d-=2*Math.PI; while(d<-Math.PI)d+=2*Math.PI; return d; }
+function rgbaInk(a){ return 'rgba(250,250,250,'+a+')'; }     // Paper #FAFAFA
+function rgbaAcc(a){ return 'rgba(251,242,81,'+a+')'; }      // Accent yellow #FBF251 (fill only)
+function rgbaObj(a){ return 'rgba(132,137,148,'+a+')'; }     // cool-slate --obj (hazards)
+function pickFreq(){ return FREQ_POOL[(Math.random()*FREQ_POOL.length)|0]; }
+function roundRectPath(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+
+/* ============================================================ FIELD (inside the square) */
+function spawnPos(){ return { x: rand(fieldLeft+18, fieldRight-18), y: rand(fieldTop+18, fieldBottom-18) }; }
+function makeDrifter(ch, sp){
+  const p = spawnPos(), ang = rand(0, Math.PI*2), s = sp || rand(12,20);
+  return { ch, x:p.x, y:p.y, vx:Math.cos(ang)*s, vy:Math.sin(ang)*s, morph:0, born:seq++ };
+}
+function driftUpdate(arr, dt, wander, maxsp){
+  for (const f of arr){
+    f.vx += rand(-wander,wander)*dt; f.vy += rand(-wander,wander)*dt;
+    const sp = Math.hypot(f.vx,f.vy);
+    if (sp>maxsp){ f.vx*=maxsp/sp; f.vy*=maxsp/sp; }
+    f.x += f.vx*dt; f.y += f.vy*dt;
+    if (f.x<fieldLeft+12){ f.x=fieldLeft+12; f.vx=Math.abs(f.vx); }
+    if (f.x>fieldRight-12){ f.x=fieldRight-12; f.vx=-Math.abs(f.vx); }
+    if (f.y<fieldTop+12){ f.y=fieldTop+12; f.vy=Math.abs(f.vy); }
+    if (f.y>fieldBottom-12){ f.y=fieldBottom-12; f.vy=-Math.abs(f.vy); }
+    if (f.morph<1) f.morph=Math.min(1,f.morph+dt*3);
+  }
+}
+function neededLetter(){ return got < target.length ? target[got] : null; }
+function resetTokens(){
+  tokens = [];
+  const n = neededLetter(); if (!n) return;
+  for (let i=0;i<TOKEN_N;i++) tokens.push(makeDrifter(n, rand(14,22)));
+}
+function ensureAmbient(){
+  while (ambient.length < AMBIENT_N) ambient.push(makeDrifter(pickFreq()));
+  while (ambient.length > AMBIENT_N) ambient.shift();
+}
+
+/* ============================================================ HAZARDS */
+function makeHazard(){
+  const p = spawnPos(), ang = rand(0, Math.PI*2), s = hazSpeed();
+  return { n:String((Math.random()*10)|0), x:p.x, y:p.y, vx:Math.cos(ang)*s, vy:Math.sin(ang)*s, morph:0, born:seq++ };
+}
+function ensureHazards(){
+  while (hazards.length < HAZARD_N()) hazards.push(makeHazard());
+  while (hazards.length > HAZARD_N()) hazards.shift();
+}
+function recycleHazard(h){
+  let p; for (let i=0;i<8;i++){ p=spawnPos(); if (Math.hypot(p.x-head.x,p.y-head.y)>120) break; }
+  h.n=String((Math.random()*10)|0); h.x=p.x; h.y=p.y; h.morph=0;
+  const ang=rand(0,Math.PI*2), s=hazSpeed(); h.vx=Math.cos(ang)*s; h.vy=Math.sin(ang)*s;
+}
+
+/* ============================================================ SNAKE */
+// Classic-snake wrap: leave through one edge, reappear on the opposite one. Shift the whole
+// snake (head + trailing path + tail glyphs) by the field size so the tail stays continuous
+// across the seam instead of streaking across the square. Letters/hazards still bounce (food
+// stays in bounds) - only the snake wraps.
+function wrapHead(){
+  const fw = fieldRight-fieldLeft, fh = fieldBottom-fieldTop;
+  let dx=0, dy=0;
+  if (head.x < fieldLeft) dx = fw; else if (head.x > fieldRight) dx = -fw;
+  if (head.y < fieldTop) dy = fh; else if (head.y > fieldBottom) dy = -fh;
+  if (dx||dy){
+    head.x+=dx; head.y+=dy;
+    for (const p of path){ p.x+=dx; p.y+=dy; }
+    for (const s of tail){ s.dx+=dx; s.dy+=dy; }
+  }
+}
+function pushPath(x,y){
+  const last = path[path.length-1];
+  if (last) pathLen += Math.hypot(x-last.x, y-last.y);
+  path.push({x,y});
+  const need = 14*TAIL_SP + 80;
+  while (pathLen>need && path.length>2){
+    const a=path[0], b=path[1];
+    pathLen -= Math.hypot(a.x-b.x, a.y-b.y);
+    path.shift();
+  }
+}
+function pointAtDist(d){
+  let rem=d;
+  for (let i=path.length-1; i>0; i--){
+    const a=path[i], b=path[i-1], seg=Math.hypot(a.x-b.x, a.y-b.y);
+    if (seg>=rem){ const t=seg? rem/seg : 0; return { x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t }; }
+    rem-=seg;
+  }
+  return path.length ? { x:path[0].x, y:path[0].y } : { x:head.x, y:head.y };
+}
+function computeTarget(){
+  if (steerMode==='pointer'){
+    let tx=pointer.x, ty=pointer.y;
+    if (pointer.touch){ tx += Math.cos(heading)*46; ty += Math.sin(heading)*46; }
+    const dx=tx-head.x, dy=ty-head.y;
+    if (Math.hypot(dx,dy)>4) targetHeading = Math.atan2(dy,dx);
+  } else {
+    let kx=0, ky=0;
+    if (keys.has('ArrowLeft')||keys.has('a')) kx-=1;
+    if (keys.has('ArrowRight')||keys.has('d')) kx+=1;
+    if (keys.has('ArrowUp')||keys.has('w')) ky-=1;
+    if (keys.has('ArrowDown')||keys.has('s')) ky+=1;
+    if (kx||ky) targetHeading = Math.atan2(ky,kx);
+  }
+}
+function updateSnake(dt){
+  computeTarget();
+  speed = Math.min(320, 190 + round*6);
+  heading += clamp(angleDelta(heading, targetHeading), -TURN_RATE*dt, TURN_RATE*dt);
+  head.x += Math.cos(heading)*speed*dt;
+  head.y += Math.sin(heading)*speed*dt;
+  wrapHead();
+  pushPath(head.x, head.y);
+  for (let k=0;k<tail.length;k++){
+    const p = pointAtDist((k+1)*TAIL_SP), s = tail[k], a = 1-Math.exp(-34*dt);
+    s.dx += (p.x-s.dx)*a; s.dy += (p.y-s.dy)*a;
+  }
+  if (collectCooldown>0) collectCooldown -= dt;
+  // grab the next needed letter
+  if (collectCooldown<=0 && got < target.length){
+    for (const tk of tokens){
+      if (Math.hypot(head.x-tk.x, head.y-tk.y) < HEAD_R+TOK_R){ collectLetter(tk); break; }
+    }
+  }
+  // hazards: a hit scatters the word you are mid-spelling (finished words are safe)
+  for (const h of hazards){
+    if (Math.hypot(head.x-h.x, head.y-h.y) < HEAD_R+HAZ_R){ hitHazard(h); break; }
+  }
+}
+function collectLetter(tk){
+  const ch = target[got];
+  tail.push({ ch, dx:tk.x, dy:tk.y });
+  got++;
+  if (!hint){ hint={t:0,dur:2.2}; }
+  sfxPick(got);
+  if (got >= target.length){ bankWord(); }
+  else { resetTokens(); ensureHazards(); }
+}
+function bankWord(){
+  score += target.length*10;
+  if (score>best){ best=score; saveBest(); }
+  wordIdx++;
+  if (wordIdx >= words.length){ completeRound(); return; }
+  target = words[wordIdx]; got = 0;
+  tail = []; collectCooldown = 0.18;
+  resetTokens(); ensureHazards();
+  sfxBank(target.length);
+}
+function completeRound(){
+  score += 60;
+  if (score>best){ best=score; saveBest(); }
+  roundBanner = { t:0, dur:1.8, text:'Round '+(round+1)+' complete' };
+  round++;
+  loadRound();
+  sfxRound();
+}
+function hitHazard(h){
+  for (const s of tail) scatterFx.push({ ch:s.ch, x:s.dx, y:s.dy, vx:rand(-190,190), vy:rand(-260,-70), life:0.7 });
+  tail = []; got = 0;
+  shake = Math.min(14, shake + 12);
+  impact = { x:h.x, y:h.y, t:0 };
+  collectCooldown = 0.3;
+  recycleHazard(h);
+  resetTokens();
+  sfxScatter();
+}
+function updateScatter(dt){
+  if (shake>0) shake = Math.max(0, shake - dt*46);
+  if (impact){ impact.t += dt; if (impact.t>0.5) impact=null; }
+  for (let i=scatterFx.length-1;i>=0;i--){
+    const s=scatterFx[i];
+    s.vx*=(1-1.6*dt); s.vy+=560*dt; s.x+=s.vx*dt; s.y+=s.vy*dt; s.life-=dt;
+    if (s.life<=0) scatterFx.splice(i,1);
+  }
+}
+
+/* ============================================================ AUDIO */
+let actx=null, muted=false;
+function initAudio(){ if (actx) return; try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ actx=null; } }
+function resumeAudio(){ try{ if (actx && actx.state==='suspended') actx.resume(); }catch(e){} }
+function blip(freq,dur,type,gain){
+  if (!actx||muted) return;
+  try{
+    const t=actx.currentTime, o=actx.createOscillator(), g=actx.createGain();
+    o.type=type||'sine'; o.frequency.value=freq;
+    o.connect(g); g.connect(actx.destination);
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(gain||0.05, t+0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    o.start(t); o.stop(t+dur+0.02);
+  }catch(e){}
+}
+function sfxPick(n){ blip(430 + n*36, 0.08, 'triangle', 0.04); }
+function sfxBank(len){ blip(196, 0.18, 'sine', 0.07); blip(len*40+220, 0.2, 'sine', 0.04); }
+function sfxRound(){ blip(262,0.24,'sine',0.06); blip(330,0.26,'sine',0.05); blip(392,0.3,'sine',0.05); }
+function sfxScatter(){ blip(150,0.16,'square',0.05); blip(90,0.22,'sawtooth',0.04); }
+
+/* ============================================================ PERSISTENCE */
+function saveBest(){ try{ localStorage.setItem('forge.best', String(best)); }catch(e){} }
+function loadBest(){ try{ best=+(localStorage.getItem('forge.best')||0)||0; }catch(e){} }
+
+/* ============================================================ LIFECYCLE */
+function loadRound(){
+  const s = SENTENCES[round % SENTENCES.length];
+  words = s.split(' ');
+  wordIdx = 0; target = words[0]; got = 0;
+  tail = []; path = []; pathLen = 0; collectCooldown = 0;
+  layout = computeWordLayout(words.join(' '));
+  ambient = []; ensureAmbient();
+  hazards = []; ensureHazards();
+  resetTokens();
+}
+function resetGame(){
+  prepCache.clear();
+  round = 0; score = 0;
+  head.x = (fieldLeft+fieldRight)/2; head.y = (fieldTop+fieldBottom)/2;
+  heading = -Math.PI/2; targetHeading = -Math.PI/2;
+  scatterFx=[]; shake=0; impact=null; roundBanner=null; hint=null;
+  loadRound();
+  state='play';
+}
+
+/* ============================================================ UPDATE */
+function update(dt){
+  beat += dt*(bpm/60);
+  if (state!=='play') return;
+  driftUpdate(ambient, dt, 6, 22);
+  driftUpdate(tokens, dt, 8, 26);
+  driftUpdate(hazards, dt, 4, hazSpeed()*1.3);
+  ensureAmbient(); ensureHazards();
+  updateSnake(dt);
+  updateScatter(dt);
+  if (roundBanner){ roundBanner.t+=dt; if (roundBanner.t>=roundBanner.dur) roundBanner=null; }
+  if (hint){ hint.t+=dt; if (hint.t>=hint.dur) hint=null; }
+}
+
+/* ============================================================ DRAW */
+function drawSquareFrame(){
+  ctx.strokeStyle = rgbaInk(0.10); ctx.lineWidth = 1;
+  roundRectPath(px+0.5, py+0.5, ps-1, ps-1, 8); ctx.stroke();
+}
+function drawAmbient(){
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for (const f of ambient){
+    const size = Math.round(22*(0.6+0.4*f.morph));
+    ctx.font = '500 '+size+'px "IBM Plex Mono"';
+    ctx.fillStyle = rgbaInk(0.16);
+    ctx.fillText(f.ch, f.x, f.y);
+  }
+}
+function drawTokens(){
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for (const tk of tokens){
+    const size = Math.round(26*(0.7+0.3*tk.morph));
+    const r = size*0.66, pulse = 0.5+0.5*Math.sin(beat*3.4+tk.born);
+    ctx.fillStyle = rgbaAcc((0.9+0.1*pulse));
+    ctx.beginPath(); ctx.arc(tk.x, tk.y, r, 0, Math.PI*2); ctx.fill();
+    ctx.font = '600 '+size+'px "IBM Plex Mono"';
+    ctx.fillStyle = 'rgba(10,10,10,0.95)';
+    ctx.fillText(tk.ch, tk.x, tk.y+1);
+  }
+}
+function drawHazards(){
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for (const h of hazards){
+    const s = Math.round(24*(0.7+0.3*h.morph)), half=s*0.5, x=h.x-half, y=h.y-half;
+    ctx.fillStyle = rgbaObj(0.92);
+    roundRectPath(x,y,s,s,5); ctx.fill();
+    ctx.font = '600 '+Math.round(s*0.6)+'px "IBM Plex Mono"';
+    ctx.fillStyle = 'rgba(10,10,10,0.9)';
+    ctx.fillText(h.n, h.x, h.y+1);
+  }
+}
+function drawScatter(){
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='600 20px "IBM Plex Mono"';
+  for (const s of scatterFx){ ctx.fillStyle = rgbaInk(clamp(s.life/0.7,0,1)*0.5); ctx.fillText(s.ch, s.x, s.y); }
+  if (impact){
+    const p = clamp(impact.t/0.5,0,1);
+    ctx.strokeStyle = rgbaObj((1-p)*0.7); ctx.lineWidth = 2*(1-p)+0.5;
+    ctx.beginPath(); ctx.arc(impact.x, impact.y, 8+p*38, 0, Math.PI*2); ctx.stroke();
+  }
+}
+function drawSnake(){
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font = '600 21px "IBM Plex Mono"';
+  for (let k=tail.length-1;k>=0;k--){ const s=tail[k]; ctx.fillStyle=rgbaInk(0.95); ctx.fillText(s.ch, s.dx, s.dy); }
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.beginPath(); ctx.arc(head.x, head.y, HEAD_R, 0, Math.PI*2);
+  ctx.fillStyle = '#FAFAFA'; ctx.fill();
+  ctx.beginPath(); ctx.arc(head.x, head.y, HEAD_R+4, 0, Math.PI*2);
+  ctx.strokeStyle = rgbaInk(0.25); ctx.lineWidth=1.5; ctx.stroke();
+  // first-collection nudge: name the letter you are hunting
+  if (hint && neededLetter()){
+    const a = 0.4+0.6*(0.5+0.5*Math.sin(hint.t*6));
+    ctx.font='500 11px "IBM Plex Mono"'; ctx.textAlign='center';
+    ctx.fillStyle=rgbaInk(a);
+    ctx.fillText('find  '+neededLetter(), head.x, head.y-22);
+    ctx.textAlign='left';
+  }
+}
+
+// The right panel: round number, the Pretext-typeset goal sentence with live progress,
+// a letter-cell tray for the current word, and the score - all the text in one place.
+function drawPanel(){
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  // round
+  ctx.font='500 12px "IBM Plex Mono"'; ctx.fillStyle=rgbaInk(0.42);
+  ctx.fillText('Round '+(round+1), panelX+PP, panelY+24);
+  // goal sentence, coloured by progress
+  ctx.font=SENT_FONT;
+  for (let i=0;i<layout.wordPos.length;i++){
+    const wp = layout.wordPos[i];
+    if (i < wordIdx){
+      ctx.fillStyle = rgbaInk(0.9); ctx.fillText(wp.word, wp.x, wp.y);
+    } else if (i === wordIdx){
+      // current word: a yellow underline marks it; collected letters bright, rest dim
+      ctx.fillStyle = rgbaAcc(0.9);
+      ctx.fillRect(wp.x, wp.y+4, wp.w, 2);
+      let cx = wp.x;
+      for (let j=0;j<wp.word.length;j++){
+        ctx.fillStyle = j<got ? rgbaInk(0.95) : rgbaInk(0.5);
+        ctx.fillText(wp.word[j], cx, wp.y);
+        cx += ctx.measureText(wp.word[j]).width;
+      }
+    } else {
+      ctx.fillStyle = rgbaInk(0.3); ctx.fillText(wp.word, wp.x, wp.y);
+    }
+  }
+  // tray: the current word as letter cells (collected / next / remaining)
+  const trayY = colTop + Math.max(layout.lineCount,1)*sentLH + 22;
+  ctx.font='500 11px "IBM Plex Mono"'; ctx.fillStyle=rgbaInk(0.42);
+  ctx.fillText('Collecting', panelX+PP, trayY);
+  const gap=6, maxW=panelW-2*PP;
+  const cell = Math.min(24, (maxW - (target.length-1)*gap)/Math.max(target.length,1));
+  const cy = trayY+12, ch=cell;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for (let i=0;i<target.length;i++){
+    const x = panelX+PP + i*(cell+gap), fs = Math.round(cell*0.56);
+    if (i<got){
+      ctx.fillStyle=rgbaInk(0.12); roundRectPath(x,cy,cell,ch,4); ctx.fill();
+      ctx.font='600 '+fs+'px "IBM Plex Mono"'; ctx.fillStyle=rgbaInk(0.95);
+      ctx.fillText(target[i], x+cell/2, cy+ch/2+1);
+    } else if (i===got){
+      ctx.fillStyle=rgbaAcc(1); roundRectPath(x,cy,cell,ch,4); ctx.fill();
+      ctx.font='600 '+fs+'px "IBM Plex Mono"'; ctx.fillStyle='rgba(10,10,10,0.92)';
+      ctx.fillText(target[i], x+cell/2, cy+ch/2+1);
+    } else {
+      ctx.strokeStyle=rgbaInk(0.18); ctx.lineWidth=1; roundRectPath(x+0.5,cy+0.5,cell-1,ch-1,4); ctx.stroke();
+      ctx.font='500 '+fs+'px "IBM Plex Mono"'; ctx.fillStyle=rgbaInk(0.3);
+      ctx.fillText(target[i], x+cell/2, cy+ch/2+1);
+    }
+  }
+  // score / best pinned to the panel foot
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.font='500 11px "IBM Plex Mono"'; ctx.fillStyle=rgbaInk(0.42);
+  ctx.fillText('Score', panelX+PP, panelY+panelH-26);
+  ctx.font='600 22px "DM Sans"'; ctx.fillStyle=rgbaInk(0.95);
+  ctx.fillText(String(Math.floor(score)), panelX+PP, panelY+panelH-6);
+  ctx.textAlign='right'; ctx.font='500 11px "IBM Plex Mono"'; ctx.fillStyle=rgbaInk(0.3);
+  ctx.fillText('best '+Math.floor(best), panelX+panelW-PP, panelY+panelH-6);
+  ctx.textAlign='left';
+}
+
+function drawBanner(){
+  if (!roundBanner) return;
+  const p = clamp(roundBanner.t/roundBanner.dur,0,1);
+  const a = p<0.15 ? p/0.15 : (p>0.7 ? 1-(p-0.7)/0.3 : 1);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='600 '+Math.round(Math.min(40,ps*0.09))+'px "DM Sans"';
+  ctx.fillStyle=rgbaInk(0.92*a);
+  ctx.fillText(roundBanner.text, px+ps/2, py+ps/2);
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+}
+
+function drawTitle(){
+  const cx=W/2, cy=H*0.40;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='600 '+Math.round(Math.min(84,W*0.13))+'px "DM Sans"';
+  ctx.fillStyle='#FAFAFA'; ctx.fillText('forge', cx, cy);
+  ctx.font='400 15px "IBM Plex Mono"'; ctx.fillStyle=rgbaInk(0.55);
+  ctx.fillText('Each round gives you a sentence to spell, one word at a time.', cx, cy+70);
+  ctx.fillText('Steer to the glowing letters, gather the word in order.', cx, cy+94);
+  ctx.font='400 13px "IBM Plex Mono"'; ctx.fillStyle=rgbaInk(0.4);
+  ctx.fillText('Dodge the drifting numbers, a hit scatters the word.', cx, cy+124);
+  ctx.font='500 14px "IBM Plex Mono"';
+  ctx.fillStyle=rgbaInk(0.4+0.6*(0.5+0.5*Math.sin(beat*3)));
+  ctx.fillText('Press space or tap to begin', cx, cy+168);
+  if (best>0){ ctx.font='400 12px "IBM Plex Mono"'; ctx.fillStyle=rgbaInk(0.3); ctx.fillText('best '+Math.floor(best), cx, cy+202); }
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+}
+
+function render(){
+  ctx.fillStyle='#0A0A0A'; ctx.fillRect(0,0,W,H);
+  if (state==='loading'){
+    ctx.textAlign='center'; ctx.fillStyle=rgbaInk(0.4); ctx.font='400 13px "IBM Plex Mono"';
+    ctx.fillText('Setting type...', W/2, H/2); ctx.textAlign='left'; return;
+  }
+  if (state==='title'){ drawTitle(); return; }
+  // play: the square (shakes on a hazard hit) + the steady panel
+  drawSquareFrame();
+  const sh = shake>0.2;
+  if (sh){ ctx.save(); ctx.translate((Math.random()*2-1)*shake, (Math.random()*2-1)*shake); }
+  drawAmbient();
+  drawTokens();
+  drawScatter();
+  drawHazards();
+  drawSnake();
+  if (sh) ctx.restore();
+  drawBanner();
+  drawPanel();
+}
+
+/* ============================================================ EXPORT (snapshot poster) */
+let exporting=false;
+function exportPNG(){
+  if (exporting || state!=='play') return;
+  exporting=true;
+  const scale=2;
+  cv.width=Math.round(W*scale); cv.height=Math.round(H*scale);
+  ctx.setTransform(scale,0,0,scale,0,0);
+  render();
+  cv.toBlob(blob=>{
+    if (blob){
+      const url=URL.createObjectURL(blob), a=document.createElement('a');
+      a.href=url; a.download='sentence-forge.png'; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    }
+    exporting=false; resize();
+  }, 'image/png');
+}
+
+/* ============================================================ INPUT */
+function startOrRestart(){ initAudio(); resumeAudio(); resetGame(); }
+window.addEventListener('keydown', e=>{
+  const k=e.key;
+  if (k===' '||k==='Enter'){
+    e.preventDefault();
+    if (state==='title') startOrRestart();
+    return;
+  }
+  if (k==='e'||k==='E'){ if (state==='play') exportPNG(); return; }
+  if (k==='m'||k==='M'){ muted=!muted; return; }
+  if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','a','d','w','s','A','D','W','S'].includes(k)){
+    steerMode='key'; keys.add(k.length===1?k.toLowerCase():k); e.preventDefault();
+  }
+});
+window.addEventListener('keyup', e=>{ const k=e.key; keys.delete(k.length===1?k.toLowerCase():k); });
+cv.addEventListener('pointerdown', e=>{
+  cv.setPointerCapture?.(e.pointerId);
+  pointer.x=e.clientX; pointer.y=e.clientY; pointer.touch=(e.pointerType==='touch');
+  steerMode='pointer';
+  if (state==='title'){ startOrRestart(); return; }
+  if (state==='play'){ initAudio(); resumeAudio(); }
+});
+cv.addEventListener('pointermove', e=>{
+  pointer.x=e.clientX; pointer.y=e.clientY;
+  if (e.pointerType==='touch') pointer.touch=true;
+  if (state==='play' && (e.buttons>0 || e.pointerType==='touch')) steerMode='pointer';
+});
+
+/* ============================================================ MAIN LOOP */
+let lastT=0;
+function frame(now){
+  if (!lastT) lastT=now;
+  let dt=(now-lastT)/1000; lastT=now;
+  dt=Math.min(dt, 0.05);
+  if (!exporting){ update(dt); render(); }
+  requestAnimationFrame(frame);
+}
+
+/* ============================================================ BOOT */
+(async function boot(){
+  loadBest();
+  // seed a sentence so metrics can lay it out before the first frame
+  words = SENTENCES[0].split(' '); target = words[0];
+  resize();
+  requestAnimationFrame(frame);
+  await loadFonts();
+  computeMetrics();
+  state='title';
+  document.fonts.ready.then(()=>{ computeMetrics(); });
+  window.PT && window.PT.ui && window.PT.ui({
+    title: 'Sentence forge',
+    hints: 'Arrows or drag to steer · Avoid numbers · E export',
+    theme: 'dark',
+  });
+})();
+</script>
+</body>
+</html>

@@ -9,18 +9,48 @@
 // Keys handled for you: H = hide/show.
 //
 // Part of NUI - experiments in interface design and interaction.
-// Adi Dizdarevic · AD& · http://adidizdarevic.com/  ·  © 2026. All rights reserved.
+// Adi Dizdarevic · AD& · https://adidizdarevic.com/  ·  © 2026. Licensed under CC BY-NC 4.0.
 (function(){
+  // Embedded in the showcase iframe: hide the experiment's standalone theme toggle
+  // (the shell's nav switch drives theme). This runs while ui.js executes - a
+  // render-blocking classic script loaded right after #toggle - so the rule lands
+  // before the toggle's first paint: no flash on load or when switching projects.
+  // Standalone / file:// opens (window.top === window.self) keep the dot.
+  try {
+    var _embedded; try { _embedded = window.top !== window.self; } catch (e) { _embedded = true; }
+    if (_embedded && !document.getElementById('adui-embed-toggle')) {
+      var _st = document.createElement('style');
+      _st.id = 'adui-embed-toggle';
+      _st.textContent = '#toggle{display:none!important}';
+      (document.head || document.documentElement).appendChild(_st);
+    }
+  } catch (e) {}
+
   var STYLE_ID = 'adui-style';
-  var CREDIT_URL = 'http://adidizdarevic.com/';
+  var CREDIT_URL = 'https://adidizdarevic.com/';
   var CREDIT_LABEL = 'AD&';
+
+  // Load the lab UI face (FT Polar Mono) from the sibling fonts.css, resolving
+  // the path from this script's own src so it works at any project depth and via file://.
+  (function loadFonts(){
+    try {
+      if (document.getElementById('adui-fonts')) return;
+      var s = document.currentScript ||
+              document.querySelector('script[src$="ui.js"],script[src*="/core/ui.js"]');
+      if (!s || !s.src) return;                       // can't locate - fall back to Plex Mono
+      var href = s.src.replace(/[?#].*$/, '').replace(/ui\.js$/, 'fonts.css');
+      var l = document.createElement('link');
+      l.id = 'adui-fonts'; l.rel = 'stylesheet'; l.href = href;
+      (document.head || document.documentElement).appendChild(l);
+    } catch (e) {}
+  })();
 
   function injectStyle(){
     if (document.getElementById(STYLE_ID)) return;
     var css = [
       ".adui,.adui *{box-sizing:border-box;margin:0;}",
       ".adui{position:fixed;inset:0;z-index:9999;pointer-events:none;",
-        "font-family:'IBM Plex Mono',ui-monospace,monospace;transition:opacity .25s ease;}",
+        "font-family:'FT Polar Mono','IBM Plex Mono',ui-monospace,monospace;transition:opacity .25s ease;}",
       ".adui.adui-hidden{opacity:0;}",
       ".adui.adui-hidden *{pointer-events:none!important;}",
       // shared glass
@@ -34,11 +64,13 @@
       ".adui-bar{padding:7px 16px;display:flex;align-items:center;white-space:nowrap;}",
       ".adui-mark{color:inherit;text-decoration:none;font-size:12px;font-weight:500;letter-spacing:.06em;",
         "opacity:.8;transition:opacity .2s,color .2s;}",
-      ".adui-mark:hover{opacity:1;color:#E8642D;}",
+      ".adui-mark:hover{opacity:1;}",
       ".adui-div{opacity:.4;margin:0 10px;}",   /* '·' - same divider as the legend */
       ".adui-title{font-size:12px;font-weight:500;letter-spacing:.01em;opacity:.62;}",   /* sentence case - no text-transform */
+      // embedded (e.g. the NUI showcase iframe): the shell rail already shows brand + tool name, so drop the masthead
+      ".adui-embedded .adui-top{display:none;}",
       // bottom legend - WRAPS, never overflows
-      ".adui-lg{position:absolute;bottom:14px;left:0;right:0;margin:0 auto;width:fit-content;max-width:min(760px,calc(100vw - 24px));}",
+      ".adui-lg{position:absolute;bottom:14px;left:0;right:0;margin:0 auto;width:fit-content;max-width:min(1080px,calc(100vw - 24px));}",
       ".adui-pill{padding:8px 16px;font-size:9px;letter-spacing:.02em;line-height:1.5;",
         "display:flex;flex-wrap:wrap;justify-content:center;align-items:center;}",
       ".adui-pill:empty{display:none;}",
@@ -90,6 +122,11 @@
 
     var root = document.createElement('div');
     root.className = 'adui';
+    // In an embedded context (the NUI showcase iframe) the shell's rail already shows
+    // the brand + tool name, so the top masthead is redundant - hide it. Standalone
+    // opens (direct / file://) keep the full masthead and the AD& credit link.
+    var embedded; try { embedded = window.top !== window.self; } catch (e) { embedded = true; }
+    if (embedded) root.className += ' adui-embedded';
     root.setAttribute('data-theme', opts.theme === 'light' ? 'light' : 'dark');
     root.innerHTML =
       '<div class="adui-top"><div class="adui-bar">'

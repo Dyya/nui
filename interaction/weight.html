@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<!--
+  Weight - shapes with mass and momentum
+  Every object carries a mass from its size and effects, so heavy ones lag and drift while light ones snap to the cursor.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Weight - shapes with mass and momentum</title>
+<meta name="description" content="Every object carries a mass from its size and effects, so heavy ones lag and drift while light ones snap to the cursor.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Weight - shapes with mass and momentum">
+<meta property="og:description" content="Every object carries a mass from its size and effects, so heavy ones lag and drift while light ones snap to the cursor.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Weight",
+  "applicationCategory": "DesignApplication",
+  "description": "Every object carries a mass from its size and effects, so heavy ones lag and drift while light ones snap to the cursor.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "weight, interaction design, mass, momentum, inertia, physics, easing, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg: #0a0a0c; --fg: rgba(255,255,255,0.92); --fg-dim: rgba(255,255,255,0.45); --fg-faint: rgba(255,255,255,0.18);
+    --grid: rgba(255,255,255,0.018); --chrome-bg: rgba(20,20,24,0.85); --chrome-bd: rgba(255,255,255,0.08);
+    --accent: #FBF251; --obj: rgb(132,137,148);
+  }
+  body.light { --bg: #FAFAFA; --fg: rgba(0,0,0,0.88); --fg-dim: rgba(0,0,0,0.45); --fg-faint: rgba(0,0,0,0.15); --grid: rgba(0,0,0,0.03); --chrome-bg: rgba(255,255,255,0.88); --chrome-bd: rgba(0,0,0,0.08); --accent: #FBF251; --obj: rgb(98,103,113); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s; }
+  canvas { position: fixed; inset: 0; display: block; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+  #cursor { position: fixed; left: 0; top: 0; width: 20px; height: 20px; border: 1.5px solid var(--fg); border-radius: 50%; pointer-events: none; z-index: 100; transform: translate(-50%, -50%); transition: border-color 0.2s, width 0.15s, height 0.15s; }
+  #cursor::before, #cursor::after { content: ''; position: absolute; background: var(--fg); }
+  #cursor::before { top: 50%; left: -3px; right: -3px; height: 1px; transform: translateY(-50%); }
+  #cursor::after { left: 50%; top: -3px; bottom: -3px; width: 1px; transform: translateX(-50%); }
+  #cursor.drag { border-color: var(--fg); }
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <div id="toggle" title="Toggle theme"></div>
+  <div id="cursor"></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const cursor = document.getElementById('cursor');
+const readout = { set innerHTML(v){}, set textContent(v){} };
+const ui = PT.ui({ title: 'Weight', hints: 'Drag object · H mass readout · R reset', theme: 'light' });
+const toggle = document.getElementById('toggle');
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); document.body.classList.toggle('light', !dark); ui.theme(dark ? 'dark' : 'light'); });
+
+// state BEFORE resize
+let W = 0, H = 0;
+let seed = 989898;
+let shapes = [];
+let initialPositions = [];
+let drag = null; // { id, targetX, targetY }
+let mx = -100, my = -100;
+let hoverId = null;
+let showMass = true;
+let trail = []; // cursor trail
+
+const EFFECTS = ['BLUR', 'GRAIN', 'DITHER', 'HALFTONE', 'GLOW', 'ABERRATION', 'DUOTONE'];
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() { if (shapes.length === 0) build(); }
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) { return function() { let t = (s += 0x6D2B79F5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+
+function build() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  initialPositions = [];
+  let tries = 0;
+  // Force a range of masses: some small simple, some large complex
+  const specs = [
+    { size: 18, numEffects: 0 }, // featherweight
+    { size: 22, numEffects: 0 },
+    { size: 30, numEffects: 1 },
+    { size: 36, numEffects: 1 },
+    { size: 42, numEffects: 2 },
+    { size: 50, numEffects: 2 },
+    { size: 58, numEffects: 3 },
+    { size: 66, numEffects: 4 },
+    { size: 78, numEffects: 5 }, // heaviest
+  ];
+  for (const spec of specs) {
+    let placed = false;
+    let attempts = 0;
+    while (!placed && attempts < 200) {
+      const x = 0.12 + rng() * 0.76;
+      const y = 0.15 + rng() * 0.7;
+      let ok = true;
+      for (const o of shapes) {
+        if (Math.hypot((x - o.nx) * W, (y - o.ny) * H) < spec.size + o.size + 30) { ok = false; break; }
+      }
+      if (ok) {
+        const effectSet = [];
+        const rngRead = new Set();
+        while (effectSet.length < spec.numEffects && rngRead.size < EFFECTS.length) {
+          const pick = EFFECTS[Math.floor(rng() * EFFECTS.length)];
+          if (!rngRead.has(pick)) { rngRead.add(pick); effectSet.push(pick); }
+        }
+        // Mass formula: area + effects load
+        // Base mass from size (area-proportional), plus each effect adds mass
+        const area = spec.size * spec.size;
+        const mass = area * 0.004 + spec.numEffects * 3.2 + 1;
+        shapes.push({
+          id: shapes.length + 1,
+          nx: x, ny: y,
+          x: x * W, y: y * H,
+          targetX: x * W, targetY: y * H, // where the cursor wants it
+          vx: 0, vy: 0,
+          size: spec.size,
+          effects: effectSet,
+          mass,
+        });
+        initialPositions.push({ id: shapes.length, x: x * W, y: y * H });
+        placed = true;
+      }
+      attempts++;
+    }
+  }
+}
+
+
+function drawEffectsPattern(s, alpha) {
+  // Render a subtle visual cue of each effect as a stacked inner disc
+  if (!s.effects.length) return;
+  X.save();
+  X.globalAlpha = alpha * 0.6;
+  for (let i = 0; i < s.effects.length; i++) {
+    const r = s.size * (0.86 - i * 0.14);
+    if (r <= 0) break;
+    X.strokeStyle = 'rgba(0,0,0,0.35)';
+    X.lineWidth = 1;
+    X.beginPath(); X.arc(s.x, s.y, r, 0, Math.PI * 2); X.stroke();
+  }
+  X.restore();
+}
+
+function drawShape(s) {
+  X.save();
+  const isDrag = drag && drag.id === s.id;
+  X.beginPath(); X.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+  if (isDrag) {
+    // the object being moved is the one charged thing - fill it with the accent
+    X.fillStyle = '#FBF251'; X.fill();
+  } else {
+    X.fillStyle = getComputedStyle(document.body).getPropertyValue('--obj'); X.fill();
+  }
+  X.restore();
+  drawEffectsPattern(s, 1);
+}
+
+function drawMassReadout(s) {
+  if (!showMass) return;
+  X.save();
+  X.font = '9px "IBM Plex Mono", monospace';
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+  X.textAlign = 'center';
+  X.textBaseline = 'top';
+  const m = s.mass.toFixed(1);
+  X.fillText(`m=${m}`, s.x, s.y + s.size + 6);
+  if (s.effects.length) {
+    X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg-faint');
+    X.fillText(s.effects.join('·'), s.x, s.y + s.size + 18);
+  }
+  X.restore();
+}
+
+function drawDragTether(s) {
+  if (!drag || drag.id !== s.id) return;
+  X.save();
+  X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+  X.globalAlpha = 0.6;
+  X.lineWidth = 1;
+  X.setLineDash([2, 3]);
+  X.beginPath(); X.moveTo(s.x, s.y); X.lineTo(drag.targetX, drag.targetY); X.stroke();
+  // target indicator (cursor "ghost")
+  X.globalAlpha = 0.4;
+  X.setLineDash([]);
+  X.beginPath(); X.arc(drag.targetX, drag.targetY, s.size, 0, Math.PI * 2); X.stroke();
+  X.restore();
+  // Lag readout
+  const lag = Math.hypot(drag.targetX - s.x, drag.targetY - s.y);
+  X.save();
+  X.font = '9px "IBM Plex Mono", monospace';
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+  X.textAlign = 'left';
+  X.fillText(`LAG ${lag.toFixed(0)}px`, s.x + s.size + 10, s.y);
+  X.restore();
+}
+
+function drawVelocityTrail(s) {
+  const speed = Math.hypot(s.vx, s.vy);
+  if (speed < 0.3) return;
+  // draw subtle motion streak opposite velocity
+  X.save();
+  X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+  X.globalAlpha = Math.min(speed / 8, 0.5);
+  X.lineWidth = 1;
+  X.beginPath();
+  X.moveTo(s.x, s.y);
+  X.lineTo(s.x - s.vx * 4, s.y - s.vy * 4);
+  X.stroke();
+  X.restore();
+}
+
+function update(dt) {
+  for (const s of shapes) {
+    // spring-like drag physics
+    const tx = (drag && drag.id === s.id) ? drag.targetX : s.targetX;
+    const ty = (drag && drag.id === s.id) ? drag.targetY : s.targetY;
+    // Stiffness: how hard the spring pulls toward target
+    // Damping: how quickly velocity dies
+    // Mass effect: acceleration = F / mass, so bigger mass = slower accel
+    const k = 0.6; // spring constant
+    const damp = 0.82;
+    const fx = (tx - s.x) * k;
+    const fy = (ty - s.y) * k;
+    const ax = fx / s.mass;
+    const ay = fy / s.mass;
+    s.vx = (s.vx + ax) * damp;
+    s.vy = (s.vy + ay) * damp;
+    s.x += s.vx;
+    s.y += s.vy;
+    // clamp to canvas
+    const pad = s.size;
+    s.x = clamp(s.x, pad, W - pad);
+    s.y = clamp(s.y, pad, H - pad);
+  }
+}
+
+function draw() {
+  update();
+  X.clearRect(0, 0, W, H);
+  // Trail of drag target (cursor history when dragging)
+  if (drag) {
+    X.save();
+    X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+    X.globalAlpha = 0.25;
+    X.lineWidth = 1;
+    if (trail.length > 1) {
+      X.beginPath();
+      X.moveTo(trail[0].x, trail[0].y);
+      for (let i = 1; i < trail.length; i++) X.lineTo(trail[i].x, trail[i].y);
+      X.stroke();
+    }
+    X.restore();
+  }
+  for (const s of shapes) {
+    drawVelocityTrail(s);
+    drawShape(s);
+    drawDragTether(s);
+    const isHover = hoverId === s.id && !drag;
+    if (isHover) {
+      X.save();
+      X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+      X.lineWidth = 1;
+      X.setLineDash([3, 3]);
+      X.beginPath(); X.arc(s.x, s.y, s.size + 8, 0, Math.PI * 2); X.stroke();
+      X.restore();
+    }
+    drawMassReadout(s);
+  }
+  // Readout
+  if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    const lag = s ? Math.hypot(drag.targetX - s.x, drag.targetY - s.y) : 0;
+    readout.innerHTML = `Shape <b>${s.id}</b> · Mass <b>${s.mass.toFixed(1)}</b> · Lag <b>${lag.toFixed(0)}px</b> · Fx <b>${s.effects.length}</b>`;
+  } else {
+    readout.innerHTML = `Objects <b>${shapes.length}</b> · Mass range <b>${shapes[0]?.mass.toFixed(1)}–${shapes[shapes.length - 1]?.mass.toFixed(1)}</b>`;
+  }
+}
+
+function loop() { draw(); requestAnimationFrame(loop); }
+loop();
+
+function hit(x, y) {
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (Math.hypot(x - s.x, y - s.y) < s.size + 4) return s;
+  }
+  return null;
+}
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (drag) {
+    drag.targetX = mx - drag.offX;
+    drag.targetY = my - drag.offY;
+    trail.push({ x: drag.targetX, y: drag.targetY });
+    if (trail.length > 30) trail.shift();
+  } else {
+    const h = hit(mx, my);
+    hoverId = h ? h.id : null;
+  }
+});
+window.addEventListener('pointerdown', e => {
+  const h = hit(e.clientX, e.clientY);
+  if (h) {
+    drag = { id: h.id, offX: e.clientX - h.x, offY: e.clientY - h.y, targetX: h.x, targetY: h.y };
+    trail = [];
+    cursor.classList.add('drag');
+  }
+});
+window.addEventListener('pointerup', () => {
+  if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    if (s) { s.targetX = s.x; s.targetY = s.y; } // lock target so it settles
+  }
+  drag = null;
+  trail = [];
+  cursor.classList.remove('drag');
+});
+window.addEventListener('keydown', e => {
+  if (e.key === 'h' || e.key === 'H') showMass = !showMass;
+  else if (e.key === 'r' || e.key === 'R') {
+    for (const p of initialPositions) {
+      const s = shapes.find(x => x.id === p.id);
+      if (s) { s.x = s.targetX = p.x; s.y = s.targetY = p.y; s.vx = s.vy = 0; }
+    }
+  }
+});
+</script>
+</body>
+</html>

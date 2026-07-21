@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<!--
+  Bearing - navigate a dark sea by ear
+  Hidden beacons each sing a fixed pentatonic degree; a beacon pans by its relative angle, muffles when it is behind you, and rings pure only when your bow is dead on it. Steer by momentum, land each one, and chart the sea.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Bearing - navigate a dark sea by ear</title>
+<meta name="description" content="Steer a vessel across a dark sea of hidden beacons. Each beacon sings a fixed pentatonic degree, pans by its bearing, muffles when it falls behind you, and rings pure when your bow is dead on it. Find them all by ear and chart the crossing.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Bearing - navigate a dark sea by ear">
+<meta property="og:description" content="Steer a vessel across a dark sea of hidden beacons synthesized as spatial pentatonic voices; hold your bow on a beacon until it rings pure, land it, and chart the crossing.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "VideoGame",
+  "name": "Bearing",
+  "applicationCategory": "Game",
+  "genre": "Navigation, audio game",
+  "description": "A navigation game with spatial audio: hidden beacons each sing a fixed C-pentatonic degree, panned by bearing, muffled behind you, ringing pure when your bow is aligned. Steer by momentum and find them all by ear, then export the chart.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript, HTML5 canvas, and the Web Audio API",
+  "inLanguage": "en",
+  "keywords": "bearing, navigation, spatial audio, stereo panning, pentatonic, Web Audio, sonar, game, HTML canvas, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg: #0a0a0c; --fg: rgba(255,255,255,0.92); --fg-dim: rgba(255,255,255,0.45); --fg-faint: rgba(255,255,255,0.18);
+    --grid: rgba(255,255,255,0.05); --chrome-bg: rgba(20,20,24,0.85); --chrome-bd: rgba(255,255,255,0.08);
+    --accent: #FBF251; --obj: rgb(132,137,148);
+  }
+  body.light { --bg: #FAFAFA; --fg: rgba(0,0,0,0.88); --fg-dim: rgba(0,0,0,0.45); --fg-faint: rgba(0,0,0,0.15); --grid: rgba(0,0,0,0.06); --chrome-bg: rgba(255,255,255,0.88); --chrome-bd: rgba(0,0,0,0.08); --accent: #FBF251; --obj: rgb(98,103,113); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; transition: background 0.4s; }
+  /* touch-action:none so a held finger steers instead of scrolling or zooming the page */
+  canvas { position: fixed; inset: 0; display: block; touch-action: none; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <div id="toggle" title="Toggle theme"></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+"use strict";
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const ui = PT.ui({ title: 'Bearing', hints: 'Arrows, W A S D, or hold to sail · Bow on a beacon rings pure · E export chart · R new sea', theme: 'light' });
+const toggle = document.getElementById('toggle');
+let dark = false;
+toggle.addEventListener('click', () => {
+  dark = document.body.classList.toggle('dark');
+  document.body.classList.toggle('light', !dark);
+  ui.theme(dark ? 'dark' : 'light');
+});
+
+// ---- constants ----
+const K = 5;                       // beacons per sea
+const LAND = 30;                   // landing radius (px)
+const ALIGN = 11 * Math.PI / 180;  // bow-on-beacon tolerance -> voice rings pure
+const DET = 13;                    // detune (cents) when not aligned
+const BASE_GAIN = 0.15;            // per-voice peak gain
+const NEAR = 3;                    // active voices cap (nearest N speak)
+const MAXTURN = 0.055;             // rad / frame at full helm
+const TURN_EASE = 0.16;            // exponential settle of the helm
+const ACC = 0.135;                 // thrust
+const DRAG = 0.986;                // water drag (exponential decay)
+const MAXSPD = 4.4;
+const MARGIN = 46;                 // beacon placement inset: keeps a mark clear of the seam
+
+// ---- state ----
+let W = 0, H = 0, R = 0;
+let ship = null;                   // {x,y,heading,vx,vy}
+let beacons = [];                  // {nx,ny,freq,note,found,voice}
+let wake = [];                     // decimated path polyline (px)
+let pathLen = 0, optimalLen = 0;
+let finished = false, alignedNow = false;
+let audioOn = false, actx = null, master = null, comp = null;
+const keys = Object.create(null);
+let seedRng = mulberry32((Math.random() * 1e9) | 0);
+let lastT = 0;
+
+// ---- utils ----
+function mulberry32(s){ return function(){ let t = (s += 0x6D2B79F5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
+function norm(a){ while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
+function tok(name){ return getComputedStyle(document.body).getPropertyValue(name).trim(); }
+
+// ---- pentatonic ladder (C major pentatonic, C4..A5) ----
+// semitone offsets from A4=440; C D E G A across two octaves.
+const LADDER = [
+  { s: -9, note: 'C4' }, { s: -7, note: 'D4' }, { s: -5, note: 'E4' }, { s: -2, note: 'G4' }, { s: 0, note: 'A4' },
+  { s: 3, note: 'C5' }, { s: 5, note: 'D5' }, { s: 7, note: 'E5' }, { s: 10, note: 'G5' }, { s: 12, note: 'A5' }
+];
+const freqOf = s => 440 * Math.pow(2, s / 12);
+
+// ---- world ----
+function newSea(reseed){
+  if (reseed) seedRng = mulberry32((Math.random() * 1e9) | 0);
+  const rng = seedRng;
+  finished = false;
+  wake = [];
+  pathLen = 0;
+
+  ship = { x: W * 0.5, y: H * 0.5, heading: (rng() * 2 - 1) * Math.PI, vx: 0, vy: 0, turnVel: 0 };
+  wake.push({ x: ship.x, y: ship.y });
+
+  // distinct pentatonic rungs, spread so beacons are distinguishable by pitch
+  const idx = [];
+  const pool = LADDER.map((_, i) => i);
+  for (let i = 0; i < K; i++){ const j = Math.floor(rng() * pool.length); idx.push(pool.splice(j, 1)[0]); }
+  idx.sort((a, b) => a - b);
+
+  beacons = [];
+  const minSep = 0.26;
+  for (let i = 0; i < K; i++){
+    let nx, ny, ok, tries = 0;
+    do {
+      nx = MARGIN / W + rng() * (1 - 2 * MARGIN / W);
+      ny = MARGIN / H + rng() * (1 - 2 * MARGIN / H);
+      ok = Math.hypot(nx - 0.5, ny - 0.5) > 0.16; // clear of the start
+      for (const b of beacons) if (Math.hypot(nx - b.nx, ny - b.ny) < minSep) ok = false;
+      tries++;
+    } while (!ok && tries < 400);
+    const rung = LADDER[idx[i]];
+    beacons.push({ nx, ny, freq: freqOf(rung.s), note: rung.note, found: false, voice: null });
+  }
+
+  optimalLen = optimalTour();
+  if (audioOn) buildVoices();
+}
+
+// ---- the sea wraps ----
+// Sail off one edge and you come back on the other, so the sea has no corners to hide in
+// and no shore to pin you against. Every measurement below therefore has to take the
+// SHORTEST way round: the raw difference between two points is wrong whenever the shorter
+// route crosses the seam, which would leave a beacon sounding far away while sitting just
+// over your shoulder.
+const wrapD = (d, span) => { d %= span; if (d > span / 2) d -= span; else if (d < -span / 2) d += span; return d; };
+const wrapDX = d => wrapD(d, W);
+const wrapDY = d => wrapD(d, H);
+const wrapDist = (ax, ay, bx, by) => Math.hypot(wrapDX(bx - ax), wrapDY(by - ay));
+
+// shortest open tour from the start visiting every beacon (K small: brute force)
+function optimalTour(){
+  const pts = beacons.map(b => ({ x: b.nx * W, y: b.ny * H }));
+  const start = { x: W * 0.5, y: H * 0.5 };
+  let best = Infinity;
+  const order = pts.map((_, i) => i);
+  const perm = (arr, k) => {
+    if (k === arr.length){
+      let len = 0, prev = start;
+      for (const i of arr){ len += wrapDist(prev.x, prev.y, pts[i].x, pts[i].y); prev = pts[i]; }
+      if (len < best) best = len;
+      return;
+    }
+    for (let i = k; i < arr.length; i++){
+      [arr[k], arr[i]] = [arr[i], arr[k]];
+      perm(arr, k + 1);
+      [arr[k], arr[i]] = [arr[i], arr[k]];
+    }
+  };
+  perm(order, 0);
+  return best;
+}
+
+// ---- audio ----
+function enableAudio(){
+  if (actx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  actx = new AC();
+  master = actx.createGain(); master.gain.value = 0.9;
+  const mlp = actx.createBiquadFilter(); mlp.type = 'lowpass'; mlp.frequency.value = 2400; mlp.Q.value = 0.5;
+  comp = actx.createDynamicsCompressor();
+  comp.threshold.value = -20; comp.knee.value = 24; comp.ratio.value = 4; comp.attack.value = 0.006; comp.release.value = 0.22;
+  master.connect(mlp).connect(comp).connect(actx.destination);
+  buildVoices();
+  audioOn = true;
+  if (actx.state === 'suspended') actx.resume();
+}
+
+function stopVoices(){
+  if (!actx) return;
+  for (const b of beacons){
+    if (b.voice){
+      try { b.voice.o1.stop(); b.voice.o2.stop(); } catch (e) {}
+      try { b.voice.o1.disconnect(); b.voice.o2.disconnect(); b.voice.vg.disconnect(); } catch (e) {}
+      b.voice = null;
+    }
+  }
+}
+
+function buildVoices(){
+  stopVoices();
+  const t = actx.currentTime;
+  for (const b of beacons){
+    const o1 = actx.createOscillator(); o1.type = 'triangle'; o1.frequency.value = b.freq;
+    const o2 = actx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = b.freq; o2.detune.value = DET;
+    const g1 = actx.createGain(); g1.gain.value = 0.62;
+    const g2 = actx.createGain(); g2.gain.value = 0.46;
+    const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 0.6;
+    const pan = actx.createStereoPanner(); pan.pan.value = 0;
+    const vg = actx.createGain(); vg.gain.value = 0;
+    o1.connect(g1).connect(lp);
+    o2.connect(g2).connect(lp);
+    lp.connect(pan).connect(vg).connect(master);
+    o1.start(t); o2.start(t);
+    b.voice = { o1, o2, lp, pan, vg };
+  }
+}
+
+// resolving major triad, rooted an octave above the beacon degree
+function cadence(rootFreq, big){
+  if (!actx) return;
+  const t = actx.currentTime;
+  const ratios = big ? [1, 1.25, 1.5, 2, 2.5] : [1, 1.25, 1.5, 2];
+  ratios.forEach((r, i) => {
+    const o = actx.createOscillator();
+    o.type = i < 2 ? 'triangle' : 'sine';
+    o.frequency.value = rootFreq * r;
+    const g = actx.createGain();
+    const st = t + i * 0.055;
+    const dur = big ? 1.35 : 0.95;
+    g.gain.setValueAtTime(0.0001, st);
+    g.gain.linearRampToValueAtTime(big ? 0.13 : 0.11, st + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0004, st + dur);
+    o.connect(g).connect(master);
+    o.start(st); o.stop(st + dur + 0.05);
+    o.onended = () => { try { o.disconnect(); g.disconnect(); } catch (e) {} };
+  });
+}
+
+function thud(){
+  if (!actx) return;
+  const t = actx.currentTime;
+  const o = actx.createOscillator(); o.type = 'sine'; o.frequency.value = 110;
+  const g = actx.createGain();
+  g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.0004, t + 0.4);
+  o.connect(g).connect(master); o.start(t); o.stop(t + 0.45);
+  o.onended = () => { try { o.disconnect(); g.disconnect(); } catch (e) {} };
+}
+
+function updateAudio(){
+  if (!actx || finished) return;
+  const t = actx.currentTime;
+  // rank unfound beacons by distance; only the nearest NEAR speak
+  const rank = [];
+  for (const b of beacons){
+    if (b.found || !b.voice) continue;
+    const bx = b.nx * W, by = b.ny * H;
+    // measure to the nearest image of the beacon across the seam, so a voice just over
+    // the edge reads as near and off the bow, not as far away behind you
+    const dx = wrapDX(bx - ship.x), dy = wrapDY(by - ship.y);
+    const d = Math.hypot(dx, dy);
+    rank.push({ b, d, dx, dy });
+  }
+  rank.sort((a, z) => a.d - z.d);
+  alignedNow = false;
+  for (let i = 0; i < rank.length; i++){
+    const { b, d, dx, dy } = rank[i];
+    const v = b.voice;
+    if (i < NEAR){
+      const bearing = Math.atan2(dy, dx);
+      const rel = norm(bearing - ship.heading);
+      const prox = clamp(1 - d / R, 0, 1);
+      const gain = BASE_GAIN * prox * prox;
+      const front = Math.max(0, Math.cos(rel));
+      const lp = 400 + 4600 * front;
+      const aligned = Math.abs(rel) < ALIGN && d < R;
+      if (aligned && prox > 0.14) alignedNow = true;
+      v.pan.pan.setTargetAtTime(Math.sin(rel), t, 0.04);
+      v.lp.frequency.setTargetAtTime(lp, t, 0.04);
+      v.vg.gain.setTargetAtTime(gain, t, 0.05);
+      v.o2.detune.setTargetAtTime(aligned ? 0 : DET, t, 0.06);
+    } else {
+      v.vg.gain.setTargetAtTime(0, t, 0.09);
+    }
+  }
+}
+
+// ---- simulation ----
+function update(dt){
+  if (finished || !ship) return;
+  // helm (exponential settle toward held input, no overshoot). Held keys steer directly;
+  // a held pointer instead names a bearing and the helm falls off toward it, which is the
+  // same tiller either way - a touch device has no keys to hold.
+  let turnIn = (keys.left ? -1 : 0) + (keys.right ? 1 : 0);
+  if (!turnIn && helm.down){
+    const want = Math.atan2(helm.y - ship.y, helm.x - ship.x);
+    const off = norm(want - ship.heading);
+    // proportional near the bearing so it settles onto it instead of sawing across
+    turnIn = clamp(off / (Math.PI / 5), -1, 1);
+  }
+  ship.turnVel += (turnIn * MAXTURN - ship.turnVel) * TURN_EASE;
+  ship.heading = norm(ship.heading + ship.turnVel * dt);
+
+  // thrust along the bow + water drag (momentum)
+  const thrust = (keys.up ? 1 : 0) || (helm.down ? 1 : 0);
+  const brake = (keys.down ? 1 : 0);
+  ship.vx += Math.cos(ship.heading) * thrust * ACC * dt;
+  ship.vy += Math.sin(ship.heading) * thrust * ACC * dt;
+  if (brake){ ship.vx *= Math.pow(0.9, dt); ship.vy *= Math.pow(0.9, dt); }
+  const drag = Math.pow(DRAG, dt);
+  ship.vx *= drag; ship.vy *= drag;
+  const spd = Math.hypot(ship.vx, ship.vy);
+  if (spd > MAXSPD){ ship.vx = ship.vx / spd * MAXSPD; ship.vy = ship.vy / spd * MAXSPD; }
+
+  ship.x += ship.vx * dt; ship.y += ship.vy * dt;
+  // the seam: cross an edge and reappear on the far side, heading and momentum intact.
+  // The wake gets a break marker at the crossing so the trail is not drawn straight back
+  // across the whole sea.
+  let crossed = false;
+  if (ship.x < 0){ ship.x += W; crossed = true; }
+  else if (ship.x >= W){ ship.x -= W; crossed = true; }
+  if (ship.y < 0){ ship.y += H; crossed = true; }
+  else if (ship.y >= H){ ship.y -= H; crossed = true; }
+  if (crossed) wake.push({ x: ship.x, y: ship.y, gap: true });
+
+  // wake + path length (decimate). Measured across the seam, so crossing costs what it
+  // really costs rather than a sea's width.
+  const last = wake[wake.length - 1];
+  const seg = wrapDist(last.x, last.y, ship.x, ship.y);
+  if (seg > 7){ wake.push({ x: ship.x, y: ship.y }); pathLen += seg; }
+
+  // landings
+  for (const b of beacons){
+    if (b.found) continue;
+    const d = wrapDist(ship.x, ship.y, b.nx * W, b.ny * H);
+    if (d < LAND){
+      b.found = true;
+      if (b.voice) b.voice.vg.gain.setTargetAtTime(0, actx ? actx.currentTime : 0, 0.05);
+      cadence(b.freq * 2, false);
+    }
+  }
+  if (beacons.every(b => b.found) && !finished){
+    finished = true;
+    pathLen += wrapDist(wake[wake.length - 1].x, wake[wake.length - 1].y, ship.x, ship.y);
+    cadence(freqOf(3) * 2, true); // land on C
+  }
+}
+
+// ---- rendering ----
+function paintSea(g, w, h){
+  const grd = g.createLinearGradient(0, 0, 0, h);
+  if (dark){ grd.addColorStop(0, '#0b0e15'); grd.addColorStop(1, '#05060a'); }
+  else { grd.addColorStop(0, '#d8dde5'); grd.addColorStop(1, '#bcc4cf'); }
+  g.fillStyle = grd; g.fillRect(0, 0, w, h);
+  // faint reference lattice
+  g.strokeStyle = tok('--grid'); g.lineWidth = 1;
+  const step = 64;
+  g.beginPath();
+  for (let x = step; x < w; x += step){ g.moveTo(x, 0); g.lineTo(x, h); }
+  for (let y = step; y < h; y += step){ g.moveTo(0, y); g.lineTo(w, y); }
+  g.stroke();
+  // vignette
+  const vg = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.max(w, h) * 0.72);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, dark ? 'rgba(0,0,0,0.55)' : 'rgba(40,48,60,0.22)');
+  g.fillStyle = vg; g.fillRect(0, 0, w, h);
+}
+
+function drawWake(g){
+  if (wake.length < 2) return;
+  g.strokeStyle = tok('--fg-dim'); g.lineWidth = 1.5; g.lineJoin = 'round'; g.lineCap = 'round';
+  g.globalAlpha = 0.85;
+  g.beginPath();
+  let pen = false;
+  for (let i = 0; i < wake.length; i++){
+    const p = wake[i];
+    // a point marked at a crossing lifts the pen: the trail continues on the far side
+    if (p.gap || !pen){ g.moveTo(p.x, p.y); pen = true; }
+    else g.lineTo(p.x, p.y);
+  }
+  g.stroke();
+  g.globalAlpha = 1;
+}
+
+function drawBeacon(g, b){
+  const x = b.nx * W, y = b.ny * H;
+  // found beacon = the charged, captured mark -> yellow fill
+  g.save();
+  g.fillStyle = tok('--accent');
+  g.beginPath(); g.arc(x, y, 8, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = tok('--fg'); g.lineWidth = 1;
+  g.beginPath(); g.arc(x, y, 15, 0, Math.PI * 2); g.stroke();
+  g.font = '10px "IBM Plex Mono", monospace';
+  g.fillStyle = tok('--fg-dim'); g.textAlign = 'center'; g.textBaseline = 'top';
+  g.fillText(b.note, x, y + 20);
+  g.restore();
+}
+
+function drawShip(g){
+  if (!ship) return;
+  // Drawn once per neighbouring copy of the sea, so a hull straddling the seam shows its
+  // bow entering one edge while its stern is still leaving the other - it crosses, it does
+  // not teleport. Only the copies within a hull's length of the view cost anything.
+  const HULL = 16;
+  const xs = [0]; if (ship.x < HULL) xs.push(W); else if (ship.x > W - HULL) xs.push(-W);
+  const ys = [0]; if (ship.y < HULL) ys.push(H); else if (ship.y > H - HULL) ys.push(-H);
+  for (const ox of xs) for (const oy of ys){
+    g.save();
+    g.translate(ship.x + ox, ship.y + oy); g.rotate(ship.heading);
+    // hull: a bow triangle. Yellow only when a beacon rings pure on the bow.
+    g.beginPath();
+    g.moveTo(15, 0); g.lineTo(-9, 7); g.lineTo(-5, 0); g.lineTo(-9, -7); g.closePath();
+    g.fillStyle = alignedNow ? tok('--accent') : tok('--obj');
+    g.fill();
+    g.restore();
+  }
+}
+
+// compass rose + heading; reused on-screen and in the export
+function drawRose(g, cx, cy, r){
+  g.save();
+  g.translate(cx, cy);
+  g.strokeStyle = tok('--fg-faint'); g.lineWidth = 1;
+  g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.stroke();
+  g.beginPath(); g.arc(0, 0, r * 0.72, 0, Math.PI * 2); g.stroke();
+  // cardinal ticks + letters (N up)
+  const card = [['N', -Math.PI / 2], ['E', 0], ['S', Math.PI / 2], ['W', Math.PI]];
+  g.strokeStyle = tok('--fg-dim');
+  g.font = '9px "IBM Plex Mono", monospace';
+  g.fillStyle = tok('--fg-dim'); g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const [ch, a] of card){
+    const c = Math.cos(a), s = Math.sin(a);
+    g.beginPath(); g.moveTo(c * r * 0.72, s * r * 0.72); g.lineTo(c * r, s * r); g.stroke();
+    g.fillText(ch, c * (r + 9), s * (r + 9));
+  }
+  // needle -> current heading
+  if (ship){
+    const c = Math.cos(ship.heading), s = Math.sin(ship.heading);
+    g.beginPath();
+    g.moveTo(c * r * 0.66, s * r * 0.66);
+    g.lineTo(-s * 4, c * 4);
+    g.lineTo(s * 4, -c * 4);
+    g.closePath();
+    g.fillStyle = alignedNow ? tok('--accent') : tok('--fg');
+    g.fill();
+  }
+  g.restore();
+}
+
+function draw(){
+  X.clearRect(0, 0, W, H);
+  paintSea(X, W, H);
+  drawWake(X);
+  for (const b of beacons) if (b.found) drawBeacon(X, b);
+  drawShip(X);
+
+  // compass + progress (top-left, clear of the masthead and toggle)
+  drawRose(X, 62, 74, 34);
+  X.save();
+  X.font = '11px "IBM Plex Mono", monospace';
+  X.fillStyle = tok('--fg-dim'); X.textAlign = 'left'; X.textBaseline = 'top';
+  const found = beacons.filter(b => b.found).length;
+  X.fillText('Beacons ' + found + ' / ' + K, 108, 58);
+  const compassDeg = ((ship ? (ship.heading * 180 / Math.PI + 90) : 0) + 360) % 360;
+  X.fillText('Heading ' + compassDeg.toFixed(0).padStart(3, '0') + '°', 108, 74);
+  X.fillText(finished ? 'Charted' : (audioOn ? 'Listening' : 'Muted'), 108, 90);
+  X.restore();
+
+  if (!audioOn){
+    // quiet "click to begin" affordance
+    X.save();
+    X.fillStyle = dark ? 'rgba(0,0,0,0.45)' : 'rgba(240,242,246,0.55)';
+    X.fillRect(0, 0, W, H);
+    X.textAlign = 'center'; X.textBaseline = 'middle';
+    X.fillStyle = tok('--fg');
+    X.font = '600 22px "DM Sans", sans-serif';
+    X.fillText('Click to begin', W / 2, H / 2 - 14);
+    X.fillStyle = tok('--fg-dim');
+    X.font = '13px "IBM Plex Mono", monospace';
+    X.fillText('Steer with the arrow keys, or hold to sail toward your finger.', W / 2, H / 2 + 16);
+    X.fillText('Point your bow until a voice rings pure, then run it down.', W / 2, H / 2 + 36);
+    X.restore();
+  } else if (finished){
+    // efficiency banner
+    const eff = pathLen > 0 ? clamp(optimalLen / pathLen, 0, 1) : 0;
+    X.save();
+    X.textAlign = 'center'; X.textBaseline = 'middle';
+    X.fillStyle = tok('--fg');
+    X.font = '600 20px "DM Sans", sans-serif';
+    X.fillText('Sea charted', W / 2, 40);
+    X.fillStyle = tok('--fg-dim');
+    X.font = '13px "IBM Plex Mono", monospace';
+    X.fillText('Efficiency ' + (eff * 100).toFixed(0) + '%  ·  E export chart  ·  R or tap for a new sea', W / 2, 64);
+    X.restore();
+  }
+}
+
+// ---- loop ----
+function loop(ts){
+  const dt = lastT ? clamp((ts - lastT) / 16.667, 0, 2.5) : 1;
+  lastT = ts;
+  update(dt);
+  updateAudio();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ---- export ----
+function exportChart(){
+  const s = 2, w = W, h = H;
+  const cv = document.createElement('canvas');
+  cv.width = w * s; cv.height = h * s;
+  const g = cv.getContext('2d');
+  g.scale(s, s);
+  paintSea(g, w, h);
+  drawWake(g);
+  for (const b of beacons) if (b.found) drawBeacon(g, b);
+  drawShip(g);
+  drawRose(g, w - 78, h - 92, 42);
+  // title + efficiency plate
+  const eff = pathLen > 0 ? clamp(optimalLen / pathLen, 0, 1) : 0;
+  const found = beacons.filter(b => b.found).length;
+  g.save();
+  g.textAlign = 'left'; g.textBaseline = 'top';
+  g.fillStyle = tok('--fg');
+  g.font = '600 20px "DM Sans", sans-serif';
+  g.fillText('Bearing', 30, 28);
+  g.fillStyle = tok('--fg-dim');
+  g.font = '12px "IBM Plex Mono", monospace';
+  g.fillText('Beacons charted ' + found + ' / ' + K, 30, 56);
+  g.fillText('Path ' + pathLen.toFixed(0) + 'px  ·  optimal ' + optimalLen.toFixed(0) + 'px', 30, 74);
+  g.fillText('Efficiency ' + (eff * 100).toFixed(0) + '%', 30, 92);
+  g.restore();
+
+  cv.toBlob(blob => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'bearing-chart.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }, 'image/png');
+}
+
+// ---- input ----
+const KEYMAP = {
+  ArrowLeft: 'left', KeyA: 'left',
+  ArrowRight: 'right', KeyD: 'right',
+  ArrowUp: 'up', KeyW: 'up',
+  ArrowDown: 'down', KeyS: 'down'
+};
+window.addEventListener('keydown', e => {
+  if (KEYMAP[e.code]){ keys[KEYMAP[e.code]] = true; e.preventDefault(); if (!audioOn) enableAudio(); return; }
+  const k = e.key.toLowerCase();
+  if (k === 'e'){ exportChart(); }
+  else if (k === 'r'){ newSea(true); }
+});
+window.addEventListener('keyup', e => { if (KEYMAP[e.code]){ keys[KEYMAP[e.code]] = false; e.preventDefault(); } });
+window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+
+// Touch helm: hold anywhere and the vessel falls off toward your finger, under sail.
+// Without this the game is keyboard-only, which is to say unplayable on a phone.
+const helm = { down: false, x: 0, y: 0 };
+function helmAt(e){ helm.x = e.clientX; helm.y = e.clientY; }
+window.addEventListener('pointerdown', e => {
+  if (!audioOn) enableAudio();
+  if (e.target.closest && e.target.closest('.pt-ui, button, a')) return;  // never fight the chrome
+  if (finished){ newSea(true); return; }                                  // tap the chart for a new sea
+  helm.down = true; helmAt(e);
+});
+window.addEventListener('pointermove', e => { if (helm.down) helmAt(e); });
+const helmUp = () => { helm.down = false; };
+window.addEventListener('pointerup', helmUp);
+window.addEventListener('pointercancel', helmUp);
+window.addEventListener('blur', helmUp);
+
+// ---- resize / boot ----
+function resize(){
+  const ow = W || window.innerWidth, oh = H || window.innerHeight;
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // audible range = the farthest two points can be on a wrapping sea (the half-diagonal),
+  // so a voice still fades to nothing at the far side instead of murmuring everywhere
+  R = Math.hypot(W / 2, H / 2);
+  if (ship){
+    ship.x *= W / ow; ship.y *= H / oh;
+    for (const p of wake){ p.x *= W / ow; p.y *= H / oh; }
+    optimalLen = optimalTour();
+  } else {
+    newSea(false);
+  }
+}
+resize();
+window.addEventListener('resize', resize);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

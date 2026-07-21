@@ -4,8 +4,8 @@
   A column re-typeset every frame against a living measure: carve the river on either edge and the words re-break line by line, faster than the eye can follow, with zero DOM reflow. Pretext-powered, rendered live on canvas.
 
   Part of NUI - experiments in interface design and interaction.
-  Author · Adi Dizdarevic · AD& · http://adidizdarevic.com/
-  © 2026 Adi Dizdarevic. All rights reserved.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
 -->
 <html lang="en">
 <head>
@@ -14,7 +14,7 @@
 <title>Measure - live line-break solve</title>
 <meta name="description" content="A column re-typeset every frame against a living measure: carve the river on either edge and the words re-break line by line, with zero DOM reflow. The typesetting solve is the animation. Pretext-powered, live on canvas.">
 <meta name="author" content="Adi Dizdarevic">
-<link rel="author" href="http://adidizdarevic.com/">
+<link rel="author" href="https://adidizdarevic.com/">
 <meta name="theme-color" content="#0A0A0A">
 
 <!-- Open Graph (minimal) -->
@@ -34,9 +34,9 @@
   "browserRequirements": "Requires JavaScript and HTML5 canvas",
   "inLanguage": "en",
   "keywords": "typography, typesetting, pretext, line-breaking, measure, justification, reflow, kinetic, generative, canvas",
-  "license": "All rights reserved",
-  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "http://adidizdarevic.com/" },
-  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "http://adidizdarevic.com/" },
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
   "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
 }
 </script>
@@ -44,14 +44,22 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  :root{ --bg:#0A0A0A; --ink:#FAFAFA; --accent:#E8642D; }
+  :root{ --bg:#FAFAFA; --ink:#0A0A0A; --accent:#E8642D; }
+  body.dark{ --bg:#0A0A0A; --ink:#FAFAFA; }
   *{ margin:0; padding:0; box-sizing:border-box; }
   html,body{ height:100%; background:var(--bg); overflow:hidden; }
   canvas{ display:block; touch-action:none; cursor:crosshair; }
+  /* Theme toggle: base light/dark, nav-driven when embedded. */
+  #toggle{ position:fixed; bottom:14px; right:16px; z-index:9998; width:30px; height:30px; border-radius:50%; cursor:pointer; -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px); background:rgba(255,255,255,.5); border:1px solid rgba(0,0,0,.06); display:grid; place-items:center; transition:transform .2s cubic-bezier(.5,.02,.15,1); }
+  body.dark #toggle{ background:rgba(10,10,10,.35); border-color:rgba(255,255,255,.08); }
+  #toggle::after{ content:''; width:10px; height:10px; border-radius:50%; background:#0A0A0A; }
+  body.dark #toggle::after{ background:#FAFAFA; }
+  #toggle:hover{ transform:scale(1.08); }
 </style>
 </head>
 <body>
 <canvas id="c">Measure, a live line-break solve. Requires JavaScript and an HTML5 canvas.</canvas>
+<div id="toggle" title="Toggle theme"></div>
 
 <script src="./core/ui.js"></script>
 <script type="module">
@@ -72,7 +80,20 @@ const ctx = cv.getContext('2d', { alpha:false });
 const ui = window.PT.ui({
   title:'Measure',
   hints:'Drag carves the river · L R B edge · J justify · Space play · E export · 0 reset',
-  theme:'dark',
+  theme:'light',
+});
+
+// ---- theme: base light/dark. Nav-driven via #toggle when embedded; light is the start. ----
+let BG='#FAFAFA', inkRGB=[10,10,10], DIM='rgba(10,10,10,0.35)';
+function applyTheme(dark){
+  BG    = dark ? '#0A0A0A' : '#FAFAFA';
+  inkRGB= dark ? [250,250,250] : [10,10,10];
+  DIM   = dark ? 'rgba(250,250,250,0.35)' : 'rgba(10,10,10,0.35)';
+}
+document.getElementById('toggle').addEventListener('click', ()=>{
+  const dark = document.body.classList.toggle('dark');
+  ui.theme(dark ? 'dark' : 'light');
+  applyTheme(dark);
 });
 
 let DPR=1, W=0, H=0;
@@ -134,8 +155,8 @@ const keyOf = c => c.segmentIndex*100000 + c.graphemeIndex;
 function drawLine(text, x, y, maxW, isLast, glow){
   const g = Math.min(0.55, glow);
   ctx.fillStyle = g>0.01
-    ? `rgb(${(250+(232-250)*g)|0},${(250+(100-250)*g)|0},${(250+(45-250)*g)|0})`
-    : '#FAFAFA';
+    ? `rgb(${(inkRGB[0]+(232-inkRGB[0])*g)|0},${(inkRGB[1]+(100-inkRGB[1])*g)|0},${(inkRGB[2]+(45-inkRGB[2])*g)|0})`
+    : `rgb(${inkRGB[0]},${inkRGB[1]},${inkRGB[2]})`;
   const words = text.split(/\s+/).filter(Boolean);
   let sum=0; const ws=[];
   for(const w of words){ let ww=wordW.get(w); if(ww===undefined){ ww=ctx.measureText(w).width; wordW.set(w,ww); } ws.push(ww); sum+=ww; }
@@ -158,7 +179,7 @@ function frame(){
 }
 
 function renderScene(){
-  ctx.fillStyle='#0A0A0A'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle=BG; ctx.fillRect(0,0,W,H);
   ctx.textBaseline='alphabetic'; ctx.font=font;
 
   // --- THE SOLVE: re-typeset the whole column against the live measure, every frame ---
@@ -270,8 +291,8 @@ window.addEventListener('resize', resize);
 
 async function boot(){
   resize();
-  ctx.fillStyle='#0A0A0A'; ctx.fillRect(0,0,W,H);
-  ctx.fillStyle='rgba(250,250,250,0.35)'; ctx.font='12px "IBM Plex Mono",monospace';
+  ctx.fillStyle=BG; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle=DIM; ctx.font='12px "IBM Plex Mono",monospace';
   ctx.fillText('typesetting…', colX, colTop+fontSize);
   try{
     await Promise.race([

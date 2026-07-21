@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<!--
+  Emphasis - push shapes through emphasis layers
+  Scroll over any object to push it forward or back through soft emphasis layers, sharper and larger or muted and blurred.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Emphasis - push shapes through emphasis layers</title>
+<meta name="description" content="Scroll over any object to push it forward or back through soft emphasis layers, sharper and larger or muted and blurred.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Emphasis - push shapes through emphasis layers">
+<meta property="og:description" content="Scroll over any object to push it forward or back through soft emphasis layers, sharper and larger or muted and blurred.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Emphasis",
+  "applicationCategory": "DesignApplication",
+  "description": "Scroll over any object to push it forward or back through soft emphasis layers, sharper and larger or muted and blurred.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "emphasis, interaction design, layers, focus, blur, hierarchy, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg: #0a0a0c; --fg: rgba(255,255,255,0.92); --fg-dim: rgba(255,255,255,0.45); --fg-faint: rgba(255,255,255,0.18);
+    --grid: rgba(255,255,255,0.018); --chrome-bg: rgba(20,20,24,0.85); --chrome-bd: rgba(255,255,255,0.08);
+    --obj: rgb(132,137,148);
+  }
+  body.light { --bg: #FAFAFA; --fg: rgba(0,0,0,0.88); --fg-dim: rgba(0,0,0,0.45); --fg-faint: rgba(0,0,0,0.15); --grid: rgba(0,0,0,0.03); --chrome-bg: rgba(255,255,255,0.88); --chrome-bd: rgba(0,0,0,0.08); --obj: rgb(98,103,113); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s; }
+  canvas { position: fixed; inset: 0; display: block; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+  #cursor { position: fixed; left: 0; top: 0; width: 20px; height: 20px; border: 1.5px solid var(--fg); border-radius: 50%; pointer-events: none; z-index: 100; transform: translate(-50%, -50%); transition: border-color 0.2s; }
+  #cursor::before, #cursor::after { content: ''; position: absolute; background: var(--fg); }
+  #cursor::before { top: 50%; left: -3px; right: -3px; height: 1px; transform: translateY(-50%); }
+  #cursor::after { left: 50%; top: -3px; bottom: -3px; width: 1px; transform: translateX(-50%); }
+  #cursor.scrub { border-color: var(--fg); }
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <div id="toggle" title="Toggle theme"></div>
+  <div id="cursor"></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const cursor = document.getElementById('cursor');
+const readout = { set innerHTML(v){}, set textContent(v){} };
+
+const ui = PT.ui({ title: 'Emphasis scrub', hints: 'Scroll push forward/back · Double-click reset · Drag move · R reset all', theme: 'light' });
+const toggle = document.getElementById('toggle');
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); document.body.classList.toggle('light', !dark); ui.theme(dark ? 'dark' : 'light'); });
+
+// state BEFORE resize
+let W = 0, H = 0;
+let seed = 404040;
+let shapes = [];
+let drag = null;
+let mx = -100, my = -100;
+let hoverId = null;
+let lastClickTime = 0;
+let lastClickTarget = null;
+let flash = null; // {shapeId, t0, direction}
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() { if (shapes.length === 0) build(); }
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) { return function() { let t = (s += 0x6D2B79F5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function build() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  const positions = [
+    [0.18, 0.3], [0.36, 0.25], [0.54, 0.28], [0.72, 0.3],
+    [0.22, 0.55], [0.42, 0.58], [0.62, 0.55], [0.8, 0.58],
+    [0.3, 0.78], [0.6, 0.78],
+  ];
+  for (let i = 0; i < positions.length; i++) {
+    const [nx, ny] = positions[i];
+    shapes.push({
+      id: i + 1,
+      x: nx * W, y: ny * H,
+      size: 38 + rng() * 14,
+      emphasis: 0, // -1 to +1
+      targetEmphasis: 0,
+    });
+  }
+}
+
+
+// Map emphasis [-1, 1] to visual properties
+// +1 = forward: full saturation, no blur, z-up, +20% size, opacity 1
+// -1 = back: muted gray, blurred, z-down, -15% size, opacity 0.25
+// 0 = neutral
+function drawShape(s, charged) {
+  const e = s.emphasis;
+  const size = s.size * (1 + e * 0.18);
+  const alpha = e >= 0 ? 1 : (1 + e * 0.75); // at -1, alpha = 0.25
+  const blur = e < 0 ? Math.abs(e) * 8 : 0;
+  X.save();
+  X.globalAlpha = alpha;
+  if (blur > 0) X.filter = `blur(${blur.toFixed(1)}px)`;
+  // grey at rest; the shape under the cursor (hovered / dragged) is the one charged thing
+  X.fillStyle = charged ? '#FBF251' : getComputedStyle(document.body).getPropertyValue('--obj');
+  X.beginPath(); X.arc(s.x, s.y, size, 0, Math.PI * 2); X.fill();
+  X.restore();
+  X.filter = 'none';
+  // Emphasis ring for highly emphasized shapes
+  if (e > 0.4) {
+    X.save();
+    X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+    X.globalAlpha = (e - 0.4) / 0.6 * 0.85;
+    X.lineWidth = 1.5;
+    X.beginPath(); X.arc(s.x, s.y, size + 4 + e * 3, 0, Math.PI * 2); X.stroke();
+    X.restore();
+  }
+  // Label
+  X.save();
+  X.font = '9px "IBM Plex Mono", monospace';
+  X.textAlign = 'center';
+  X.textBaseline = 'top';
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+  X.globalAlpha = 0.8;
+  const sign = e > 0.02 ? '+' : (e < -0.02 ? '' : ' ');
+  X.fillText(`${sign}${e.toFixed(2)}`, s.x, s.y + size + 6);
+  X.restore();
+}
+
+function drawEmphasisBar(s) {
+  // vertical bar on the right side of the shape showing emphasis from -1 to +1
+  const barX = s.x + s.size + 18;
+  const barY = s.y - 28;
+  const barH = 56;
+  const e = s.emphasis;
+  X.save();
+  // Track
+  X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--chrome-bd');
+  X.lineWidth = 1;
+  X.beginPath(); X.moveTo(barX, barY); X.lineTo(barX, barY + barH); X.stroke();
+  // Zero tick
+  X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-faint');
+  X.beginPath(); X.moveTo(barX - 3, barY + barH / 2); X.lineTo(barX + 3, barY + barH / 2); X.stroke();
+  // Indicator dot
+  const indicatorY = barY + barH / 2 - (e * barH / 2);
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg');
+  X.beginPath(); X.arc(barX, indicatorY, 3.5, 0, Math.PI * 2); X.fill();
+  // Direction labels
+  X.font = '8px "IBM Plex Mono", monospace';
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+  X.textAlign = 'left';
+  X.fillText('↑ Fwd', barX + 8, barY + 4);
+  X.fillText('↓ Back', barX + 8, barY + barH);
+  X.restore();
+}
+
+function update() {
+  for (const s of shapes) {
+    s.emphasis += (s.targetEmphasis - s.emphasis) * 0.22;
+  }
+}
+
+// Z-order: shapes with higher emphasis draw on top
+function draw() {
+  update();
+  X.clearRect(0, 0, W, H);
+  const sorted = [...shapes].sort((a, b) => a.emphasis - b.emphasis); // low first, high last = on top
+  for (const s of sorted) {
+    const isDrag = drag && drag.id === s.id;
+    const isHover = hoverId === s.id && !drag;
+    drawShape(s, isDrag || isHover);
+    if ((isHover || isDrag) && !flash) {
+      drawEmphasisBar(s);
+    }
+    if (isHover || isDrag) {
+      X.save();
+      X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+      X.lineWidth = 1;
+      X.setLineDash([3, 3]);
+      const size = s.size * (1 + s.emphasis * 0.18);
+      X.beginPath(); X.arc(s.x, s.y, size + 8, 0, Math.PI * 2); X.stroke();
+      X.restore();
+    }
+  }
+  // Flash
+  if (flash) {
+    const s = shapes.find(x => x.id === flash.shapeId);
+    const age = (performance.now() - flash.t0) / 400;
+    if (s && age < 1) {
+      X.save();
+      X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg');
+      X.globalAlpha = (1 - age) * 0.7;
+      X.lineWidth = 1.5;
+      const size = s.size * (1 + s.emphasis * 0.18);
+      X.beginPath(); X.arc(s.x, s.y, size + 12 + age * 20, 0, Math.PI * 2); X.stroke();
+      X.restore();
+    } else { flash = null; }
+  }
+  // Readout
+  const avg = shapes.reduce((s, x) => s + x.emphasis, 0) / shapes.length;
+  readout.innerHTML = `Objects <b>${shapes.length}</b> · Avg <b>${avg.toFixed(2)}</b>${hoverId ? ` · Hover <b>${shapes.find(x => x.id === hoverId).emphasis.toFixed(2)}</b>` : ''}`;
+}
+
+function loop() { draw(); requestAnimationFrame(loop); }
+loop();
+
+function hit(x, y) {
+  // iterate over visual top-down (high emphasis first)
+  const sorted = [...shapes].sort((a, b) => b.emphasis - a.emphasis);
+  for (const s of sorted) {
+    const size = s.size * (1 + s.emphasis * 0.18);
+    if (Math.hypot(x - s.x, y - s.y) < size + 4) return s;
+  }
+  return null;
+}
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    if (s) { s.x = mx - drag.offX; s.y = my - drag.offY; }
+  } else {
+    const h = hit(mx, my);
+    hoverId = h ? h.id : null;
+    cursor.classList.toggle('scrub', !!hoverId);
+  }
+});
+window.addEventListener('pointerdown', e => {
+  const h = hit(e.clientX, e.clientY);
+  if (h) {
+    // Double click reset
+    const now = performance.now();
+    if (lastClickTarget === h.id && now - lastClickTime < 380) {
+      h.targetEmphasis = 0;
+      lastClickTarget = null;
+      return;
+    }
+    lastClickTarget = h.id;
+    lastClickTime = now;
+    drag = { id: h.id, offX: e.clientX - h.x, offY: e.clientY - h.y };
+  }
+});
+window.addEventListener('pointerup', () => { drag = null; });
+window.addEventListener('wheel', e => {
+  if (hoverId) {
+    const s = shapes.find(x => x.id === hoverId);
+    if (s) {
+      const delta = -Math.sign(e.deltaY) * 0.08;
+      s.targetEmphasis = clamp(s.targetEmphasis + delta, -1, 1);
+      flash = { shapeId: s.id, t0: performance.now(), direction: delta };
+    }
+    e.preventDefault();
+  }
+}, { passive: false });
+window.addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R') {
+    for (const s of shapes) s.targetEmphasis = 0;
+  }
+});
+</script>
+</body>
+</html>

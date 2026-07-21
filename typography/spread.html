@@ -4,8 +4,8 @@
   A multi-column editorial compositor with drop caps, pull-quotes and justified columns composed into a spread, rendered live on canvas.
 
   Part of NUI - experiments in interface design and interaction.
-  Author · Adi Dizdarevic · AD& · http://adidizdarevic.com/
-  © 2026 Adi Dizdarevic. All rights reserved.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
 -->
 <html lang="en">
 <head>
@@ -14,7 +14,7 @@
 <title>Spread - editorial spread compositor</title>
 <meta name="description" content="A multi-column editorial compositor with drop caps, pull-quotes and justified columns composed into a spread, rendered live on canvas.">
 <meta name="author" content="Adi Dizdarevic">
-<link rel="author" href="http://adidizdarevic.com/">
+<link rel="author" href="https://adidizdarevic.com/">
 <meta name="theme-color" content="#F5F0E8">
 
 <!-- Open Graph (minimal) -->
@@ -34,9 +34,9 @@
   "browserRequirements": "Requires JavaScript and HTML5 canvas",
   "inLanguage": "en",
   "keywords": "typography, editorial, multi-column, compositor, layout, drop cap, generative, canvas",
-  "license": "All rights reserved",
-  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "http://adidizdarevic.com/" },
-  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "http://adidizdarevic.com/" },
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
   "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
 }
 </script>
@@ -45,12 +45,19 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #F5F0E8; touch-action: none; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #FAFAFA; touch-action: none; -webkit-tap-highlight-color: transparent; }
   canvas { display: block; cursor: default; }
+  /* Theme toggle: base light/dark (nav-driven when embedded). B still cycles paper as an override. */
+  #toggle { position: fixed; bottom: 14px; right: 16px; z-index: 9998; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); background: rgba(255,255,255,.5); border: 1px solid rgba(0,0,0,.06); display: grid; place-items: center; transition: transform .2s cubic-bezier(.5,.02,.15,1); }
+  body.dark #toggle { background: rgba(10,10,10,.35); border-color: rgba(255,255,255,.08); }
+  #toggle::after { content: ''; width: 10px; height: 10px; border-radius: 50%; background: #0A0A0A; }
+  body.dark #toggle::after { background: #FAFAFA; }
+  #toggle:hover { transform: scale(1.08); }
 </style>
 </head>
 <body>
 <canvas id="c">Spread, an editorial spread compositor. Requires JavaScript and an HTML5 canvas.</canvas>
+<div id="toggle" title="Toggle theme"></div>
 <script src="./core/ui.js"></script>
 <script>
 (() => {
@@ -84,7 +91,7 @@ const PAPERS = [
   { name: 'White',      color: '#FAFAFA', light: true },
   { name: 'Cool Gray',  color: '#F0F0F0', light: true },
   { name: 'Newsprint',  color: '#E8E0D0', light: true },
-  { name: 'Dark',       color: '#1A1A1A', light: false },
+  { name: 'Dark',       color: '#0A0A0A', light: false },
 ];
 
 const PUBLICATION = 'THE TYPE REVIEW';
@@ -99,7 +106,7 @@ const GRID_OPTIONS = [2, 3, 4, 5];
 let state = {
   modeIndex: 0,
   accentIndex: 0,
-  paperIndex: 0,
+  paperIndex: Math.max(0, PAPERS.findIndex(p => p.color === '#FAFAFA')),   // start on the plain white base
   gridIndex: -1,   // -1 = use mode default, 0-3 = override to GRID_OPTIONS[i]
   bodySize: 10.5,
   quoteWeight: 300,
@@ -682,6 +689,24 @@ function invalidate() {
   dirty = true;
 }
 
+/* ── Theme: base light/dark. The nav switch (when embedded) drives this via #toggle;
+   it is "on top" - flipping it resets the paper to the white/dark base. B still cycles
+   all PAPERS entries as a local override until the next flip. ── */
+const PAPER_LIGHT_IDX = Math.max(0, PAPERS.findIndex(p => p.color === '#FAFAFA'));
+const PAPER_DARK_IDX  = Math.max(0, PAPERS.findIndex(p => !p.light));
+function applyTheme(dark) {
+  // Reset paper to the plain white / dark base. Text + accent colors derive from
+  // PAPERS[...].light automatically (see textColor / accentColor), so ink self-fixes.
+  state.paperIndex = dark ? PAPER_DARK_IDX : PAPER_LIGHT_IDX;
+  invalidate();
+  updateUI();
+}
+document.getElementById('toggle').addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  ui.theme(dark ? 'dark' : 'light');
+  applyTheme(dark);
+});
+
 /* ── Input ── */
 function handleKey(e) {
   const k = e.key.toLowerCase();
@@ -694,7 +719,7 @@ function handleKey(e) {
     case 'r':
       state.modeIndex = 0;
       state.accentIndex = 0;
-      state.paperIndex = 0;
+      state.paperIndex = PAPER_LIGHT_IDX;
       state.gridIndex = -1;
       state.bodySize = 10.5;
       state.quoteWeight = 300;

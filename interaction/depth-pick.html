@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<!--
+  Depth pick - isolate a slice of depth
+  Hold D to isolate a z-slice of the scene under the cursor, scroll to widen it, and click to commit it as a layer.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Depth pick - isolate a slice of depth</title>
+<meta name="description" content="Hold D to isolate a z-slice of the scene under the cursor, scroll to widen it, and click to commit it as a layer.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Depth pick - isolate a slice of depth">
+<meta property="og:description" content="Hold D to isolate a z-slice of the scene under the cursor, scroll to widen it, and click to commit it as a layer.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Depth pick",
+  "applicationCategory": "DesignApplication",
+  "description": "Hold D to isolate a z-slice of the scene under the cursor, scroll to widen it, and click to commit it as a layer.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "depth pick, interaction design, depth, z-slice, isolation, layers, selection, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0a0c;
+  --doc: #07070a;
+  --fg: rgba(255,255,255,0.95);
+  --dim: rgba(255,255,255,0.15);
+  --mid: rgba(255,255,255,0.25);
+  --active: rgba(255,255,255,0.5);
+  --hover: rgba(255,255,255,0.7);
+  --obj: rgb(132,137,148);
+  --accent: #FBF251;
+  --grid: rgba(255,255,255,0.015);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.light {
+  --bg: #FAFAFA;
+  --doc: #ebe8e3;
+  --fg: rgba(0,0,0,0.95);
+  --dim: rgba(0,0,0,0.15);
+  --mid: rgba(0,0,0,0.28);
+  --active: rgba(0,0,0,0.5);
+  --hover: rgba(0,0,0,0.75);
+  --obj: rgb(98,103,113);
+  --accent: #FBF251;
+  --grid: rgba(0,0,0,0.03);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); }
+
+#c { position: fixed; inset: 0; z-index: 1; }
+
+#toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+
+/* Depth ribbon on the right edge */
+.ribbon {
+  position: fixed; right: 100px; top: 120px; bottom: 120px; width: 18px;
+  z-index: 6; pointer-events: none;
+  border: 1px solid var(--dim); opacity: 0;
+  transition: opacity 0.4s var(--ease);
+}
+body.depth .ribbon, .ribbon.has-committed { opacity: 1; }
+.ribbon-caps {
+  position: absolute; left: -60px; right: calc(100% + 12px); top: 0; bottom: 0;
+  display: flex; flex-direction: column; justify-content: space-between;
+  font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.2em;
+  color: var(--mid); align-items: flex-end;
+  width: 58px;
+}
+.ribbon-hist {
+  position: absolute; inset: 0;
+  image-rendering: pixelated;
+}
+.ribbon-slice {
+  position: absolute; left: -2px; right: -2px;
+  pointer-events: none;
+  transition: background-color 0.2s var(--ease);
+}
+.ribbon-slice.active {
+  background: var(--accent);
+  border-top: 1px solid var(--accent);
+  border-bottom: 1px solid var(--accent);
+}
+.ribbon-slice.committed {
+  background: var(--obj);
+  border-top: 1px solid var(--obj);
+  border-bottom: 1px solid var(--obj);
+}
+
+/* Cursor */
+.cursor {
+  position: fixed; z-index: 50; pointer-events: none;
+  width: 28px; height: 28px; transform: translate(-50%, -50%);
+}
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--mid); border-radius: 50%; transition: all 0.25s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--mid); transform: translate(-50%, -50%); transition: background 0.25s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; }
+.cursor .cross.v { width: 1px; height: 10px; }
+body.depth .cursor .ring  { border-color: var(--accent); transform: scale(1.35); }
+body.depth .cursor .cross { background: var(--accent); }
+.cursor .readout {
+  position: absolute; left: 24px; top: 12px;
+  font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.08em;
+  color: var(--mid); opacity: 0; white-space: nowrap;
+  transition: opacity 0.3s var(--ease);
+}
+body.depth .cursor .readout { opacity: 1; }
+</style>
+</head>
+<body class="light">
+<canvas id="c"></canvas>
+
+<div id="toggle" title="Toggle theme"></div>
+
+<div class="ribbon" id="ribbon">
+  <div class="ribbon-caps">
+    <span>Near · 0</span>
+    <span>Far · 1</span>
+  </div>
+  <canvas class="ribbon-hist" id="rhist" width="18" height="200"></canvas>
+  <div class="ribbon-slice active" id="rslice" style="display:none"></div>
+</div>
+
+<div class="cursor" id="cursor">
+  <div class="ring"></div>
+  <div class="cross h"></div>
+  <div class="cross v"></div>
+  <div class="readout" id="cur-readout"></div>
+</div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+// ───── State (declare before resize) ─────
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const ui = PT.ui({ title: 'Depth pick', hints: 'D hold to pick · Scroll slice width · Click commit · X clear · R reseed', theme: 'light' });
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+let isDepth = false;
+let mouseX = -100, mouseY = -100;
+let currentDepth = 1.0;
+let sliceWidth = 0.09;
+let seed = 424242;
+let committed = []; // [{depth, width}]
+
+// Doc geometry (computed in layout())
+let docX = 0, docY = 0, docSize = 0;
+
+// Scene buffers
+const SCENE_RES = 600;          // scene at 600×600
+const DEPTH_RES = 500;          // depth + mask at 500×500
+const sceneBuf = document.createElement('canvas');
+sceneBuf.width = sceneBuf.height = SCENE_RES;
+const sceneCtx = sceneBuf.getContext('2d');
+
+const maskBuf = document.createElement('canvas');
+maskBuf.width = maskBuf.height = DEPTH_RES;
+const maskCtx = maskBuf.getContext('2d');
+
+const commitBuf = document.createElement('canvas');
+commitBuf.width = commitBuf.height = DEPTH_RES;
+const commitCtx = commitBuf.getContext('2d');
+
+let depthMap = new Float32Array(DEPTH_RES * DEPTH_RES);
+let blobs = [];
+let maskDirty = true;
+let commitDirty = true;
+
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  C.width  = W * dpr;
+  C.height = H * dpr;
+  C.style.width  = W + 'px';
+  C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() {
+  docSize = Math.min(W, H) * 0.72;
+  docX = (W - docSize) / 2;
+  docY = (H - docSize) / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ───── Math ─────
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function mulberry32(s) {
+  return function() {
+    let t = (s += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ───── Scene gen ─────
+function generateScene(s) {
+  const rng = mulberry32(s);
+  const arr = [];
+  for (let i = 0; i < 54; i++) {
+    arr.push({
+      x: 0.08 + rng() * 0.84,
+      y: 0.08 + rng() * 0.84,
+      depth: rng(),
+      hueJit: rng(),
+      r: 0,
+    });
+  }
+  // Size scales inversely with depth
+  for (const b of arr) b.r = lerp(0.22, 0.045, b.depth);
+  // Render far-to-near (painter's: high depth first)
+  arr.sort((a, b) => b.depth - a.depth);
+  return arr;
+}
+
+function renderScene(arr) {
+  sceneCtx.fillStyle = document.body.classList.contains('dark') ? '#07070a' : '#FAFAFA';
+  sceneCtx.fillRect(0, 0, SCENE_RES, SCENE_RES);
+  for (const b of arr) {
+    const x = b.x * SCENE_RES;
+    const y = b.y * SCENE_RES;
+    const r = b.r * SCENE_RES;
+    // Depth is carried by size + overlap; near = stronger/darker, far = fainter.
+    const grey = document.body.classList.contains('dark') ? '132,137,148' : '98,103,113';
+    const lum = lerp(56, 16, b.depth);
+    const alp = lerp(0.92, 0.55, b.depth);
+    const a = alp * (lum / 56);
+    const g = sceneCtx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0.0, `rgba(${grey},${a})`);
+    g.addColorStop(0.55, `rgba(${grey},${a * 0.55})`);
+    g.addColorStop(1.0, `rgba(${grey},0)`);
+    sceneCtx.fillStyle = g;
+    sceneCtx.beginPath();
+    sceneCtx.arc(x, y, r, 0, Math.PI * 2);
+    sceneCtx.fill();
+  }
+}
+
+function computeDepthMap(arr) {
+  depthMap.fill(1.0);
+  for (const b of arr) {
+    const cx = b.x * DEPTH_RES;
+    const cy = b.y * DEPTH_RES;
+    const r  = b.r * DEPTH_RES;
+    const r2 = r * r;
+    const x0 = Math.max(0, Math.floor(cx - r));
+    const x1 = Math.min(DEPTH_RES, Math.ceil(cx + r));
+    const y0 = Math.max(0, Math.floor(cy - r));
+    const y1 = Math.min(DEPTH_RES, Math.ceil(cy + r));
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        const dx = x - cx, dy = y - cy;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < r2 * 0.75) {
+          const idx = y * DEPTH_RES + x;
+          if (b.depth < depthMap[idx]) depthMap[idx] = b.depth;
+        }
+      }
+    }
+  }
+}
+
+function regen() {
+  blobs = generateScene(seed);
+  renderScene(blobs);
+  computeDepthMap(blobs);
+  updateHistogram();
+  maskDirty = true;
+  commitDirty = true;
+}
+
+// ───── Masks ─────
+function updateMask() {
+  const img = maskCtx.createImageData(DEPTH_RES, DEPTH_RES);
+  const px = img.data;
+  const hw = sliceWidth * 0.5;
+  for (let i = 0; i < DEPTH_RES * DEPTH_RES; i++) {
+    const d = depthMap[i];
+    const idx = i * 4;
+    const inActive = Math.abs(d - currentDepth) <= hw;
+    if (inActive) {
+      // Accent yellow tint (source-over) - the currently-charged slice
+      px[idx]     = 251;
+      px[idx + 1] = 242;
+      px[idx + 2] = 81;
+      px[idx + 3] = 55;
+    } else {
+      // Dim black
+      px[idx]     = 0;
+      px[idx + 1] = 0;
+      px[idx + 2] = 0;
+      px[idx + 3] = 185;
+    }
+  }
+  maskCtx.putImageData(img, 0, 0);
+  maskDirty = false;
+}
+
+function updateCommitMask() {
+  const img = commitCtx.createImageData(DEPTH_RES, DEPTH_RES);
+  const px = img.data;
+  if (committed.length === 0) {
+    commitCtx.putImageData(img, 0, 0);
+    commitDirty = false;
+    return;
+  }
+  // Committed slices are settled - neutral grey, theme-aware.
+  const dark = document.body.classList.contains('dark');
+  const gr = dark ? 132 : 98, gg = dark ? 137 : 103, gb = dark ? 148 : 113;
+  for (let i = 0; i < DEPTH_RES * DEPTH_RES; i++) {
+    const d = depthMap[i];
+    let hit = false;
+    for (const c of committed) {
+      if (Math.abs(d - c.depth) <= c.width * 0.5) { hit = true; break; }
+    }
+    if (hit) {
+      const idx = i * 4;
+      px[idx]     = gr;
+      px[idx + 1] = gg;
+      px[idx + 2] = gb;
+      px[idx + 3] = 65;
+    }
+  }
+  commitCtx.putImageData(img, 0, 0);
+  commitDirty = false;
+}
+
+// ───── Histogram ─────
+const rhist = document.getElementById('rhist');
+const rhistCtx = rhist.getContext('2d');
+const HIST_BINS = 200;
+
+function updateHistogram() {
+  const bins = new Array(HIST_BINS).fill(0);
+  for (let i = 0; i < depthMap.length; i++) {
+    const b = Math.min(HIST_BINS - 1, Math.floor(depthMap[i] * HIST_BINS));
+    bins[b]++;
+  }
+  const max = Math.max(...bins.slice(0, HIST_BINS - 1)); // skip "empty" bin
+  rhist.width = 18;
+  rhist.height = HIST_BINS;
+  rhistCtx.clearRect(0, 0, 18, HIST_BINS);
+  rhistCtx.fillStyle = document.body.classList.contains('light')
+    ? 'rgba(0,0,0,0.25)'
+    : 'rgba(255,255,255,0.22)';
+  for (let i = 0; i < HIST_BINS; i++) {
+    const v = bins[i] / (max || 1);
+    const w = v * 18;
+    rhistCtx.fillRect((18 - w) / 2, i, w, 1);
+  }
+}
+
+// ───── Ribbon slice overlays ─────
+const ribbon  = document.getElementById('ribbon');
+const rslice  = document.getElementById('rslice');
+const committedSlices = []; // DOM elements
+
+function positionRibbonSlice(el, depth, width) {
+  const rect = ribbon.getBoundingClientRect();
+  const h = rect.height;
+  const topPct = (depth - width / 2) * 100;
+  const heightPct = width * 100;
+  el.style.top = topPct + '%';
+  el.style.height = heightPct + '%';
+}
+
+function syncCommittedSliceEls() {
+  // Remove stale
+  while (committedSlices.length > committed.length) {
+    const el = committedSlices.pop();
+    el.remove();
+  }
+  while (committedSlices.length < committed.length) {
+    const el = document.createElement('div');
+    el.className = 'ribbon-slice committed';
+    ribbon.appendChild(el);
+    committedSlices.push(el);
+  }
+  for (let i = 0; i < committed.length; i++) {
+    positionRibbonSlice(committedSlices[i], committed[i].depth, committed[i].width);
+  }
+  ribbon.classList.toggle('has-committed', committed.length > 0);
+}
+
+// ───── Main loop ─────
+function draw() {
+  // Page bg
+  X.clearRect(0, 0, W, H);
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg').trim();
+  X.fillRect(0, 0, W, H);
+
+  // Doc background
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--doc').trim();
+  X.fillRect(docX, docY, docSize, docSize);
+
+  // Scene
+  X.drawImage(sceneBuf, docX, docY, docSize, docSize);
+
+  // Committed slice tint (always visible)
+  if (commitDirty) updateCommitMask();
+  if (committed.length > 0) {
+    X.drawImage(commitBuf, docX, docY, docSize, docSize);
+  }
+
+  // Active slice mask (only while D held)
+  if (isDepth) {
+    if (maskDirty) updateMask();
+    X.drawImage(maskBuf, docX, docY, docSize, docSize);
+  }
+
+  // Doc border
+  X.strokeStyle = document.body.classList.contains('light') ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.08)';
+  X.lineWidth = 1;
+  X.strokeRect(docX - 0.5, docY - 0.5, docSize + 1, docSize + 1);
+
+  requestAnimationFrame(draw);
+}
+
+// ───── Depth sampling ─────
+function sampleDepthAt(screenX, screenY) {
+  const rx = screenX - docX;
+  const ry = screenY - docY;
+  if (rx < 0 || ry < 0 || rx >= docSize || ry >= docSize) return null;
+  const mx = clamp(Math.floor((rx / docSize) * DEPTH_RES), 0, DEPTH_RES - 1);
+  const my = clamp(Math.floor((ry / docSize) * DEPTH_RES), 0, DEPTH_RES - 1);
+  return depthMap[my * DEPTH_RES + mx];
+}
+
+// ───── Input ─────
+const cursor     = document.getElementById('cursor');
+const readout    = { set innerHTML(v){}, set textContent(v){} };
+const curReadout = document.getElementById('cur-readout');
+const toggle     = document.getElementById('toggle');
+
+window.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top  = mouseY + 'px';
+  if (isDepth) {
+    const d = sampleDepthAt(mouseX, mouseY);
+    if (d !== null) {
+      currentDepth = d;
+      maskDirty = true;
+      updateActiveSlice();
+    }
+  }
+});
+
+window.addEventListener('wheel', (e) => {
+  if (!isDepth) return;
+  e.preventDefault();
+  sliceWidth = clamp(sliceWidth + (e.deltaY > 0 ? 0.01 : -0.01), 0.02, 0.35);
+  maskDirty = true;
+  updateActiveSlice();
+}, { passive: false });
+
+window.addEventListener('mousedown', (e) => {
+  if (!isDepth) return;
+  if (e.button !== 0) return;
+  committed.push({ depth: currentDepth, width: sliceWidth });
+  commitDirty = true;
+  syncCommittedSliceEls();
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  const k = e.key.toLowerCase();
+  if (k === 'd') {
+    isDepth = true;
+    document.body.classList.add('depth');
+    rslice.style.display = 'block';
+    const d = sampleDepthAt(mouseX, mouseY);
+    if (d !== null) currentDepth = d;
+    maskDirty = true;
+    updateActiveSlice();
+  }
+  if (k === 'r') {
+    seed = (Math.random() * 1e9) | 0;
+    regen();
+    updateActiveSlice();
+  }
+  if (k === 'x') {
+    committed = [];
+    commitDirty = true;
+    syncCommittedSliceEls();
+  }
+});
+
+window.addEventListener('keyup', (e) => {
+  if (e.key.toLowerCase() === 'd') {
+    isDepth = false;
+    document.body.classList.remove('depth');
+    rslice.style.display = 'none';
+  }
+});
+
+toggle.addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  document.body.classList.toggle('light', !dark);
+  ui.theme(dark ? 'dark' : 'light');
+  renderScene(blobs);
+  maskDirty = true; commitDirty = true;
+  updateHistogram();
+});
+
+// ───── Info ticker ─────
+function fmt3(n) { return n.toFixed(2).padStart(4, '0'); }
+
+function updateActiveSlice() {
+  positionRibbonSlice(rslice, currentDepth, sliceWidth);
+}
+
+function updateInfo() {
+  const d = fmt3(currentDepth);
+  const w = fmt3(sliceWidth);
+  readout.innerHTML = `Depth <b>${d}</b> · ±<b>${w}</b> · Held <b>${committed.length}</b>`;
+  curReadout.textContent = `Depth ${d} · ±${w}`;
+}
+setInterval(updateInfo, 16);
+
+// ───── Boot ─────
+regen();
+updateActiveSlice();
+draw();
+</script>
+</body>
+</html>

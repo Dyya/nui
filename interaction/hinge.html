@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<!--
+  Hinge - pinned, hinged linkages
+  Drop pins to anchor and hinge planks, then swing the linkage, with gravity on tap.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Hinge - pinned, hinged linkages</title>
+<meta name="description" content="Drop pins to anchor and hinge planks, then swing the linkage, with gravity on tap.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Hinge - pinned, hinged linkages">
+<meta property="og:description" content="Drop pins to anchor and hinge planks, then swing the linkage, with gravity on tap.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Hinge",
+  "applicationCategory": "DesignApplication",
+  "description": "Drop pins to anchor and hinge planks, then swing the linkage, with gravity on tap.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "hinge, interaction design, physics, pin, linkage, mechanism, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white:#FAFAFA; --c-grey:#8A8A8A; --c-black:#0A0A0A;
+  --bg: var(--c-white);
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.12);
+  --mid: rgba(10,10,10,0.30);
+  --active: rgba(10,10,10,0.60);
+  --obj: rgb(98,103,113);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.12);
+  --mid: rgba(250,250,250,0.30);
+  --active: rgba(250,250,250,0.60);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); color:var(--fg); font-family:'DM Sans',sans-serif; cursor:none; transition:background .4s var(--ease); touch-action:none; overscroll-behavior:none; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+#c { position:fixed; inset:0; z-index:1; }
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+.cursor{position:fixed;z-index:50;pointer-events:none;width:28px;height:28px;transform:translate(-50%,-50%);}
+.cursor .ring{position:absolute;inset:0;border:1px solid var(--c-grey);border-radius:50%;transition:transform .2s var(--ease),border-color .2s var(--ease);}
+.cursor .cross{position:absolute;left:50%;top:50%;background:var(--c-grey);transform:translate(-50%,-50%);transition:background .2s var(--ease);}
+.cursor .cross.h{width:10px;height:1px;} .cursor .cross.v{width:1px;height:10px;}
+body.grabbing .cursor .ring{border-color:var(--fg);transform:scale(1.35);}
+body.grabbing .cursor .cross{background:var(--fg);}
+body.pinning .cursor .ring{border-color:var(--fg);transform:scale(0.55);}
+body.pinning .cursor .cross{background:var(--fg);}
+@media (hover:none) and (pointer:coarse){ html,body{cursor:auto;} .cursor{display:none;} }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+let W = 0, H = 0, prevW = 0, prevH = 0;
+
+const HINTS = 'Long-press or P + click drives a pin · One plank pins to the board, two hinge · Drag to swing · Double-click a pin to pull it · G or double-tap empty for gravity · R reset';
+const ui = PT.ui({ title: 'Hinge', hints: HINTS, theme: 'light' });
+const pill = document.querySelector('.adui-pill');
+const seg = h => '<span class="adui-seg">' + h + '</span>';
+const key = t => '<b class="adui-key">' + t + '</b>';
+let barTimer = null, lastBar = '';
+function setBar(h){ clearTimeout(barTimer); if (pill && h !== lastBar){ pill.innerHTML = h; lastBar = h; } }
+function idleBar(){ clearTimeout(barTimer); lastBar = ''; ui.setHints(HINTS); }
+function flashBar(h, ms){ setBar(h); barTimer = setTimeout(() => { if (!grab) idleBar(); }, ms); }
+
+const cursor = document.getElementById('cursor');
+const toggle = document.getElementById('toggle');
+
+let COL = {};
+function readTheme(){
+  const cs = getComputedStyle(document.body);
+  COL = { bg: cs.getPropertyValue('--bg').trim(), fg: cs.getPropertyValue('--fg').trim(),
+          dim: cs.getPropertyValue('--dim').trim(), mid: cs.getPropertyValue('--mid').trim(),
+          active: cs.getPropertyValue('--active').trim(), obj: cs.getPropertyValue('--obj').trim() };
+}
+readTheme();
+
+let bodies = [];   // verlet segment: two endpoints + prev positions
+let pins = [];
+let grab = null;   // { b, t }
+let keyP = false, gravityOn = false;
+let mx = -100, my = -100;
+let press = null;
+let lastTap = 0, lastTapPos = null;
+
+function resize(){
+  prevW = W || window.innerWidth; prevH = H || window.innerHeight;
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (bodies.length && prevW && prevH){
+    const sr = Math.min(W / prevW, H / prevH);
+    const ocx = prevW / 2, ocy = prevH / 2, ncx = W / 2, ncy = H / 2;
+    const tf = (x, y) => [ncx + (x - ocx) * sr, ncy + (y - ocy) * sr];
+    for (const b of bodies){
+      [b.ax, b.ay] = tf(b.ax, b.ay); [b.bx, b.by] = tf(b.bx, b.by);
+      [b.pax, b.pay] = tf(b.pax, b.pay); [b.pbx, b.pby] = tf(b.pbx, b.pby);
+      b.len *= sr; b.th *= sr;
+    }
+    for (const p of pins){ if (p.type === 'board') [p.x, p.y] = tf(p.x, p.y); }
+  }
+}
+
+function makeBody(cx, cy, len, th, ang){
+  const dx = Math.cos(ang) * len / 2, dy = Math.sin(ang) * len / 2;
+  return { ax: cx - dx, ay: cy - dy, bx: cx + dx, by: cy + dy,
+           pax: cx - dx, pay: cy - dy, pbx: cx + dx, pby: cy + dy, len, th };
+}
+
+function seed(){
+  bodies = []; pins = []; grab = null; gravityOn = false;
+  const S = Math.min(W, H);
+  const cx = W * 0.32, cy = H * 0.3;
+  const armA = makeBody(cx, cy + S * 0.12, S * 0.26, S * 0.05, Math.PI / 2);
+  const armB = makeBody(cx, cy + S * 0.12 + S * 0.25, S * 0.22, S * 0.043, Math.PI / 2);
+  bodies.push(armA, armB);
+  pins.push({ type: 'board', b: 0, t: 0.06, x: armA.ax + (armA.bx - armA.ax) * 0.06, y: armA.ay + (armA.by - armA.ay) * 0.06, flash: 0 });
+  pins.push({ type: 'joint', a: 0, ta: 0.94, b: 1, tb: 0.06, flash: 0 });
+  for (let i = 0; i < 6; i++){
+    bodies.push(makeBody(W * 0.5 + Math.random() * W * 0.38, H * 0.2 + Math.random() * H * 0.6,
+      S * (0.14 + Math.random() * 0.15), S * (0.04 + Math.random() * 0.024), Math.random() * Math.PI));
+  }
+}
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const ptOn = (b, t) => ({ x: b.ax + (b.bx - b.ax) * t, y: b.ay + (b.by - b.ay) * t });
+
+function movePoint(b, t, dx, dy, k){
+  const den = (1 - t) * (1 - t) + t * t;
+  b.ax += dx * ((1 - t) / den) * k; b.ay += dy * ((1 - t) / den) * k;
+  b.bx += dx * (t / den) * k;       b.by += dy * (t / den) * k;
+}
+function distToSegment(px, py, b){
+  const vx = b.bx - b.ax, vy = b.by - b.ay, L2 = vx * vx + vy * vy || 1;
+  const t = clamp(((px - b.ax) * vx + (py - b.ay) * vy) / L2, 0, 1);
+  const p = ptOn(b, t);
+  return { d: Math.hypot(px - p.x, py - p.y), t };
+}
+
+function integrate(){
+  const damp = 0.985, g = gravityOn ? Math.min(W, H) * 0.0006 : 0;
+  for (const b of bodies){
+    let vx = (b.ax - b.pax) * damp, vy = (b.ay - b.pay) * damp;
+    b.pax = b.ax; b.pay = b.ay; b.ax += vx; b.ay += vy + g;
+    vx = (b.bx - b.pbx) * damp; vy = (b.by - b.pby) * damp;
+    b.pbx = b.bx; b.pby = b.by; b.bx += vx; b.by += vy + g;
+  }
+}
+function constrain(){
+  const ITER = 12;
+  for (let it = 0; it < ITER; it++){
+    if (grab){ const b = bodies[grab.b], p = ptOn(b, grab.t); movePoint(b, grab.t, mx - p.x, my - p.y, 0.45); }
+    for (const b of bodies){
+      const dx = b.bx - b.ax, dy = b.by - b.ay, d = Math.hypot(dx, dy) || 1, err = (d - b.len) / d / 2;
+      b.ax += dx * err; b.ay += dy * err; b.bx -= dx * err; b.by -= dy * err;
+    }
+    for (const p of pins){
+      if (p.type === 'board'){ const b = bodies[p.b], pt = ptOn(b, p.t); movePoint(b, p.t, p.x - pt.x, p.y - pt.y, 0.9); }
+      else { const A = bodies[p.a], B = bodies[p.b], pa = ptOn(A, p.ta), pb = ptOn(B, p.tb), dx = pb.x - pa.x, dy = pb.y - pa.y; movePoint(A, p.ta, dx * 0.5, dy * 0.5, 0.9); movePoint(B, p.tb, -dx * 0.5, -dy * 0.5, 0.9); }
+    }
+    for (const b of bodies){
+      const m = b.th / 2 + 4;
+      b.ax = clamp(b.ax, m, W - m); b.ay = clamp(b.ay, m + 48, H - m - 48);
+      b.bx = clamp(b.bx, m, W - m); b.by = clamp(b.by, m + 48, H - m - 48);
+    }
+  }
+}
+
+function bodiesAt(x, y){
+  const hits = [];
+  for (let i = bodies.length - 1; i >= 0; i--){ const { d, t } = distToSegment(x, y, bodies[i]); if (d < bodies[i].th / 2 + 4) hits.push({ i, t }); }
+  return hits;
+}
+function pinWorldPos(p){ return p.type === 'board' ? { x: p.x, y: p.y } : ptOn(bodies[p.a], p.ta); }
+
+function drawBody(b, active){
+  const cx = (b.ax + b.bx) / 2, cy = (b.ay + b.by) / 2, ang = Math.atan2(b.by - b.ay, b.bx - b.ax);
+  X.save();
+  X.translate(cx, cy); X.rotate(ang);
+  X.beginPath(); X.roundRect(-b.len / 2 - b.th / 2, -b.th / 2, b.len + b.th, b.th, b.th / 2);
+  X.fillStyle = active ? '#FBF251' : COL.obj; X.fill();                 // grabbed plank = charged
+  X.strokeStyle = 'rgba(0,0,0,0.14)'; X.lineWidth = 1;
+  X.beginPath(); X.moveTo(-b.len / 2 + 6, 0); X.lineTo(b.len / 2 - 6, 0); X.stroke();
+  X.restore();
+}
+function drawPin(p){
+  const pos = pinWorldPos(p);
+  if (p.flash > 0) p.flash = Math.max(0, p.flash - 0.04);
+  X.save();
+  if (p.type === 'board'){
+    X.strokeStyle = COL.mid; X.lineWidth = 1;
+    X.beginPath(); X.moveTo(pos.x - 9, pos.y + 9); X.lineTo(pos.x + 9, pos.y - 9); X.moveTo(pos.x - 9, pos.y - 9); X.lineTo(pos.x + 9, pos.y + 9); X.stroke();
+  }
+  X.fillStyle = COL.fg; X.beginPath(); X.arc(pos.x, pos.y, 5.5, 0, Math.PI * 2); X.fill();
+  X.fillStyle = COL.bg; X.beginPath(); X.arc(pos.x, pos.y, 2.2, 0, Math.PI * 2); X.fill();
+  if (p.flash > 0){ X.strokeStyle = COL.fg; X.globalAlpha = p.flash; X.lineWidth = 1.5; X.beginPath(); X.arc(pos.x, pos.y, 8 + (1 - p.flash) * 14, 0, Math.PI * 2); X.stroke(); }
+  X.restore();
+}
+
+function draw(){
+  integrate(); constrain();
+  X.fillStyle = COL.bg; X.fillRect(0, 0, W, H);
+  for (let i = 0; i < bodies.length; i++) drawBody(bodies[i], grab && grab.b === i);
+  for (const p of pins) drawPin(p);
+  if (keyP || (press && press.pinMode)){
+    const hits = bodiesAt(mx, my);
+    X.save();
+    X.strokeStyle = hits.length ? COL.fg : COL.mid; X.setLineDash([3, 3]); X.lineWidth = 1.2;
+    X.beginPath(); X.arc(mx, my, 10, 0, Math.PI * 2); X.stroke();
+    X.restore();
+    if (hits.length >= 2){ X.save(); X.fillStyle = COL.fg; X.font = '600 10px "IBM Plex Mono", monospace'; X.textAlign = 'center'; X.fillText('hinge', mx, my - 18); X.restore(); }
+  }
+  requestAnimationFrame(draw);
+}
+
+window.addEventListener('resize', resize);
+resize(); seed(); draw();
+
+function placePin(){
+  const hits = bodiesAt(mx, my);
+  if (hits.length >= 2){ pins.push({ type: 'joint', a: hits[0].i, ta: hits[0].t, b: hits[1].i, tb: hits[1].t, flash: 1 }); flashBar(seg(key('Hinged')) + seg('two planks'), 1400); }
+  else if (hits.length === 1){ pins.push({ type: 'board', b: hits[0].i, t: hits[0].t, x: mx, y: my, flash: 1 }); flashBar(seg(key('Pinned')) + seg('to board'), 1400); }
+}
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (press && Math.hypot(mx - press.x, my - press.y) > 8) press = null;
+});
+
+window.addEventListener('pointerdown', e => {
+  if (e.target.closest('#toggle, .adui')) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  try { C.setPointerCapture(e.pointerId); } catch(_) {}
+  // Double-tap empty canvas toggles gravity (touch path for the G key).
+  const now = performance.now();
+  const hits = bodiesAt(mx, my);
+  if (!hits.length){
+    if (lastTapPos && now - lastTap < 320 && Math.hypot(mx - lastTapPos.x, my - lastTapPos.y) < 30){ gravityOn = !gravityOn; flashBar(seg(key('Gravity')) + seg(gravityOn ? 'on' : 'off'), 1200); lastTap = 0; return; }
+    lastTap = now; lastTapPos = { x: mx, y: my }; return;
+  }
+  if (keyP){ placePin(); return; }
+  grab = { b: hits[0].i, t: hits[0].t };
+  document.body.classList.add('grabbing');
+  press = { x: mx, y: my, pinMode: false };
+  setTimeout(() => { if (press && grab){ grab = null; document.body.classList.remove('grabbing'); document.body.classList.add('pinning'); placePin(); document.body.classList.remove('pinning'); press = null; } }, 300);
+});
+
+window.addEventListener('pointerup', () => { press = null; grab = null; document.body.classList.remove('grabbing'); });
+window.addEventListener('pointercancel', () => { press = null; grab = null; document.body.classList.remove('grabbing'); });
+
+window.addEventListener('dblclick', e => {
+  for (let i = pins.length - 1; i >= 0; i--){ const pos = pinWorldPos(pins[i]); if (Math.hypot(e.clientX - pos.x, e.clientY - pos.y) < 14){ pins.splice(i, 1); flashBar(seg(key('Pulled')) + seg('pin'), 1200); return; } }
+});
+
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); ui.theme(dark ? 'dark' : 'light'); readTheme(); });
+
+window.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'p' || e.key === 'P'){ keyP = true; document.body.classList.add('pinning'); }
+  if ((e.key === 'g' || e.key === 'G') && !e.repeat){ gravityOn = !gravityOn; flashBar(seg(key('Gravity')) + seg(gravityOn ? 'on' : 'off'), 1200); }
+  if ((e.key === 'r' || e.key === 'R') && !e.repeat){ seed(); idleBar(); }
+});
+window.addEventListener('keyup', e => { if (e.key === 'p' || e.key === 'P'){ keyP = false; document.body.classList.remove('pinning'); } });
+</script>
+</body>
+</html>

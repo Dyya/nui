@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<!--
+  Crate - pack a volume
+  The volumetric sibling of settle: boxes gravity-drop and settle into a crate via a real 3D height-map pack. The pack solve is the animation. Slice down through the fill to read it (and, top-down, as a floor plan); export the packing manifest.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Crate - pack a volume</title>
+<meta name="description" content="A 3D bin-pack read in 2D and 3D: boxes gravity-drop and settle into a crate via a real height-map pack; the pack solve is the animation. Slice down through the fill to reveal the packing (and, top-down, as a floor plan). Exports the packing manifest.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Crate - pack a volume">
+<meta property="og:description" content="A 3D bin-pack read in 2D and 3D: boxes gravity-drop and settle into a crate via a real height-map pack; slice down to reveal the packing. The pack solve is the animation.">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Crate",
+  "applicationCategory": "DesignApplication",
+  "description": "A 3D bin-packing tool: boxes gravity-drop and settle into a crate via a real height-map pack; drag to reorder and re-solve, slice down to reveal the packing (and read it top-down as a floor plan), and export the packing manifest.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "layout, composition, bin packing, 3D packing, volume, crate, axonometric, isometric, floor plan, interaction design, HTML canvas, generative",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white: #FAFAFA; --c-grey: #8A8A8A; --c-black: #0A0A0A;
+  --obj: rgb(98,103,113);
+  --bg: var(--c-white); --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.16); --grid: rgba(10,10,10,0.07);
+  --line: rgba(10,10,10,0.30);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black); --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.16); --grid: rgba(250,250,250,0.06);
+  --line: rgba(250,250,250,0.24);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+#c { position: fixed; inset: 0; z-index: 1; }
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: transform 0.22s var(--ease), border-color 0.22s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.22s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; } .cursor .cross.v { width: 1px; height: 10px; }
+body.hovering .cursor .ring { border-color: var(--fg); transform: scale(1.2); }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(0.5); }
+body.dragging .cursor .cross { background: var(--fg); }
+@media (hover: none) and (pointer: coarse) { html, body { cursor: auto; } .cursor { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+const HINTS = 'Drag to orbit · Drag a box to reorder · Scroll to slice · P plan · C copy';
+const ui = PT.ui({ title: 'Crate', hints: HINTS, theme: 'light' });
+const pill = document.querySelector('.adui-pill');
+const seg = (h) => '<span class="adui-seg">' + h + '</span>';
+const kkey = (t) => '<b class="adui-key">' + t + '</b>';
+let flashUntil = 0;
+function flashMsg(t, ms = 1700) { if (!pill) return; pill.innerHTML = seg(kkey(t)); flashUntil = performance.now() + ms; }
+function tickBar(now) { if (flashUntil && now > flashUntil) { ui.setHints(HINTS); flashUntil = 0; } }
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+let rngState = 0x51ed270b;
+function rng() { rngState |= 0; rngState = (rngState + 0x6d2b79f5) | 0;
+  let t = Math.imul(rngState ^ (rngState >>> 15), 1 | rngState);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
+
+// ───── Model ─────
+// A CW x CD crate filled by a deterministic 3D height-map pack (a gravity settle): each box drops to
+// the lowest slot where its footprint fits and rests on whatever is under it. Order-preserving, so
+// reordering re-solves the whole pack continuously. Boxes stack in x, y AND z - a true volume fill.
+const CW = 5, CD = 4;
+let BOXES = [], order = [];
+let maxH = 1, crateH = 1;
+let cut = 99;                          // slice plane: boxes above it are hidden / clipped
+
+function box(w, d, h) { return { id: BOXES.length, w, d, h, gx: 0, gy: 0, gz: 0, ax: 0, ay: 0, az: 12, sz: 12 }; }
+function seed() {
+  rngState = 0x51ed270b;
+  const spec = [[2,2,3],[2,1,2],[1,2,4],[3,1,2],[1,1,3],[2,2,2],[1,3,1],[2,1,4],[1,1,2],[3,2,1],[1,2,2],[2,1,1]];
+  BOXES = spec.map(([w, d, h]) => box(w, d, h));
+  order = BOXES.slice();
+  pack();
+  // start each box high above its slot so the pack drops in (the solve is the show)
+  BOXES.forEach((b, i) => { b.ax = b.gx - CW / 2; b.ay = b.gy - CD / 2; b.az = maxH + 4 + i * 0.6; b.sz = b.az; });
+  crateH = maxH;
+  fitScale(); recenter(); cx = cxT; cy = cyT;
+  cut = maxH + 0.5;
+  wake();
+}
+
+// height-map pack: lowest-fit slot, resting on the surface below (leftmost/backmost tiebreak)
+function pack() {
+  const hmap = Array.from({ length: CW }, () => new Array(CD).fill(0));
+  for (const b of order) {
+    let bx = 0, by = 0, bz = Infinity;
+    for (let x = 0; x + b.w <= CW; x++) for (let y = 0; y + b.d <= CD; y++) {
+      let z = 0; for (let i = x; i < x + b.w; i++) for (let j = y; j < y + b.d; j++) z = Math.max(z, hmap[i][j]);
+      if (z < bz) { bz = z; bx = x; by = y; }
+    }
+    b.gx = bx; b.gy = by; b.gz = bz;
+    for (let i = bx; i < bx + b.w; i++) for (let j = by; j < by + b.d; j++) hmap[i][j] = bz + b.h;
+  }
+  maxH = Math.max(1, ...order.map(b => b.gz + b.h));
+}
+function fillPct() {
+  let v = 0; for (const b of BOXES) v += b.w * b.d * b.h;
+  return Math.round(v / (CW * CD * maxH) * 100);
+}
+
+// ───── View ─────
+const TILT_PLAN = Math.PI / 2, TILT_ISO = 0.62, TILT_MIN = 0.36;
+let az = -0.6, azTarget = -0.6, savedAz = -0.6;
+let tilt = TILT_ISO, tiltTarget = TILT_ISO;
+let s = 40, cx = 0, cy = 0, cxT = 0, cyT = 0;
+
+function project(x, y, z) {
+  const ca = Math.cos(az), sa = Math.sin(az), ct = Math.cos(tilt), st = Math.sin(tilt);
+  const rx = x * ca - y * sa, ry = x * sa + y * ca;
+  return { sx: cx + rx * s, sy: cy + (-ry * st - z * ct) * s, d: -ry * ct + z * st };
+}
+function viewDir() {
+  const ca = Math.cos(az), sa = Math.sin(az), ct = Math.cos(tilt), st = Math.sin(tilt);
+  return { x: -sa * ct, y: -ca * ct, z: st };
+}
+// corners of the crate bounding box (centred in x,y; 0..crateH in z)
+function crateCorners() {
+  const x0 = -CW / 2, x1 = CW / 2, y0 = -CD / 2, y1 = CD / 2, h = crateH;
+  return { x0, x1, y0, y1, h };
+}
+// Fit + centre to the crate's own bounding box (stable - independent of the animating pack).
+function fitScale() {
+  const ca = Math.cos(AZ_MAX(az)), sa = Math.sin(AZ_MAX(az)), ct = Math.cos(TILT_ISO), st = Math.sin(TILT_ISO);
+  const cc = crateCorners();
+  let mnx = 1e9, mxx = -1e9, mny = 1e9, mxy = -1e9;
+  for (const x of [cc.x0, cc.x1]) for (const y of [cc.y0, cc.y1]) for (const z of [0, maxH]) {
+    const rx = (x * ca - y * sa), ry = x * sa + y * ca, sx = rx, sy = -ry * st - z * ct;
+    mnx = Math.min(mnx, sx); mxx = Math.max(mxx, sx); mny = Math.min(mny, sy); mxy = Math.max(mxy, sy);
+  }
+  s = clamp(Math.min(W / ((mxx - mnx) || 1), H / ((mxy - mny) || 1)) * 0.82, 12, 120);
+}
+function AZ_MAX() { return -0.785; }    // measure the fit at a 45deg azimuth (near the widest silhouette)
+function recenter() {
+  const ca = Math.cos(az), sa = Math.sin(az), ct = Math.cos(tilt), st = Math.sin(tilt);
+  const cc = crateCorners();
+  let mnx = 1e9, mxx = -1e9, mny = 1e9, mxy = -1e9;
+  for (const x of [cc.x0, cc.x1]) for (const y of [cc.y0, cc.y1]) for (const z of [0, cc.h]) {
+    const rx = (x * ca - y * sa) * s, ry = x * sa + y * ca, sy = (-ry * st - z * ct) * s;
+    mnx = Math.min(mnx, rx); mxx = Math.max(mxx, rx); mny = Math.min(mny, sy); mxy = Math.max(mxy, sy);
+  }
+  cxT = W / 2 - (mnx + mxx) / 2; cyT = H / 2 - (mny + mxy) / 2;
+}
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fitScale(); recenter(); cx = cxT; cy = cyT;
+}
+
+// ───── Interaction plumbing ─────
+let mouseX = -1e4, mouseY = -1e4;
+let mode = null;                          // 'orbit' | 'reorder'
+let pointerActive = false;
+let reBox = null, reStartX = 0, reStartIdx = 0, dragMoved = false, downX = 0, downY = 0;
+let charged = null, hoverBox = null;
+let running = false, settleFrames = 0;
+function wake() { settleFrames = 0; if (!running) { running = true; requestAnimationFrame(step); } }
+
+// ───── Colour ─────
+function parseRGB(str) { const m = str.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/); return m ? [ +m[1], +m[2], +m[3] ] : [ 98, 103, 113 ]; }
+function scaleRGB(rgb, f) { return 'rgb(' + rgb.map(v => clamp(Math.round(v * f), 0, 255)).join(',') + ')'; }
+
+// ───── Frame ─────
+function step(now) {
+  tickBar(now);
+  if (reBox && !pointerActive) endPointer();
+
+  tilt = lerp(tilt, tiltTarget, 0.16);
+  az = lerp(az, azTarget, 0.16);
+  crateH = lerp(crateH, maxH, 0.18);
+  let moving = Math.abs(tilt - tiltTarget) > 1e-4 || Math.abs(az - azTarget) > 1e-4 || Math.abs(crateH - maxH) > 1e-3;
+
+  for (const b of BOXES) {
+    const tx = b.gx - CW / 2, ty = b.gy - CD / 2, tz = b.gz;
+    const nx = lerp(b.ax, tx, 0.2), ny = lerp(b.ay, ty, 0.2), nz = lerp(b.az, tz, 0.16);
+    if (Math.abs(nx - b.ax) > 1e-3 || Math.abs(ny - b.ay) > 1e-3 || Math.abs(nz - b.az) > 1e-3) moving = true;
+    b.ax = nx; b.ay = ny; b.az = nz;
+  }
+
+  if (mode !== 'reorder') recenter();
+  cx = lerp(cx, cxT, 0.25); cy = lerp(cy, cyT, 0.25);
+  if (Math.abs(cx - cxT) > 0.4 || Math.abs(cy - cyT) > 0.4) moving = true;
+
+  draw();
+
+  const flashing = flashUntil && now < flashUntil;   // keep the loop alive so tickBar restores the legend
+  if (mode || moving || flashing) settleFrames = 0; else settleFrames++;
+  if (settleFrames > 3) { running = false; return; }
+  requestAnimationFrame(step);
+}
+
+function poly(pts) { X.beginPath(); X.moveTo(pts[0].sx, pts[0].sy); for (let i = 1; i < pts.length; i++) X.lineTo(pts[i].sx, pts[i].sy); X.closePath(); }
+function edge(a, b, col) { X.strokeStyle = col; X.lineWidth = 1; X.beginPath(); X.moveTo(a.sx, a.sy); X.lineTo(b.sx, b.sy); X.stroke(); }
+
+function draw() {
+  const csS = getComputedStyle(document.body);
+  const bg = csS.getPropertyValue('--bg').trim();
+  const objRGB = parseRGB(csS.getPropertyValue('--obj').trim());
+  const dimc = csS.getPropertyValue('--dim').trim();
+  const gridc = csS.getPropertyValue('--grid').trim();
+  const linec = csS.getPropertyValue('--line').trim();
+
+  X.fillStyle = bg; X.fillRect(0, 0, W, H);
+  const V = viewDir();
+  const cc = crateCorners();
+
+  // crate: floor grid + the back/bottom edges of the bounding box (drawn behind the fill)
+  X.strokeStyle = gridc; X.lineWidth = 1; X.beginPath();
+  for (let i = 0; i <= CW; i++) { const a = project(i - CW / 2, -CD / 2, 0), b = project(i - CW / 2, CD / 2, 0); X.moveTo(a.sx, a.sy); X.lineTo(b.sx, b.sy); }
+  for (let j = 0; j <= CD; j++) { const a = project(-CW / 2, j - CD / 2, 0), b = project(CW / 2, j - CD / 2, 0); X.moveTo(a.sx, a.sy); X.lineTo(b.sx, b.sy); }
+  X.stroke();
+  const C000 = project(cc.x0, cc.y0, 0), C100 = project(cc.x1, cc.y0, 0), C010 = project(cc.x0, cc.y1, 0), C110 = project(cc.x1, cc.y1, 0);
+  const C001 = project(cc.x0, cc.y0, cc.h), C101 = project(cc.x1, cc.y0, cc.h), C011 = project(cc.x0, cc.y1, cc.h), C111 = project(cc.x1, cc.y1, cc.h);
+  edge(C001, C011, dimc); edge(C011, C111, dimc); edge(C001, C101, dimc);   // top rectangle back edges
+  edge(C000, C001, dimc); edge(C100, C101, dimc); edge(C010, C011, dimc); edge(C110, C111, dimc);  // verticals
+
+  // painter order from the STABLE grid slot (never flips mid-repack); far first
+  const idxOf = new Map(BOXES.map((b, i) => [b, i]));
+  const key = (b) => (b.gx - CW / 2 + b.w / 2) * V.x + (b.gy - CD / 2 + b.d / 2) * V.y + (b.gz + b.h / 2) * V.z;
+  // the slice keys off the SETTLED base gz (not the animating az), so drop-in isn't clipped
+  const drawH = (b) => Math.min(b.gz + b.h, cut) - b.gz;
+  const list = BOXES.slice().filter(b => drawH(b) > 0.001).sort((p, q) => (key(p) - key(q)) || (idxOf.get(p) - idxOf.get(q)));
+
+  for (const b of list) {
+    const x0 = b.ax, x1 = b.ax + b.w, y0 = b.ay, y1 = b.ay + b.d, z0 = b.az, z1 = b.az + drawH(b);
+    const isC = b === charged;
+    const lvl = maxH > 0 ? b.gz / maxH : 0;
+    const base = isC ? [251, 242, 81] : objRGB;
+    const topF = scaleRGB(base, isC ? 1.04 : 1.16 + lvl * 0.12);
+    const xF = scaleRGB(base, isC ? 0.84 : 0.92 - lvl * 0.02);
+    const yF = scaleRGB(base, isC ? 0.66 : 0.72 - lvl * 0.02);
+
+    const faces = [];
+    if (V.x > 0) faces.push([xF, [ project(x1, y0, z0), project(x1, y1, z0), project(x1, y1, z1), project(x1, y0, z1) ]]);
+    if (V.x < 0) faces.push([xF, [ project(x0, y1, z0), project(x0, y0, z0), project(x0, y0, z1), project(x0, y1, z1) ]]);
+    if (V.y > 0) faces.push([yF, [ project(x1, y1, z0), project(x0, y1, z0), project(x0, y1, z1), project(x1, y1, z1) ]]);
+    if (V.y < 0) faces.push([yF, [ project(x0, y0, z0), project(x1, y0, z0), project(x1, y0, z1), project(x0, y0, z1) ]]);
+    for (const [f, p] of faces) { poly(p); X.fillStyle = f; X.fill(); X.strokeStyle = linec; X.lineWidth = 1; X.stroke(); }
+    const top = [ project(x0, y0, z1), project(x1, y0, z1), project(x1, y1, z1), project(x0, y1, z1) ];
+    poly(top); X.fillStyle = topF; X.fill(); X.strokeStyle = linec; X.lineWidth = 1; X.stroke();
+  }
+
+  // crate front top edges (over the fill) to close the box read
+  edge(C101, C111, dimc); edge(C110, C111, dimc);
+}
+
+function pointInPoly(px, py, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].sx, yi = pts[i].sy, xj = pts[j].sx, yj = pts[j].sy;
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+function boxAt(px, py) {
+  const V = viewDir();
+  const idxOf = new Map(BOXES.map((b, i) => [b, i]));
+  const key = (b) => (b.gx - CW / 2 + b.w / 2) * V.x + (b.gy - CD / 2 + b.d / 2) * V.y + (b.gz + b.h / 2) * V.z;
+  const list = BOXES.slice().filter(b => Math.min(b.gz + b.h, cut) - b.gz > 0.001).sort((p, q) => key(q) - key(p));   // nearest first
+  for (const b of list) {
+    const x0 = b.ax, x1 = b.ax + b.w, y0 = b.ay, y1 = b.ay + b.d, z1 = b.az + Math.min(b.gz + b.h, cut) - b.gz;
+    const top = [ project(x0, y0, z1), project(x1, y0, z1), project(x1, y1, z1), project(x0, y1, z1) ];
+    if (pointInPoly(px, py, top)) return b;
+    // also hit the two visible side faces so short/again-cut boxes are still grabbable
+    if (V.x !== 0) { const xf = V.x > 0 ? x1 : x0; const sf = [ project(xf, y0, b.az), project(xf, y1, b.az), project(xf, y1, z1), project(xf, y0, z1) ]; if (pointInPoly(px, py, sf)) return b; }
+    if (V.y !== 0) { const yf = V.y > 0 ? y1 : y0; const sf = [ project(x0, yf, b.az), project(x1, yf, b.az), project(x1, yf, z1), project(x0, yf, z1) ]; if (pointInPoly(px, py, sf)) return b; }
+  }
+  return null;
+}
+function reorderTo(clientX) {
+  const idx = clamp(reStartIdx + Math.round((clientX - reStartX) / 42), 0, order.length - 1);
+  const cur = order.indexOf(reBox);
+  if (idx === cur) return;
+  order.splice(cur, 1); order.splice(idx, 0, reBox);
+  pack();
+}
+
+// ───── Pointer ─────
+C.addEventListener('pointermove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  const cur = document.getElementById('cursor'); cur.style.left = e.clientX + 'px'; cur.style.top = e.clientY + 'px';
+  if ((mode || reBox) && e.buttons === 0) endPointer();
+  if (mode === 'orbit') {
+    az += (e.clientX - downX) * 0.008; azTarget = az;
+    tiltTarget = clamp(tiltTarget - (e.clientY - downY) * 0.006, TILT_MIN, TILT_PLAN);
+    downX = e.clientX; downY = e.clientY; wake();
+  } else if (mode === 'reorder' && reBox) {
+    dragMoved = dragMoved || Math.hypot(e.clientX - downX, e.clientY - downY) > 4;
+    reorderTo(e.clientX); wake();
+  } else {
+    hoverBox = boxAt(mouseX, mouseY);
+    document.body.classList.toggle('hovering', !!hoverBox);
+  }
+});
+C.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  mouseX = downX = e.clientX; mouseY = downY = e.clientY;
+  pointerActive = true;
+  const b = boxAt(e.clientX, e.clientY);
+  if (b) { mode = 'reorder'; reBox = b; charged = b; dragMoved = false; reStartX = e.clientX; reStartIdx = order.indexOf(b); }
+  else { mode = 'orbit'; }
+  document.body.classList.add('dragging'); document.body.classList.remove('hovering');
+  try { C.setPointerCapture(e.pointerId); } catch (err) {}
+  wake();
+});
+function endPointer() {
+  pointerActive = false;
+  mode = null; reBox = null;
+  document.body.classList.remove('dragging');
+  wake();
+}
+window.addEventListener('pointerup', endPointer);
+window.addEventListener('pointercancel', endPointer);
+window.addEventListener('blur', endPointer);
+document.addEventListener('visibilitychange', () => { if (document.hidden) endPointer(); });
+window.addEventListener('pointermove', (e) => { if ((mode || reBox) && e.buttons === 0) endPointer(); });
+
+// scroll = slice plane (reveal the pack layer by layer; top-down under P this reads as a floor plan)
+C.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  cut = clamp(cut + (e.deltaY < 0 ? 0.5 : -0.5), 0.5, maxH + 0.5);
+  flashMsg(cut > maxH ? 'Slice off' : 'Slice ' + Math.round(cut) + ' / ' + maxH);
+  wake();
+}, { passive: false });
+
+// ───── Keys ─────
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.repeat) return;
+  if (reBox) endPointer();
+  const k = e.key;
+  if (k === 'p' || k === 'P') {
+    const inPlan = Math.abs(tiltTarget - TILT_PLAN) < 0.02;
+    if (inPlan) { tiltTarget = TILT_ISO; azTarget = savedAz; flashMsg('Crate'); }
+    else { savedAz = azTarget; azTarget = Math.round(az / (Math.PI / 2)) * (Math.PI / 2); tiltTarget = TILT_PLAN; flashMsg('Plan'); }
+    wake();
+  }
+  else if (k === 'r' || k === 'R') { order = BOXES.slice(); for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; } pack(); flashMsg('Repacked - fill ' + fillPct() + '%'); wake(); }
+  else if (k === 'c' || k === 'C') copyManifest();
+  else if (k === 's' || k === 'S') savePNG();
+});
+
+// Payoff: the packing manifest - the crate size, fill %, and every box's size + slot in the volume.
+function copyManifest() {
+  const data = {
+    crate: { w: CW, d: CD, h: maxH }, fill: fillPct() / 100,
+    boxes: order.map(b => ({ w: b.w, d: b.d, h: b.h, x: b.gx, y: b.gy, z: b.gz })),
+  };
+  const json = JSON.stringify(data, null, 2);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(json).then(() => flashMsg('Copied packing manifest'), () => flashMsg('Copy blocked - see console'));
+    console.log(json);
+  } else { console.log(json); flashMsg('Manifest logged to console'); }
+}
+function savePNG() { C.toBlob((b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'crate.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }, 'image/png'); }
+
+document.getElementById('toggle').addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); ui.theme(dark ? 'dark' : 'light'); wake(); });
+window.addEventListener('resize', () => { resize(); wake(); });
+document.fonts && document.fonts.ready && document.fonts.ready.then(wake);
+resize();
+seed();
+requestAnimationFrame(step);
+</script>
+</body>
+</html>

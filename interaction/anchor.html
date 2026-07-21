@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<!--
+  Anchor - bimanual pivot and transform
+  Pin a pivot with one hand, then rotate, scale, and mirror a shape around it with the other.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Anchor - bimanual pivot and transform</title>
+<meta name="description" content="Pin a pivot with one hand, then rotate, scale, and mirror a shape around it with the other.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Anchor - bimanual pivot and transform">
+<meta property="og:description" content="Pin a pivot with one hand, then rotate, scale, and mirror a shape around it with the other.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Anchor",
+  "applicationCategory": "DesignApplication",
+  "description": "Pin a pivot with one hand, then rotate, scale, and mirror a shape around it with the other.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "anchor, interaction design, bimanual, pivot, transform, rotate, scale, mirror, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Objects fill with a theme-aware grey; the one accent (yellow) is a fill, set in JS. */
+  --obj: rgb(98,103,113);
+  /* UI neutrals - the interface is monochrome: proper white / grey / black */
+  --c-white: #FAFAFA;
+  --c-grey:  #8A8A8A;
+  --c-black: #0A0A0A;
+
+  /* Light is the default theme; add `dark` on <body> for the option. */
+  --bg: var(--c-white);
+  --doc: #EDEDEF;
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.16);
+  --mid: rgba(10,10,10,0.28);
+  --active: rgba(10,10,10,0.55);
+  --hover: rgba(10,10,10,0.80);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --doc: #16161A;
+  --obj: rgb(132,137,148);
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.16);
+  --mid: rgba(250,250,250,0.28);
+  --active: rgba(250,250,250,0.55);
+  --hover: rgba(250,250,250,0.80);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+#c { position: fixed; inset: 0; z-index: 1; }
+
+/* Theme toggle: the same glass as the floating legend, but circular, with a
+   small solid white/black dot in the centre (the dot follows the theme). */
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+
+/* Cursor */
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: all 0.25s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.25s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; }
+.cursor .cross.v { width: 1px; height: 10px; }
+body.anchored .cursor .ring { border-color: var(--fg); }
+body.anchored .cursor .cross { background: var(--fg); }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(1.4); }
+body.dragging .cursor .cross { background: var(--fg); }
+body.dragging.armed .cursor .ring { border-color: var(--fg); transform: scale(1.7); border-style: dashed; }
+body.dragging.armed .cursor .cross { background: var(--fg); }
+
+/* Touch devices: the finger is the pointer, so no custom crosshair. */
+@media (hover: none) and (pointer: coarse) {
+  html, body { cursor: auto; }
+  .cursor { display: none; }
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="toggle" title="Toggle theme"></div>
+
+<div class="cursor" id="cursor">
+  <div class="ring"></div>
+  <div class="cross h"></div>
+  <div class="cross v"></div>
+</div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+const TAU = Math.PI * 2;
+
+const HINTS = 'Space or A drop anchor · Drag a shape to rotate and scale around it · Shift mirror · R reset';
+const ui = PT.ui({ title: 'Anchor', hints: HINTS, theme: 'light' });
+
+// Two hands, one pivot. On touch the first finger pins the anchor and the second
+// finger swings the target around it; on desktop Space (or A) holds the pivot and
+// the mouse plays the second hand. Both routes feed one polar transform.
+const TOUCH = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+
+// The bottom legend doubles as a stage-reflective status bar: idle shows the how-to,
+// anchoring / transforming / committed each swap in the live readout. We reuse the
+// panel's own glass pill + segment classes so it always looks native.
+const pill = document.querySelector('.adui-pill');
+const seg = (html) => '<span class="adui-seg">' + html + '</span>';
+const key = (t) => '<b class="adui-key">' + t + '</b>';
+let barTimer = null, lastBar = '';
+function setBar(html) { clearTimeout(barTimer); if (pill && html !== lastBar) { pill.innerHTML = html; lastBar = html; } }
+function idleBar() {
+  clearTimeout(barTimer); lastBar = '';
+  if (TOUCH) setBar(seg(key('Pin') + ' with one finger') + seg('Transform with the other') + seg(key('Tap tap') + ' reset'));
+  else ui.setHints(HINTS);
+}
+// The resting bar reflects whether an anchor is currently held.
+function restingBar() {
+  if (session) return;
+  if (anchorActive) {
+    if (TOUCH) setBar(seg(key('Anchor set')) + seg('Second finger transforms') + seg(key('R') + ' reset'));
+    else setBar(seg(key('Anchor set')) + seg('Drag a shape to transform') + seg(key('A') + ' move or lift the pivot') + seg(key('R') + ' reset'));
+  } else idleBar();
+}
+function flashBar(html, ms) { setBar(html); barTimer = setTimeout(() => { if (!session) restingBar(); }, ms); }
+
+// ───── State (declared with defaults BEFORE the first resize() - no TDZ) ─────
+let shapes = [];
+let anchor = { nx: 0.5, ny: 0.5 };   // pivot in normalized artboard space
+let anchorActive = false;
+let anchorMode = 'space';             // 'space' | 'toggle' | 'touch'
+let anchorShape = null;               // shape the first finger landed on (touch)
+let session = null;                   // active polar transform, or null
+let moveDrag = null;                  // plain translate (desktop, no anchor)
+let shiftDown = false;
+let spaceHeld = false;
+let mouseX = -100, mouseY = -100;
+let lastTap = 0;
+const pointers = new Map();           // id -> { role: 'anchor'|'actor'|'extra' }
+let actorId = null;
+const seed = 512512;
+
+let docX = 0, docY = 0, docW = 0, docH = 0, minDim = 0;
+
+function resize() {
+  // A live session caches its transform basis in pixels; a mid-gesture resize would
+  // desync that from the re-laid-out doc rect, so drop the gesture (reverts to home pose).
+  if (session) cancelSession();
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() {
+  const m = Math.max(24, Math.min(W, H) * 0.05);
+  docX = m; docY = m;
+  docW = Math.max(1, W - 2 * m); docH = Math.max(1, H - 2 * m);   // never invert the mapping on a sub-48px viewport
+  minDim = Math.min(docW, docH);
+  // All geometry lives in normalized coords, so nothing to rescale here - the pixel
+  // positions are recomputed from nx/ny/nr on every draw() and pointer read.
+}
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) {
+  return function() {
+    let t = (s += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const byId = (id) => shapes.find(s => s.id === id);
+
+// ───── Shape geometry - unit polygons (radius ~1); asymmetric ones make the
+//        rotation and the mirror read at a glance. ─────
+const GEO = {
+  triangle: [[0,-1],[0.9,0.62],[-0.9,0.62]],
+  rect:     [[-1.15,-0.7],[1.15,-0.7],[1.15,0.7],[-1.15,0.7]],
+  arrow:    [[-1,-0.52],[0.24,-0.52],[0.24,-1],[1.05,0],[0.24,1],[0.24,0.52],[-1,0.52]],
+  ell:      [[-0.85,-1],[-0.15,-1],[-0.15,0.32],[0.9,0.32],[0.9,1],[-0.85,1]],
+  pent:     [[0,-1],[0.95,-0.31],[0.59,0.81],[-0.59,0.81],[-0.95,-0.31]],
+};
+// Longest vertex reach per type, for a generous circular hit test.
+const REACH = {};
+for (const k in GEO) REACH[k] = Math.max(...GEO[k].map(v => Math.hypot(v[0], v[1])));
+
+const PALETTE = [
+  { name: 'Arrow',     type: 'arrow'    },
+  { name: 'L-shape',   type: 'ell'      },
+  { name: 'Triangle',  type: 'triangle' },
+  { name: 'Rectangle', type: 'rect'     },
+  { name: 'Pentagon',  type: 'pent'     },
+];
+
+function regen() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  let tries = 0;
+  while (shapes.length < PALETTE.length && tries < 3000) {
+    const nx = 0.2 + rng() * 0.6;
+    const ny = 0.22 + rng() * 0.56;
+    const nr = 0.058 + rng() * 0.022;
+    let ok = true;
+    for (const o of shapes) if (Math.hypot(nx - o.nx, ny - o.ny) < nr + o.nr + 0.11) { ok = false; break; }
+    if (ok) {
+      const p = PALETTE[shapes.length];
+      shapes.push({ id: shapes.length + 1, nx, ny, nr, rot: 0, scl: 1, flip: 1,
+                    name: p.name, type: p.type });
+    }
+    tries++;
+  }
+}
+regen();
+
+// ───── Pixel helpers ─────
+const anchorPx = () => ({ x: docX + anchor.nx * docW, y: docY + anchor.ny * docH });
+const shapePx  = (s) => ({ x: docX + s.nx * docW, y: docY + s.ny * docH });
+
+function hitShape(px, py) {
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    const c = shapePx(s);
+    const r = s.nr * minDim * s.scl * REACH[s.type] * 1.12;
+    if (Math.hypot(px - c.x, py - c.y) <= r) return s;
+  }
+  return null;
+}
+
+// ───── Theme colours (cached; custom props don't transition, re-read only on toggle) ─────
+let COL = {};
+function readTheme() {
+  const cs = getComputedStyle(document.body);
+  COL = {
+    bg:     cs.getPropertyValue('--bg').trim(),
+    doc:    cs.getPropertyValue('--doc').trim(),
+    fg:     cs.getPropertyValue('--fg').trim(),
+    dim:    cs.getPropertyValue('--dim').trim(),
+    mid:    cs.getPropertyValue('--mid').trim(),
+    active: cs.getPropertyValue('--active').trim(),
+    obj:    cs.getPropertyValue('--obj').trim(),
+  };
+}
+readTheme();
+
+// ───── The one polar transform - shared by both hands ─────
+function startSession(target, px, py) {
+  clearTimeout(barTimer);              // a fresh gesture overrides any lingering flash
+  const a = anchorPx();
+  const c = shapePx(target);
+  const gvx = px - a.x, gvy = py - a.y;
+  const rawDist = Math.hypot(gvx, gvy);
+  session = {
+    target, actorId,
+    hvx: c.x - a.x, hvy: c.y - a.y,       // anchor→shape vector at grab (px)
+    homeRot: target.rot, homeScl: target.scl, homeFlip: target.flip,
+    homeNx: target.nx, homeNy: target.ny,
+    grabVx: gvx,
+    // floor the grab distance so a second finger landing on the anchor can't blow up the ratio
+    grabDist: Math.max(rawDist, minDim * 0.02),
+    grabAng: rawDist < 1e-3 ? 0 : Math.atan2(gvy, gvx),
+    lastAng: rawDist < 1e-3 ? 0 : Math.atan2(gvy, gvx),
+    angDeg: 0, pct: 100, mirror: false,
+    lastPx: px, lastPy: py,
+  };
+}
+
+function updateActor(px, py, mirror) {
+  if (!session) return;
+  const s = session.target;
+  session.lastPx = px; session.lastPy = py;
+  const a = anchorPx();
+  const vx = px - a.x, vy = py - a.y;
+  const dist = Math.hypot(vx, vy);
+  // NaN-safe: at the anchor there is no angle - keep the last one.
+  const ang = dist < 1e-3 ? session.lastAng : Math.atan2(vy, vx);
+  session.lastAng = ang;
+  const ratio = clamp(dist / session.grabDist, 0.12, 8);
+  const dAng = ang - session.grabAng;
+
+  const ca = Math.cos(dAng), sa = Math.sin(dAng);
+  let rx = (session.hvx * ca - session.hvy * sa) * ratio;
+  let ry = (session.hvx * sa + session.hvy * ca) * ratio;
+  let rot = session.homeRot + dAng;
+  let flip = session.homeFlip;
+  if (mirror) { rx = -rx; rot = -rot; flip = -session.homeFlip; }   // reflect across the anchor's vertical axis
+
+  s.nx = (a.x + rx - docX) / docW;
+  s.ny = (a.y + ry - docY) / docH;
+  s.rot = rot;
+  s.scl = clamp(session.homeScl * ratio, 0.15, 6);
+  s.flip = flip;
+
+  // normalize the reported turn to (-180, 180]
+  let deg = ((dAng * 180 / Math.PI) % 360 + 540) % 360 - 180;
+  session.angDeg = deg;
+  session.pct = Math.round(s.scl * 100);
+  session.mirror = mirror;
+
+  const degStr = (deg >= 0 ? '+' : '') + Math.round(deg) + '°';
+  setBar(seg(key('Rotate') + ' ' + degStr) + seg('Scale ' + session.pct + '%') + (mirror ? seg(key('Mirrored')) : ''));
+}
+
+function commitSession() {
+  actorId = null;                        // always release the actor pointer, even if no session existed
+  if (!session) return;
+  const s = session.target;
+  const degStr = (session.angDeg >= 0 ? '+' : '') + Math.round(session.angDeg) + '°';
+  const mir = session.mirror;
+  const nm = s.name;
+  const pct = session.pct;
+  session = null;
+  document.body.classList.remove('dragging', 'armed');
+  flashBar(seg(key('Set') + ' ' + nm) + seg(degStr) + seg(pct + '%') + (mir ? seg('Mirrored') : ''), 1500);
+}
+
+function cancelSession() {
+  actorId = null;                        // always release the actor pointer, even if no session existed
+  if (!session) return;
+  const s = session.target;
+  // revert to the pre-grab pose
+  s.nx = session.homeNx; s.ny = session.homeNy;
+  s.rot = session.homeRot; s.scl = session.homeScl; s.flip = session.homeFlip;
+  session = null;
+  document.body.classList.remove('dragging', 'armed');
+  restingBar();
+}
+
+function clearAnchor() {
+  if (session) commitSession();
+  anchorActive = false; anchorShape = null;
+  document.body.classList.remove('anchored');
+  restingBar();
+}
+
+// ───── Render ─────
+function traceGeom(s, r) {
+  const v = GEO[s.type];
+  X.beginPath();
+  for (let i = 0; i < v.length; i++) {
+    const x = v[i][0] * r, y = v[i][1] * r;
+    i ? X.lineTo(x, y) : X.moveTo(x, y);
+  }
+  X.closePath();
+}
+
+function drawShape(s, alpha, ghost) {
+  const c = shapePx(s);
+  const r = s.nr * minDim * s.scl;
+  X.save();
+  X.globalAlpha = alpha;
+  X.translate(c.x, c.y);
+  X.rotate(s.rot);
+  X.scale(s.flip, 1);
+  if (ghost) {
+    X.strokeStyle = COL.dim; X.lineWidth = 1.2;
+    traceGeom(s, r); X.stroke();
+  } else if (session && session.target && session.target.id === s.id) {
+    // the shape being transformed is the one charged thing - fill it with the accent
+    X.fillStyle = '#FBF251';
+    traceGeom(s, r); X.fill();
+  } else {
+    X.fillStyle = COL.obj;
+    traceGeom(s, r); X.fill();
+  }
+  X.restore();
+}
+
+function drawAnchor() {
+  const a = anchorPx();
+  // faint radial reference grid - hand-drawn rings + spokes, bounded radius
+  X.save();
+  X.strokeStyle = COL.dim; X.lineWidth = 1;
+  for (let i = 1; i <= 4; i++) {
+    X.globalAlpha = 0.55 * (1 - i / 6);
+    X.beginPath(); X.arc(a.x, a.y, minDim * 0.085 * i, 0, TAU); X.stroke();
+  }
+  X.globalAlpha = 0.3;
+  const spokeR = minDim * 0.34;
+  for (let k = 0; k < 12; k++) {
+    const ang = k * TAU / 12;
+    X.beginPath();
+    X.moveTo(a.x + Math.cos(ang) * 6, a.y + Math.sin(ang) * 6);
+    X.lineTo(a.x + Math.cos(ang) * spokeR, a.y + Math.sin(ang) * spokeR);
+    X.stroke();
+  }
+  X.restore();
+
+  // the mirror axis lights up while flipped
+  if (session && session.mirror) {
+    X.save();
+    X.strokeStyle = COL.fg; X.lineWidth = 1.3; X.globalAlpha = 0.7;
+    X.setLineDash([5, 5]);
+    X.beginPath(); X.moveTo(a.x, docY); X.lineTo(a.x, docY + docH); X.stroke();
+    X.setLineDash([]);
+    X.restore();
+  }
+
+  // the pin itself - blue dot + crosshair
+  X.save();
+  X.strokeStyle = COL.fg; X.fillStyle = COL.fg; X.lineWidth = 1.6;
+  const cr = 7, arm = 13;
+  X.beginPath(); X.arc(a.x, a.y, cr, 0, TAU); X.stroke();
+  X.beginPath(); X.arc(a.x, a.y, 2.3, 0, TAU); X.fill();
+  X.beginPath();
+  X.moveTo(a.x - arm, a.y); X.lineTo(a.x - cr - 2, a.y);
+  X.moveTo(a.x + cr + 2, a.y); X.lineTo(a.x + arm, a.y);
+  X.moveTo(a.x, a.y - arm); X.lineTo(a.x, a.y - cr - 2);
+  X.moveTo(a.x, a.y + cr + 2); X.lineTo(a.x, a.y + arm);
+  X.stroke();
+  X.restore();
+}
+
+function draw() {
+  X.fillStyle = COL.bg;
+  X.fillRect(0, 0, W, H);
+  // Work zone: docX/docY/docW/docH stays as an invisible limit zone (no visible panel).
+
+  if (anchorActive) drawAnchor();
+
+  // ghost of the target's pre-grab pose + a tether to the anchor
+  if (session) {
+    const s = session.target;
+    const gpose = { nx: session.homeNx, ny: session.homeNy, nr: s.nr,
+                    rot: session.homeRot, scl: session.homeScl, flip: session.homeFlip, type: s.type };
+    drawShape(gpose, 0.35, true);
+    const a = anchorPx(), c = shapePx(s);
+    X.save();
+    X.strokeStyle = COL.fg; X.lineWidth = 1; X.globalAlpha = 0.6;
+    X.setLineDash([4, 5]);
+    X.beginPath(); X.moveTo(a.x, a.y); X.lineTo(c.x, c.y); X.stroke();
+    X.setLineDash([]);
+    X.restore();
+  }
+
+  for (const s of shapes) drawShape(s, 1, false);
+
+  // selection ring on the active target
+  if (session) {
+    const s = session.target, c = shapePx(s);
+    const r = s.nr * minDim * s.scl * REACH[s.type] + 8;
+    X.save();
+    X.strokeStyle = COL.fg; X.lineWidth = 1.5;
+    X.beginPath(); X.arc(c.x, c.y, r, 0, TAU); X.stroke();
+    X.restore();
+  }
+
+  requestAnimationFrame(draw);
+}
+
+// ───── Input ─────
+const cursor = document.getElementById('cursor');
+const toggle = document.getElementById('toggle');
+
+function moveCursor(px, py) {
+  mouseX = px; mouseY = py;
+  cursor.style.left = px + 'px';
+  cursor.style.top  = py + 'px';
+}
+
+function touchMirror(px, py) {
+  const a = anchorPx();
+  const vx = px - a.x;
+  return (vx * session.grabVx) < 0;   // second finger crossed to the far side of the pivot
+}
+
+window.addEventListener('pointermove', (e) => {
+  moveCursor(e.clientX, e.clientY);
+  if (session && e.pointerId === session.actorId) {
+    const mirror = TOUCH ? touchMirror(e.clientX, e.clientY) : shiftDown;
+    document.body.classList.toggle('armed', mirror);
+    updateActor(e.clientX, e.clientY, mirror);
+  } else if (moveDrag && e.pointerId === moveDrag.id) {
+    const s = byId(moveDrag.id);
+    if (s) {
+      const rx = s.nr * minDim * REACH[s.type] * s.scl;
+      s.nx = clamp((e.clientX - docX) / docW - moveDrag.offnx, rx / docW, 1 - rx / docW);
+      s.ny = clamp((e.clientY - docY) / docH - moveDrag.offny, rx / docH, 1 - rx / docH);
+    }
+  }
+});
+
+window.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  moveCursor(e.clientX, e.clientY);
+
+  if (e.pointerType === 'touch') {
+    // ── True bimanual: first finger pins, second finger transforms ──
+    try { C.setPointerCapture(e.pointerId); } catch (_) {}
+    if (pointers.size === 0) {
+      anchorShape = hitShape(e.clientX, e.clientY);
+      // Double-tap the empty artboard resets (touch fallback for the R key).
+      if (!anchorShape) {
+        const t = performance.now();
+        if (t - lastTap < 340) { lastTap = 0; try { C.releasePointerCapture(e.pointerId); } catch (_) {} doReset(); return; }
+        lastTap = t;
+      }
+      anchor = { nx: clamp((e.clientX - docX) / docW, 0, 1), ny: clamp((e.clientY - docY) / docH, 0, 1) };
+      anchorActive = true; anchorMode = 'touch';
+      document.body.classList.add('anchored');
+      pointers.set(e.pointerId, { role: 'anchor' });
+      restingBar();
+    } else if (actorId === null) {
+      const target = anchorShape || hitShape(e.clientX, e.clientY);
+      pointers.set(e.pointerId, { role: 'actor' });
+      actorId = e.pointerId;
+      if (target) {
+        document.body.classList.add('dragging');
+        startSession(target, e.clientX, e.clientY);
+        updateActor(e.clientX, e.clientY, false);
+      }
+    } else {
+      pointers.set(e.pointerId, { role: 'extra' });
+    }
+    return;
+  }
+
+  // ── Desktop (mouse / pen) ──
+  if (e.button !== undefined && e.button !== 0) return;
+  const h = hitShape(e.clientX, e.clientY);
+  if (!h) return;
+  e.preventDefault();
+  try { C.setPointerCapture(e.pointerId); } catch (_) {}
+  if (anchorActive) {
+    actorId = e.pointerId;
+    document.body.classList.add('dragging');
+    startSession(h, e.clientX, e.clientY);
+    updateActor(e.clientX, e.clientY, shiftDown);
+  } else {
+    // No pivot held - a plain translate, so the tool still moves without an anchor.
+    moveDrag = { id: h.id, offnx: (e.clientX - docX) / docW - h.nx, offny: (e.clientY - docY) / docH - h.ny };
+    document.body.classList.add('dragging');
+  }
+});
+
+window.addEventListener('pointerup', (e) => {
+  const rec = pointers.get(e.pointerId);
+  if (rec) {
+    pointers.delete(e.pointerId);
+    if (rec.role === 'actor') { commitSession(); }
+    else if (rec.role === 'anchor') { clearAnchor(); }
+    return;
+  }
+  // desktop
+  if (session && e.pointerId === session.actorId) { commitSession(); return; }
+  if (moveDrag && e.pointerId === moveDrag.id) {
+    moveDrag = null;
+    document.body.classList.remove('dragging');
+    restingBar();
+  }
+});
+
+window.addEventListener('pointercancel', (e) => {
+  const rec = pointers.get(e.pointerId);
+  if (rec) {
+    pointers.delete(e.pointerId);
+    if (rec.role === 'actor') cancelSession();
+    else if (rec.role === 'anchor') { cancelSession(); anchorActive = false; anchorShape = null; document.body.classList.remove('anchored'); restingBar(); }
+    return;
+  }
+  if (session && e.pointerId === session.actorId) { cancelSession(); return; }
+  if (moveDrag && e.pointerId === moveDrag.id) {
+    moveDrag = null;
+    document.body.classList.remove('dragging');
+    restingBar();
+  }
+});
+
+// ───── Keyboard (desktop hands) ─────
+function placeAnchorAtCursor(mode) {
+  const px = mouseX < 0 ? docX + docW / 2 : mouseX;
+  const py = mouseY < 0 ? docY + docH / 2 : mouseY;
+  anchor = { nx: clamp((px - docX) / docW, 0, 1), ny: clamp((py - docY) / docH, 0, 1) };
+  anchorActive = true; anchorMode = mode;
+  document.body.classList.add('anchored');
+  restingBar();
+}
+
+function doReset() {
+  session = null; moveDrag = null; actorId = null; pointers.clear();
+  anchorActive = false; anchorShape = null;
+  document.body.classList.remove('dragging', 'armed', 'anchored');
+  regen();
+  idleBar();
+}
+
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;   // ignore OS key-repeat so holding A/Space doesn't rapid-toggle the pivot
+
+  if (e.key === ' ') {
+    e.preventDefault();
+    if (!spaceHeld) { spaceHeld = true; if (!anchorActive) placeAnchorAtCursor('space'); }
+  } else if (e.key === 'a' || e.key === 'A') {
+    // Each A press stamps the pivot at the cursor (repositioning it if already set) - no manual
+    // turn-off needed to move it. Press A while hovering the pivot itself to lift it away.
+    const a = anchorPx();
+    if (anchorActive && anchorMode === 'toggle' && Math.hypot(mouseX - a.x, mouseY - a.y) < 18) clearAnchor();
+    else placeAnchorAtCursor('toggle');
+  } else if (e.key === 'r' || e.key === 'R') {
+    doReset();
+  } else if (e.key === 'Shift') {
+    shiftDown = true;
+    if (session && actorId !== null) {
+      document.body.classList.add('armed');
+      updateActor(session.lastPx, session.lastPy, true);
+    }
+  }
+});
+
+window.addEventListener('keyup', (e) => {
+  if (e.key === ' ') {
+    spaceHeld = false;
+    if (anchorMode === 'space' && anchorActive) clearAnchor();
+  } else if (e.key === 'Shift') {
+    shiftDown = false;
+    if (session && actorId !== null) {
+      document.body.classList.remove('armed');
+      updateActor(session.lastPx, session.lastPy, false);
+    }
+  }
+});
+
+toggle.addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  ui.theme(dark ? 'dark' : 'light');
+  readTheme();
+});
+
+idleBar();
+draw();
+</script>
+</body>
+</html>

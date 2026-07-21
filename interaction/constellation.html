@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<!--
+  Constellation - groups drawn as constellations
+  Marquee-select scattered objects into named groups, each drawn as a labeled constellation of linked stars.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Constellation - groups drawn as constellations</title>
+<meta name="description" content="Marquee-select scattered objects into named groups, each drawn as a labeled constellation of linked stars.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Constellation - groups drawn as constellations">
+<meta property="og:description" content="Marquee-select scattered objects into named groups, each drawn as a labeled constellation of linked stars.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Constellation",
+  "applicationCategory": "DesignApplication",
+  "description": "Marquee-select scattered objects into named groups, each drawn as a labeled constellation of linked stars.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "constellation, interaction design, grouping, selection, marquee, star map, labels, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg: #0a0a0c; --fg: rgba(255,255,255,0.92); --fg-dim: rgba(255,255,255,0.45); --fg-faint: rgba(255,255,255,0.18);
+    --grid: rgba(255,255,255,0.018); --chrome-bg: rgba(20,20,24,0.85); --chrome-bd: rgba(255,255,255,0.08);
+    --obj: rgb(132,137,148); --accent: #FBF251;
+  }
+  body.light { --bg: #FAFAFA; --fg: rgba(0,0,0,0.88); --fg-dim: rgba(0,0,0,0.45); --fg-faint: rgba(0,0,0,0.15); --grid: rgba(0,0,0,0.03); --chrome-bg: rgba(255,255,255,0.88); --chrome-bd: rgba(0,0,0,0.08); --obj: rgb(98,103,113); --accent: #FBF251; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s; }
+  canvas { position: fixed; inset: 0; display: block; z-index: 1; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+  #cursor { position: fixed; left: 0; top: 0; width: 20px; height: 20px; border: 1.5px solid var(--fg); border-radius: 50%; pointer-events: none; z-index: 100; transform: translate(-50%, -50%); transition: border-color 0.2s; }
+  #cursor::before, #cursor::after { content: ''; position: absolute; background: var(--fg); }
+  #cursor::before { top: 50%; left: -3px; right: -3px; height: 1px; transform: translateY(-50%); }
+  #cursor::after { left: 50%; top: -3px; bottom: -3px; width: 1px; transform: translateX(-50%); }
+  #cursor.selecting { border-color: var(--fg); }
+  #cursor.drag { border-color: var(--fg); }
+  #label-input {
+    position: fixed; pointer-events: auto; z-index: 50;
+    background: rgba(40, 40, 48, 0.95); color: var(--fg);
+    border: 1px solid var(--fg); padding: 4px 10px; border-radius: 2px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.05em;
+    outline: none; min-width: 120px;
+    backdrop-filter: blur(6px);
+    display: none;
+  }
+  body.light #label-input { background: rgba(255,255,255,0.95); color: #010101; }
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <div id="toggle" title="Toggle theme"></div>
+  <div id="cursor"></div>
+  <input id="label-input" type="text" maxlength="24" />
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const cursor = document.getElementById('cursor');
+const readout = { set innerHTML(v){}, set textContent(v){} };
+const labelInput = document.getElementById('label-input');
+
+const ui = PT.ui({ title: 'Constellation', hints: 'Drag select · Click label rename · Esc clear · R reseed', theme: 'light' });
+const toggle = document.getElementById('toggle');
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); document.body.classList.toggle('light', !dark); ui.theme(dark ? 'dark' : 'light'); });
+
+// state BEFORE resize
+let W = 0, H = 0;
+let seed = 595959;
+let shapes = [];
+let groups = []; // { id, memberIds: [], label }
+let marquee = null; // { x0, y0, x1, y1 }
+let drag = null;
+let mx = -100, my = -100;
+let hoverLabelGroupId = null;
+let hoverShape = null;
+let selectedSet = null; // ephemeral: {ids: Set} before promoted to a group
+let editingGroupId = null;
+
+// Per-group line-dash patterns keep clusters distinguishable in greyscale (no hue).
+const GROUP_DASH = [[], [4, 3], [1, 3], [6, 2, 1, 2]];
+const SUGGESTED = ['Header', 'Body', 'Axis', 'Caption', 'Legend', 'Grid', 'Detail'];
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() { if (shapes.length === 0) build(); }
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) { return function() { let t = (s += 0x6D2B79F5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function build() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  groups = [];
+  let tries = 0;
+  while (shapes.length < 14 && tries < 3000) {
+    const x = 0.1 + rng() * 0.8;
+    const y = 0.18 + rng() * 0.64;
+    const size = 22 + rng() * 20;
+    let ok = true;
+    for (const o of shapes) {
+      if (Math.hypot((x - o.nx) * W, (y - o.ny) * H) < size + o.size + 24) { ok = false; break; }
+    }
+    if (ok) {
+      shapes.push({
+        id: shapes.length + 1,
+        nx: x, ny: y,
+        x: x * W, y: y * H,
+        size,
+      });
+    }
+    tries++;
+  }
+}
+
+
+function centroidOf(members) {
+  let sx = 0, sy = 0;
+  for (const m of members) { sx += m.x; sy += m.y; }
+  return { x: sx / members.length, y: sy / members.length };
+}
+
+function topOf(members) {
+  // Find topmost point along the group (for label placement)
+  let minY = Infinity, cx = 0;
+  for (const m of members) {
+    if (m.y - m.size < minY) minY = m.y - m.size;
+    cx += m.x;
+  }
+  return { x: cx / members.length, y: minY - 24 };
+}
+
+function getMembers(group) {
+  return group.memberIds.map(id => shapes.find(s => s.id === id)).filter(Boolean);
+}
+
+function labelRect(group) {
+  const members = getMembers(group);
+  if (members.length < 1) return null;
+  const anchor = topOf(members);
+  const text = group.label;
+  X.save();
+  X.font = '600 11px "IBM Plex Mono", monospace';
+  const tW = X.measureText(text).width;
+  X.restore();
+  const padX = 10, padY = 5;
+  const bw = tW + padX * 2;
+  const bh = 22;
+  return { x: anchor.x - bw / 2, y: anchor.y - bh, w: bw, h: bh, anchorX: anchor.x, anchorY: anchor.y };
+}
+
+function drawConstellations() {
+  const cs = getComputedStyle(document.body);
+  const cFg = cs.getPropertyValue('--fg');
+  const cDim = cs.getPropertyValue('--fg-dim');
+  const cChrome = cs.getPropertyValue('--chrome-bg');
+  const cAccent = cs.getPropertyValue('--accent');
+  const INK = '#0A0A0A';
+  for (let gi = 0; gi < groups.length; gi++) {
+    const group = groups[gi];
+    const members = getMembers(group);
+    if (!members.length) continue;
+    const c = centroidOf(members);
+    // Per-group line-dash keeps clusters distinct in greyscale (no hue).
+    const dash = GROUP_DASH[gi % GROUP_DASH.length];
+    // Edges from centroid to each member: thin, faded
+    X.save();
+    X.strokeStyle = cDim;
+    X.globalAlpha = 0.6;
+    X.lineWidth = 0.8;
+    X.setLineDash(dash);
+    for (const m of members) {
+      X.beginPath(); X.moveTo(c.x, c.y); X.lineTo(m.x, m.y); X.stroke();
+    }
+    X.restore();
+    // MST edges between nearest pairs for a more graceful constellation look
+    const edges = [];
+    for (let i = 0; i < members.length; i++) {
+      for (let j = i + 1; j < members.length; j++) {
+        edges.push({ a: members[i], b: members[j], d: Math.hypot(members[i].x - members[j].x, members[i].y - members[j].y) });
+      }
+    }
+    edges.sort((a, b) => a.d - b.d);
+    const parent = new Map(members.map(m => [m.id, m.id]));
+    const find = (id) => { while (parent.get(id) !== id) { parent.set(id, parent.get(parent.get(id))); id = parent.get(id); } return id; };
+    X.save();
+    X.strokeStyle = cFg;
+    X.globalAlpha = 0.7;
+    X.lineWidth = 1;
+    X.setLineDash(dash);
+    let added = 0;
+    for (const e of edges) {
+      if (added === members.length - 1) break;
+      const ra = find(e.a.id), rb = find(e.b.id);
+      if (ra !== rb) {
+        parent.set(ra, rb);
+        X.beginPath(); X.moveTo(e.a.x, e.a.y); X.lineTo(e.b.x, e.b.y); X.stroke();
+        added++;
+      }
+    }
+    X.restore();
+    // Label
+    const lr = labelRect(group);
+    if (!lr) continue;
+    const isHover = hoverLabelGroupId === group.id;
+    // Connector line from label to centroid
+    X.save();
+    X.strokeStyle = cDim;
+    X.globalAlpha = 0.4;
+    X.lineWidth = 1;
+    X.setLineDash([2, 3]);
+    X.beginPath(); X.moveTo(lr.anchorX, lr.anchorY); X.lineTo(c.x, c.y); X.stroke();
+    X.restore();
+    // Label box: neutral by default; the hovered (charged) group gets a bare yellow accent fill.
+    X.save();
+    X.setLineDash([]);
+    X.fillStyle = isHover ? cAccent : cChrome;
+    X.strokeStyle = cFg;
+    X.lineWidth = 1;
+    X.globalAlpha = isHover ? 1 : 0.9;
+    X.fillRect(lr.x, lr.y, lr.w, lr.h);
+    X.strokeRect(lr.x + 0.5, lr.y + 0.5, lr.w - 1, lr.h - 1);
+    X.font = '600 11px "IBM Plex Mono", monospace';
+    X.textAlign = 'center';
+    X.textBaseline = 'middle';
+    X.fillStyle = isHover ? INK : cFg;
+    X.fillText(group.label, lr.x + lr.w / 2, lr.y + lr.h / 2 + 1);
+    X.restore();
+  }
+}
+
+function drawMarquee() {
+  if (!marquee) return;
+  X.save();
+  // Marquee is the active selection gesture: bare yellow accent fill, neutral edge.
+  X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg');
+  X.fillStyle = 'rgba(251,242,81,0.10)';
+  X.lineWidth = 1;
+  X.setLineDash([3, 3]);
+  const x = Math.min(marquee.x0, marquee.x1);
+  const y = Math.min(marquee.y0, marquee.y1);
+  const w = Math.abs(marquee.x1 - marquee.x0);
+  const h = Math.abs(marquee.y1 - marquee.y0);
+  X.fillRect(x, y, w, h);
+  X.strokeRect(x, y, w, h);
+  X.restore();
+}
+
+function draw() {
+  X.clearRect(0, 0, W, H);
+  drawConstellations();
+  const cs = getComputedStyle(document.body);
+  const cObj = cs.getPropertyValue('--obj');
+  const cAccent = cs.getPropertyValue('--accent');
+  const cDim = cs.getPropertyValue('--fg-dim');
+  const cFaint = cs.getPropertyValue('--fg-faint');
+  for (const s of shapes) {
+    const inSelected = selectedSet && selectedSet.has(s.id);
+    const inHoverGroup = hoverLabelGroupId && groups.find(g => g.id === hoverLabelGroupId)?.memberIds.includes(s.id);
+    const isHover = hoverShape && hoverShape.id === s.id && !drag;
+    // Charged (selected) stars fill bare yellow; every other star is solid grey.
+    X.save();
+    X.fillStyle = inSelected ? cAccent : cObj;
+    X.beginPath(); X.arc(s.x, s.y, s.size, 0, Math.PI * 2); X.fill();
+    X.restore();
+    // Neutral emphasis rings for hover (selection is already carried by the yellow fill).
+    if (!inSelected && (inHoverGroup || isHover)) {
+      X.save();
+      X.strokeStyle = inHoverGroup ? cDim : cFaint;
+      X.lineWidth = 1.2;
+      X.setLineDash([3, 3]);
+      X.beginPath(); X.arc(s.x, s.y, s.size + 6, 0, Math.PI * 2); X.stroke();
+      X.restore();
+    }
+  }
+  drawMarquee();
+  readout.innerHTML = `Objects <b>${shapes.length}</b> · Groups <b>${groups.length}</b>${selectedSet ? ` · Selected <b>${selectedSet.size}</b>` : ''}`;
+}
+
+function loop() { draw(); requestAnimationFrame(loop); }
+loop();
+
+function shapesInRect(x0, y0, x1, y1) {
+  const lx = Math.min(x0, x1), rx = Math.max(x0, x1);
+  const ty = Math.min(y0, y1), by = Math.max(y0, y1);
+  return shapes.filter(s => s.x >= lx - s.size && s.x <= rx + s.size && s.y >= ty - s.size && s.y <= by + s.size).map(s => s.id);
+}
+function hitShape(x, y) {
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (Math.hypot(x - s.x, y - s.y) < s.size + 3) return s;
+  }
+  return null;
+}
+function hitLabel(x, y) {
+  for (const g of groups) {
+    const lr = labelRect(g);
+    if (!lr) continue;
+    if (x >= lr.x && x <= lr.x + lr.w && y >= lr.y && y <= lr.y + lr.h) return g;
+  }
+  return null;
+}
+
+function showLabelEditor(x, y, initial, onCommit) {
+  labelInput.style.display = 'block';
+  labelInput.style.left = (x - 70) + 'px';
+  labelInput.style.top = (y - 16) + 'px';
+  labelInput.value = initial || '';
+  labelInput.placeholder = SUGGESTED[groups.length % SUGGESTED.length];
+  setTimeout(() => labelInput.focus(), 0);
+  function finish(commit) {
+    labelInput.style.display = 'none';
+    labelInput.onblur = null;
+    labelInput.onkeydown = null;
+    if (commit) {
+      const name = labelInput.value.trim() || labelInput.placeholder;
+      onCommit(name);
+    } else {
+      onCommit(null);
+    }
+  }
+  labelInput.onblur = () => finish(true);
+  labelInput.onkeydown = (e) => {
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') finish(false);
+  };
+}
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (marquee) {
+    marquee.x1 = mx; marquee.y1 = my;
+  } else if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    if (s) { s.x = mx - drag.offX; s.y = my - drag.offY; s.nx = s.x / W; s.ny = s.y / H; }
+  } else {
+    const lg = hitLabel(mx, my);
+    hoverLabelGroupId = lg ? lg.id : null;
+    cursor.classList.toggle('selecting', !!lg);
+    hoverShape = lg ? null : hitShape(mx, my);
+  }
+});
+window.addEventListener('pointerdown', e => {
+  if (editingGroupId !== null) return;
+  const lg = hitLabel(e.clientX, e.clientY);
+  if (lg) {
+    // Clicking a label selects its members AND enters rename mode
+    selectedSet = new Set(lg.memberIds);
+    editingGroupId = lg.id;
+    const lr = labelRect(lg);
+    showLabelEditor(lr.x + lr.w / 2, lr.y + lr.h / 2, lg.label, (name) => {
+      if (name !== null) lg.label = name;
+      editingGroupId = null;
+      selectedSet = null;
+    });
+    return;
+  }
+  const hs = hitShape(e.clientX, e.clientY);
+  if (hs) {
+    drag = { id: hs.id, offX: e.clientX - hs.x, offY: e.clientY - hs.y };
+    cursor.classList.add('drag');
+    return;
+  }
+  // Start marquee
+  marquee = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY };
+});
+window.addEventListener('pointerup', (e) => {
+  if (marquee) {
+    const w = Math.abs(marquee.x1 - marquee.x0);
+    const h = Math.abs(marquee.y1 - marquee.y0);
+    if (w > 8 && h > 8) {
+      const ids = shapesInRect(marquee.x0, marquee.y0, marquee.x1, marquee.y1);
+      if (ids.length >= 1) {
+        selectedSet = new Set(ids);
+        // Open naming UI
+        const members = shapes.filter(s => selectedSet.has(s.id));
+        const anchor = topOf(members);
+        const newGroupId = groups.length ? Math.max(...groups.map(g => g.id)) + 1 : 1;
+        editingGroupId = newGroupId;
+        showLabelEditor(anchor.x, anchor.y - 10, '', (name) => {
+          if (name) {
+            groups.push({ id: newGroupId, memberIds: [...selectedSet], label: name });
+          }
+          editingGroupId = null;
+          selectedSet = null;
+        });
+      }
+    }
+    marquee = null;
+  }
+  drag = null;
+  cursor.classList.remove('drag');
+});
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    selectedSet = null; marquee = null; drag = null;
+    if (editingGroupId !== null) labelInput.dispatchEvent(new Event('blur'));
+  } else if ((e.key === 'r' || e.key === 'R') && editingGroupId === null) {
+    seed = Math.floor(Math.random() * 999999);
+    shapes = []; groups = [];
+    build();
+  }
+});
+</script>
+</body>
+</html>

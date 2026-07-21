@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<!--
+  Gravity - shapes that cluster by trait
+  Objects that share a trait gravitate together into self-organizing clusters; drag one and its kin follow.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Gravity - shapes that cluster by trait</title>
+<meta name="description" content="Objects that share a trait gravitate together into self-organizing clusters; drag one and its kin follow.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Gravity - shapes that cluster by trait">
+<meta property="og:description" content="Objects that share a trait gravitate together into self-organizing clusters; drag one and its kin follow.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Gravity",
+  "applicationCategory": "DesignApplication",
+  "description": "Objects that share a trait gravitate together into self-organizing clusters; drag one and its kin follow.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "gravity, interaction design, physics, clustering, self-organization, affinity, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg: #0a0a0c;
+    --fg: rgba(255,255,255,0.92);
+    --fg-dim: rgba(255,255,255,0.45);
+    --fg-faint: rgba(255,255,255,0.18);
+    --grid: rgba(255,255,255,0.018);
+    --chrome-bg: rgba(20,20,24,0.85);
+    --chrome-bd: rgba(255,255,255,0.08);
+    --accent: #FBF251;
+  }
+  body.light {
+    --bg: #FAFAFA;
+    --fg: rgba(0,0,0,0.88);
+    --fg-dim: rgba(0,0,0,0.45);
+    --fg-faint: rgba(0,0,0,0.15);
+    --grid: rgba(0,0,0,0.03);
+    --chrome-bg: rgba(255,255,255,0.88);
+    --chrome-bd: rgba(0,0,0,0.08);
+    --accent: #FBF251;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s; }
+  canvas { position: fixed; inset: 0; display: block; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+  #cursor { position: fixed; left: 0; top: 0; width: 20px; height: 20px; border: 1.5px solid var(--fg); border-radius: 50%; pointer-events: none; z-index: 100; transform: translate(-50%, -50%); transition: transform 0.15s cubic-bezier(0.16,1,0.3,1), border-color 0.2s, width 0.2s, height 0.2s; }
+  #cursor::before, #cursor::after { content: ''; position: absolute; background: var(--fg); }
+  #cursor::before { top: 50%; left: -3px; right: -3px; height: 1px; transform: translateY(-50%); }
+  #cursor::after { left: 50%; top: -3px; bottom: -3px; width: 1px; transform: translateX(-50%); }
+  #cursor.drag { border-color: var(--fg); transform: translate(-50%, -50%) scale(1.4); }
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <div id="toggle" title="Toggle theme"></div>
+  <div id="cursor"></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const cursor = document.getElementById('cursor');
+const readout = { set innerHTML(v){}, set textContent(v){} };
+const toggle = document.getElementById('toggle');
+
+const ui = PT.ui({ title: 'Gravity', hints: 'Drag move · 1 tone · 2 rotation · 3 size · 0 all · R reseed · X shake', theme: 'light' });
+
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); document.body.classList.toggle('light', !dark); ui.theme(dark ? 'dark' : 'light'); });
+
+// state BEFORE resize
+let W = 0, H = 0;
+let seed = 737337;
+let shapes = [];
+let mode = 'all';
+let drag = null;
+let mx = -100, my = -100;
+let hoverId = null;
+
+// the "value" trait (formerly hue) - a categorical grey-value ramp, theme-aware.
+// same tier reads as kin; the ramp is only ever compared for equality in similarity().
+const TIERS_LIGHT = ['#2B2E34', '#484C53', '#666B74', '#878C95', '#A6ABB3'];
+const TIERS_DARK  = ['#EEF0F3', '#C4C8CF', '#9BA1AB', '#787D87', '#575C65'];
+const TIER_N = TIERS_LIGHT.length;
+const tierColor = (i) => (document.body.classList.contains('light') ? TIERS_LIGHT : TIERS_DARK)[i];
+const SIZES = [18, 26, 34, 44];
+const SHAPES = ['circle', 'square', 'triangle'];
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() { if (shapes.length === 0) build(); }
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) { return function() { let t = (s += 0x6D2B79F5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+
+
+function build() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  let tries = 0;
+  while (shapes.length < 18 && tries < 4000) {
+    const x = 0.1 + rng() * 0.8;
+    const y = 0.12 + rng() * 0.76;
+    const size = SIZES[(rng() * SIZES.length) | 0];
+    let ok = true;
+    for (const o of shapes) {
+      const dx = (x - o.nx) * W, dy = (y - o.ny) * H;
+      if (Math.hypot(dx, dy) < size + o.size + 12) { ok = false; break; }
+    }
+    if (ok) {
+      shapes.push({
+        id: shapes.length + 1,
+        nx: x, ny: y,
+        x: x * W, y: y * H,
+        vx: 0, vy: 0,
+        size,
+        tier: (rng() * TIER_N) | 0,
+        shape: SHAPES[(rng() * SHAPES.length) | 0],
+        rotation: Math.floor(rng() * 12) * 30,
+      });
+    }
+    tries++;
+  }
+}
+
+function similarity(a, b, m) {
+  // value tier: exact match = 1, other = 0
+  const colorSim = a.tier === b.tier ? 1 : 0;
+  // rotation: 1 - angular distance normalized
+  let rd = Math.abs(a.rotation - b.rotation);
+  if (rd > 180) rd = 360 - rd;
+  const rotSim = 1 - rd / 180;
+  // size: 1 - relative distance
+  const sizeSim = 1 - Math.abs(a.size - b.size) / 44;
+  if (m === 'tone') return colorSim;
+  if (m === 'rotation') return rotSim > 0.7 ? rotSim : 0;
+  if (m === 'size') return sizeSim > 0.7 ? sizeSim : 0;
+  // all: weighted mix
+  return (colorSim * 0.5 + (rotSim > 0.7 ? rotSim : 0) * 0.25 + (sizeSim > 0.7 ? sizeSim : 0) * 0.25);
+}
+
+
+function drawShape(s, alpha = 1) {
+  X.save();
+  X.translate(s.x, s.y);
+  X.rotate(s.rotation * Math.PI / 180);
+  X.globalAlpha = alpha;
+  // the dragged shape is the one charged thing - bare yellow fill on both themes
+  X.fillStyle = (drag && drag.id === s.id) ? '#FBF251' : tierColor(s.tier);
+  if (s.shape === 'circle') { X.beginPath(); X.arc(0, 0, s.size, 0, Math.PI * 2); X.fill(); }
+  else if (s.shape === 'square') { X.fillRect(-s.size, -s.size, s.size * 2, s.size * 2); }
+  else { X.beginPath(); X.moveTo(0, -s.size); X.lineTo(s.size, s.size * 0.8); X.lineTo(-s.size, s.size * 0.8); X.closePath(); X.fill(); }
+  X.restore();
+}
+
+let totalTension = 0;
+
+function update() {
+  totalTension = 0;
+  const bodyLight = document.body.classList.contains('light');
+  const RADIUS = 340;
+  const STRENGTH = drag ? 0.0009 : 0.00045;
+  const DAMP = 0.82;
+  for (const s of shapes) {
+    if (drag && drag.id === s.id) continue;
+    let fx = 0, fy = 0;
+    for (const t of shapes) {
+      if (t.id === s.id) continue;
+      const dx = t.x - s.x, dy = t.y - s.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1 || dist > RADIUS) continue;
+      const sim = similarity(s, t, mode);
+      if (sim < 0.05) continue;
+      // attract if similar, with soft falloff; add small repel when very close
+      const fall = 1 - dist / RADIUS;
+      const attract = sim * STRENGTH * fall * dist;
+      const repelMin = s.size + t.size + 6;
+      const repel = dist < repelMin ? -0.18 * (repelMin - dist) / dist : 0;
+      const force = attract / dist + repel;
+      fx += dx * force;
+      fy += dy * force;
+      totalTension += sim * fall * 0.003;
+    }
+    s.vx = (s.vx + fx) * DAMP;
+    s.vy = (s.vy + fy) * DAMP;
+    s.x += s.vx;
+    s.y += s.vy;
+    // soft bounds
+    const pad = 40;
+    if (s.x < pad) { s.x = pad; s.vx *= -0.3; }
+    if (s.x > W - pad) { s.x = W - pad; s.vx *= -0.3; }
+    if (s.y < pad + 60) { s.y = pad + 60; s.vy *= -0.3; }
+    if (s.y > H - pad - 60) { s.y = H - pad - 60; s.vy *= -0.3; }
+  }
+  if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    if (s) { s.x = mx; s.y = my; s.vx = 0; s.vy = 0; }
+  }
+}
+
+function draw() {
+  X.clearRect(0, 0, W, H);
+  // Relationship ghosts: for each pair in range with similarity > 0.3, thin line
+  X.save();
+  for (let i = 0; i < shapes.length; i++) {
+    for (let j = i + 1; j < shapes.length; j++) {
+      const a = shapes[i], b = shapes[j];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      if (dist > 260) continue;
+      const sim = similarity(a, b, mode);
+      if (sim < 0.3) continue;
+      const alpha = sim * 0.18 * (1 - dist / 260);
+      X.strokeStyle = a.tier === b.tier ? tierColor(a.tier) : (document.body.classList.contains('light') ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)');
+      X.globalAlpha = alpha;
+      X.lineWidth = 0.8;
+      X.beginPath(); X.moveTo(a.x, a.y); X.lineTo(b.x, b.y); X.stroke();
+    }
+  }
+  X.restore();
+  // Shapes
+  for (const s of shapes) {
+    const isHover = hoverId === s.id;
+    const isDrag = drag && drag.id === s.id;
+    drawShape(s, 1);
+    if (isHover || isDrag) {
+      X.save();
+      X.translate(s.x, s.y);
+      // dragged shape already reads via its yellow fill; the ring stays a neutral grey
+      X.strokeStyle = getComputedStyle(document.body).getPropertyValue(isDrag ? '--fg-dim' : '--fg-faint');
+      X.lineWidth = 1.5;
+      X.globalAlpha = 0.85;
+      X.beginPath(); X.arc(0, 0, s.size + 8, 0, Math.PI * 2); X.stroke();
+      X.restore();
+    }
+  }
+  // Mode key legend bottom-left
+  X.save();
+  X.font = '10px "IBM Plex Mono", monospace';
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+  X.textBaseline = 'bottom';
+  X.fillText('Mode · ' + mode, 24, H - 56);
+  X.restore();
+}
+
+function loop() {
+  update();
+  draw();
+  readout.innerHTML = `Objects <b>${shapes.length}</b> · Tension <b>${totalTension.toFixed(2)}</b> · Mode <b>${mode}</b>`;
+  requestAnimationFrame(loop);
+}
+loop();
+
+function hit(x, y) {
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (Math.hypot(x - s.x, y - s.y) < s.size + 4) return s;
+  }
+  return null;
+}
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (!drag) {
+    const h = hit(mx, my);
+    hoverId = h ? h.id : null;
+  }
+});
+window.addEventListener('pointerdown', e => {
+  const h = hit(e.clientX, e.clientY);
+  if (h) { drag = { id: h.id }; cursor.classList.add('drag'); }
+});
+window.addEventListener('pointerup', () => { drag = null; cursor.classList.remove('drag'); });
+window.addEventListener('keydown', e => {
+  if (e.key === '0') mode = 'all';
+  else if (e.key === '1') mode = 'tone';
+  else if (e.key === '2') mode = 'rotation';
+  else if (e.key === '3') mode = 'size';
+  else if (e.key === 'r' || e.key === 'R') { seed = Math.floor(Math.random() * 999999); build(); }
+  else if (e.key === 'x' || e.key === 'X') {
+    // shake: give every shape a random velocity kick
+    for (const s of shapes) {
+      s.vx += (Math.random() - 0.5) * 30;
+      s.vy += (Math.random() - 0.5) * 30;
+    }
+  }
+});
+</script>
+</body>
+</html>

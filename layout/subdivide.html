@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<!--
+  Subdivide - carve a surface into panels
+  Recursive binary space partition: click a region to split it, drag any seam to reallocate, click a seam to merge. Every pixel is used; export the layout as CSS.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Subdivide - carve a surface into panels</title>
+<meta name="description" content="Recursive binary space partition: click a region to split it, drag any seam to reallocate, click a seam to merge. Every pixel is used; export the layout as CSS.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Subdivide - carve a surface into panels">
+<meta property="og:description" content="Recursive binary space partition: click a region to split, drag a seam to reallocate, click a seam to merge. Every pixel used; export the layout as CSS.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Subdivide",
+  "applicationCategory": "DesignApplication",
+  "description": "A recursive binary space partition layout tool: split a surface into panels, drag seams to reallocate space, merge to simplify, and export the regions as CSS.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "layout, composition, binary space partition, BSP, subdivision, panels, dashboard, page grid, interaction design, HTML canvas, generative",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white: #FAFAFA;
+  --c-grey:  #8A8A8A;
+  --c-black: #0A0A0A;
+  --obj: rgb(98,103,113);
+  --bg: var(--c-white);
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.16);
+  --grid: rgba(10,10,10,0.07);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.16);
+  --grid: rgba(250,250,250,0.06);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+#c { position: fixed; inset: 0; z-index: 1; }
+
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: transform 0.22s var(--ease), border-color 0.22s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.22s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; }
+.cursor .cross.v { width: 1px; height: 10px; }
+body.hovering .cursor .ring { border-color: var(--fg); transform: scale(1.2); }
+body.near-edge .cursor .ring { border-color: var(--fg); transform: scale(0.85); }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(0.5); }
+body.dragging .cursor .cross { background: var(--fg); }
+@media (hover: none) and (pointer: coarse) { html, body { cursor: auto; } .cursor { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+const HINTS = 'Click a region to split · Drag a seam to resize · Click a seam to merge · C copy CSS';
+const ui = PT.ui({ title: 'Subdivide', hints: HINTS, theme: 'light' });
+
+const pill = document.querySelector('.adui-pill');
+const seg = (html) => '<span class="adui-seg">' + html + '</span>';
+const kkey = (t) => '<b class="adui-key">' + t + '</b>';
+let flashUntil = 0;
+function flashMsg(text, ms = 1700) { if (!pill) return; pill.innerHTML = seg(kkey(text)); flashUntil = performance.now() + ms; }
+function flashStats() { flashMsg(collectLeaves().length + ' regions · 100% used'); }
+function tickBar(now) { if (flashUntil && now > flashUntil) { ui.setHints(HINTS); flashUntil = 0; } }
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+let rngState = 0x51ed270b;
+function rng() { rngState |= 0; rngState = (rngState + 0x6d2b79f5) | 0;
+  let t = Math.imul(rngState ^ (rngState >>> 15), 1 | rngState);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
+
+// ───── The tree (binary space partition) ─────
+// A leaf is a panel; an internal node holds a split ('v' = side-by-side, 'h' = stacked),
+// a ratio in (0,1) where the seam sits, and two children. Layout is pure recursion, so the
+// whole composition is one deterministic solve - the interactions just edit the tree.
+let uid = 1;
+function leaf() { return { id: uid++, split: null, ratio: 0.5, a: null, b: null,
+                           // target rect (r*) from layout, animated rect (a*) + presence
+                           rx: 0, ry: 0, rw: 0, rh: 0, ax: 0, ay: 0, aw: 0, ah: 0, appear: 0 }; }
+let root = leaf();
+
+const MINPX = 46;                    // a panel never gets thinner than this
+const SEAM = 4;                      // paper gap between panels (the visible seam)
+const HZ = 9;                        // seam grab zone (px)
+
+function splitLeaf(nd, axis, ratio) {
+  nd.split = axis; nd.ratio = ratio;
+  nd.a = leaf(); nd.b = leaf();
+  // children emerge from the parent's current animated rect, then ease apart
+  for (const c of [nd.a, nd.b]) { c.ax = nd.ax; c.ay = nd.ay; c.aw = nd.aw; c.ah = nd.ah; c.appear = 1; }
+}
+function mergeNode(nd) {            // collapse a division back into a single panel
+  nd.split = null; nd.a = null; nd.b = null;
+  // keeps its animated rect, so the merged panel simply grows to fill the space
+}
+
+// recurse: assign every node its target rect; children split the parent by ratio
+function layout(nd, x, y, w, h) {
+  nd.rx = x; nd.ry = y; nd.rw = w; nd.rh = h;
+  if (!nd.split) return;
+  if (nd.split === 'v') { const lw = w * nd.ratio; layout(nd.a, x, y, lw, h); layout(nd.b, x + lw, y, w - lw, h); }
+  else { const th = h * nd.ratio; layout(nd.a, x, y, w, th); layout(nd.b, x, y + th, w, h - th); }
+}
+function collectLeaves(nd = root, out = []) {
+  if (!nd.split) out.push(nd); else { collectLeaves(nd.a, out); collectLeaves(nd.b, out); }
+  return out;
+}
+function collectSeams(nd = root, out = []) {
+  if (!nd.split) return out;
+  out.push(nd); collectSeams(nd.a, out); collectSeams(nd.b, out);
+  return out;
+}
+// the seam segment (screen px) for an internal node
+function seamSeg(nd) {
+  if (nd.split === 'v') { const sx = nd.rx + nd.rw * nd.ratio; return { x1: sx, y1: nd.ry, x2: sx, y2: nd.ry + nd.rh, v: true }; }
+  const sy = nd.ry + nd.rh * nd.ratio; return { x1: nd.rx, y1: sy, x2: nd.rx + nd.rw, y2: sy, v: false };
+}
+
+// ───── State ─────
+let ax = 0, ay = 0, aw = 0, ah = 0;   // artboard rect (screen px)
+let mouseX = -1e4, mouseY = -1e4;
+let hoverLeaf = null, hoverSeam = null;
+let dragSeam = null;                  // internal node whose ratio we're dragging
+let downX = 0, downY = 0, downSeam = null, downLeaf = null, moved = false;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const m = Math.max(26, Math.min(W, H) * 0.075);
+  ax = m; ay = m; aw = W - 2 * m; ah = H - 2 * m;
+}
+
+function seedTree() {
+  uid = 1; root = leaf();
+  splitLeaf(root, 'v', 0.60);
+  splitLeaf(root.a, 'h', 0.55);
+  splitLeaf(root.b, 'h', 0.42);
+  splitLeaf(root.b.b, 'v', 0.5);
+  // start settled (no busy entrance): place animated rects at their targets, fade in
+  layout(root, ax, ay, aw, ah);
+  for (const l of collectLeaves()) { l.ax = l.rx; l.ay = l.ry; l.aw = l.rw; l.ah = l.rh; l.appear = 0; }
+}
+
+// ───── Frame ─────
+function step(now) {
+  tickBar(now);
+  layout(root, ax, ay, aw, ah);
+
+  // live seam drag: set the ratio directly from the pointer (tight, no easing)
+  if (dragSeam) {
+    if (dragSeam.split === 'v') {
+      const rmin = clamp(MINPX / dragSeam.rw, 0.04, 0.5);
+      dragSeam.ratio = clamp((mouseX - dragSeam.rx) / dragSeam.rw, rmin, 1 - rmin);
+    } else {
+      const rmin = clamp(MINPX / dragSeam.rh, 0.04, 0.5);
+      dragSeam.ratio = clamp((mouseY - dragSeam.ry) / dragSeam.rh, rmin, 1 - rmin);
+    }
+    layout(root, ax, ay, aw, ah);     // re-solve so the eased rects chase the new split
+  }
+
+  // exponential settle toward target rects (never overshoots) + fade new panels in
+  for (const l of collectLeaves()) {
+    const e = dragSeam ? 0.6 : 0.32;
+    l.ax += (l.rx - l.ax) * e;
+    l.ay += (l.ry - l.ay) * e;
+    l.aw += (l.rw - l.aw) * e;
+    l.ah += (l.rh - l.ah) * e;
+    l.appear += (1 - l.appear) * 0.16;
+  }
+
+  draw();
+  requestAnimationFrame(step);
+}
+
+function draw() {
+  const cs = getComputedStyle(document.body);
+  const bg = cs.getPropertyValue('--bg').trim();
+  const objc = cs.getPropertyValue('--obj').trim();
+  const dimc = cs.getPropertyValue('--dim').trim();
+  const fgc = cs.getPropertyValue('--fg').trim();
+
+  X.fillStyle = bg; X.fillRect(0, 0, W, H);
+
+  const leaves = collectLeaves();
+  // reading order (top-left → bottom-right) for stable numbering + export
+  const ordered = leaves.slice().sort((p, q) => (p.ry - q.ry) || (p.rx - q.rx));
+  const idxOf = new Map(ordered.map((l, i) => [l, i + 1]));
+
+  const area = aw * ah;
+  for (const l of leaves) {
+    const x = l.ax + SEAM / 2, y = l.ay + SEAM / 2, w = l.aw - SEAM, h = l.ah - SEAM;
+    if (w <= 0 || h <= 0) continue;
+    X.save();
+    X.globalAlpha = l.appear;
+    X.fillStyle = (l === hoverLeaf && !dragSeam && !hoverSeam) ? '#FBF251' : objc;   // hovered panel is the charged one
+    X.fillRect(x, y, w, h);
+    panelLabel(l, idxOf.get(l), x, y, w, h, l === hoverLeaf && !dragSeam && !hoverSeam, area, fgc);
+    X.restore();
+  }
+
+  // seam affordance: the hovered/dragged seam lights up in its paper gap
+  const lit = dragSeam || hoverSeam;
+  if (lit) {
+    const s = seamSeg(lit);
+    X.fillStyle = dragSeam ? '#FBF251' : fgc;
+    if (s.v) X.fillRect(s.x1 - SEAM / 2, s.y1 + SEAM / 2, SEAM, (s.y2 - s.y1) - SEAM);
+    else     X.fillRect(s.x1 + SEAM / 2, s.y1 - SEAM / 2, (s.x2 - s.x1) - SEAM, SEAM);
+  }
+}
+
+function panelLabel(l, i, x, y, w, h, onAccent, area, fgc) {
+  const pad = Math.max(8, Math.min(w, h) * 0.09);
+  const ink = onAccent ? 'rgba(10,10,10,0.85)' : 'rgba(250,250,250,0.92)';
+  const dim = onAccent ? 'rgba(10,10,10,0.42)' : 'rgba(250,250,250,0.48)';
+  const fs = clamp(Math.min(w, h) * 0.2, 12, 30);
+  X.fillStyle = ink;
+  X.font = "500 " + fs + "px 'IBM Plex Mono', ui-monospace, monospace";
+  X.textBaseline = 'top'; X.textAlign = 'left';
+  X.fillText(String(i), x + pad, y + pad);
+  const pct = Math.round((l.rw * l.rh) / area * 100);
+  const ss = clamp(Math.min(w, h) * 0.11, 8, 13);
+  X.fillStyle = dim;
+  X.font = "400 " + ss + "px 'IBM Plex Mono', ui-monospace, monospace";
+  X.textBaseline = 'bottom'; X.textAlign = 'right';
+  X.fillText(pct + '%', x + w - pad, y + h - pad);
+}
+
+// ───── Hit testing ─────
+function leafAt(px, py) {
+  for (const l of collectLeaves()) if (px >= l.ax && px <= l.ax + l.aw && py >= l.ay && py <= l.ay + l.ah) return l;
+  return null;
+}
+function seamAt(px, py) {
+  let best = null, bestD = HZ;
+  for (const nd of collectSeams()) {
+    const s = seamSeg(nd);
+    const d = s.v
+      ? (py >= s.y1 && py <= s.y2 ? Math.abs(px - s.x1) : Infinity)
+      : (px >= s.x1 && px <= s.x2 ? Math.abs(py - s.y1) : Infinity);
+    if (d < bestD) { bestD = d; best = nd; }
+  }
+  return best;
+}
+
+// ───── Pointer ─────
+C.addEventListener('pointermove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  updateCursor(e);
+  if (dragSeam) { moved = moved || Math.hypot(mouseX - downX, mouseY - downY) > 4; return; }
+  hoverSeam = seamAt(mouseX, mouseY);
+  hoverLeaf = hoverSeam ? null : leafAt(mouseX, mouseY);
+  document.body.classList.toggle('near-edge', !!hoverSeam);
+  document.body.classList.toggle('hovering', !!hoverLeaf);
+});
+C.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  mouseX = downX = e.clientX; mouseY = downY = e.clientY; moved = false;
+  downSeam = seamAt(mouseX, mouseY);
+  downLeaf = downSeam ? null : leafAt(mouseX, mouseY);
+  if (downSeam) {
+    dragSeam = downSeam;
+    document.body.classList.add('dragging');
+    document.body.classList.remove('hovering', 'near-edge');
+    C.setPointerCapture(e.pointerId);
+  }
+});
+C.addEventListener('pointerup', (e) => {
+  const wasDrag = moved;
+  if (dragSeam) { dragSeam = null; document.body.classList.remove('dragging'); if (wasDrag) { flashStats(); return; } }
+  if (e.target.closest('#toggle, .adui')) return;
+  // a click (no meaningful drag): on a seam → merge; on a panel → split
+  if (downSeam && !wasDrag) { mergeNode(downSeam); flashStats(); }
+  else if (downLeaf && !wasDrag) {
+    const axis = (downLeaf.rw > downLeaf.rh) !== e.shiftKey ? 'v' : 'h';   // longer axis; Shift forces the other
+    splitLeaf(downLeaf, axis, 0.5); flashStats();
+  }
+  downSeam = downLeaf = null;
+});
+
+function updateCursor(e) { const c = document.getElementById('cursor'); c.style.left = e.clientX + 'px'; c.style.top = e.clientY + 'px'; }
+
+// ───── Keys ─────
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  const k = e.key;
+  if (k === 'c' || k === 'C') copyCSS();
+  else if (k === 's' || k === 'S') savePNG();
+  else if (k === 'r' || k === 'R') { rngState = (rngState * 1664525 + 1013904223) | 0; seedTree(); flashStats(); }
+});
+
+// The payoff: the panels you carved, as absolute-percentage CSS (drop children into `.layout`).
+function copyCSS() {
+  const leaves = collectLeaves().slice().sort((p, q) => (p.ry - q.ry) || (p.rx - q.rx));
+  let css = '.layout {\n  position: relative;\n  width: 100%;\n  aspect-ratio: ' +
+            (aw / ah).toFixed(3) + ';\n}\n.layout > * { position: absolute; }\n';
+  leaves.forEach((l, i) => {
+    const L = ((l.rx - ax) / aw * 100).toFixed(2), T = ((l.ry - ay) / ah * 100).toFixed(2);
+    const Wp = (l.rw / aw * 100).toFixed(2), Hp = (l.rh / ah * 100).toFixed(2);
+    css += '.layout > :nth-child(' + (i + 1) + ') { left: ' + L + '%; top: ' + T + '%; width: ' + Wp + '%; height: ' + Hp + '%; }\n';
+  });
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(css).then(() => flashMsg('Copied CSS layout to clipboard'), () => flashMsg('Copy blocked - see console'));
+    console.log(css);
+  } else { console.log(css); flashMsg('CSS layout logged to console'); }
+}
+function savePNG() {
+  C.toBlob((blob) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'subdivide.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }, 'image/png');
+}
+
+document.getElementById('toggle').addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); ui.theme(dark ? 'dark' : 'light'); });
+window.addEventListener('resize', resize);
+resize();
+seedTree();
+requestAnimationFrame(step);
+</script>
+</body>
+</html>

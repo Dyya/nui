@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<!--
+  Treemap - size is the data
+  A treemap: every cell's AREA is proportional to its value, grouped by tier. Scroll a cell to reweight it and the whole map re-tiles. Export the data.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Treemap - size is the data</title>
+<meta name="description" content="A treemap: every cell's area is proportional to its value, grouped by tier. Scroll a cell to reweight it and the whole map re-tiles. Export the data.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Treemap - size is the data">
+<meta property="og:description" content="A treemap: every cell's area is proportional to its value, grouped by tier. Scroll to reweight and the whole map re-tiles. Export the data.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Treemap",
+  "applicationCategory": "DesignApplication",
+  "description": "A treemap layout tool: cell area is proportional to value, grouped by tier; scroll a cell to reweight it, add or remove cells, and export the data.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "layout, treemap, slice and dice, data visualization, area, weight, hierarchy, composition, interaction design, HTML canvas, generative",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white: #FAFAFA;
+  --c-grey:  #8A8A8A;
+  --c-black: #0A0A0A;
+  --obj: rgb(98,103,113);
+  --bg: var(--c-white);
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.16);
+  --mid: rgba(10,10,10,0.38);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.16);
+  --mid: rgba(250,250,250,0.4);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+#c { position: fixed; inset: 0; z-index: 1; }
+
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: transform 0.22s var(--ease), border-color 0.22s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.22s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; }
+.cursor .cross.v { width: 1px; height: 10px; }
+body.hovering .cursor .ring { border-color: var(--fg); transform: scale(1.2); }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(0.5); }
+@media (hover: none) and (pointer: coarse) { html, body { cursor: auto; } .cursor { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+const HINTS = 'Scroll a cell to resize · Double-click to remove · A add a cell · C copy data';
+const ui = PT.ui({ title: 'Treemap', hints: HINTS, theme: 'light' });
+
+const pill = document.querySelector('.adui-pill');
+const seg = (html) => '<span class="adui-seg">' + html + '</span>';
+const kkey = (t) => '<b class="adui-key">' + t + '</b>';
+let flashUntil = 0;
+function flashMsg(text, ms = 1700) { if (!pill) return; pill.innerHTML = seg(kkey(text)); flashUntil = performance.now() + ms; }
+function flashStats() { flashMsg(allItems().length + ' cells · ' + GROUPS.length + ' groups'); }
+function tickBar(now) { if (flashUntil && now > flashUntil) { ui.setHints(HINTS); flashUntil = 0; } }
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// ───── Data (a budget-style dataset, so "area = value" reads as something real) ─────
+let uid = 1;
+// `value` is the target; `vcur` is the animated value the layout is actually built from
+// (so the tiling is always valid while it eases). `dying` shrinks a removed cell to nothing.
+function cell(name, value) { return { id: uid++, name, value, vcur: value, dying: false, placed: false,
+                                       tx: 0, ty: 0, tw: 0, th: 0, ax: 0, ay: 0, aw: 0, ah: 0, appear: 0 }; }
+let GROUPS = [];
+function seedData() {
+  uid = 1;
+  GROUPS = [
+    { name: 'Product', items: [cell('Engineering', 40), cell('Design', 15), cell('Research', 9)] },
+    { name: 'Growth',  items: [cell('Marketing', 22), cell('Sales', 17)] },
+    { name: 'Ops',     items: [cell('Infra', 13), cell('Support', 9), cell('Legal', 5)] },
+  ];
+}
+const allItems = () => GROUPS.flatMap(g => g.items);
+// semantic totals (target values, excluding cells being removed) drive the labels/shares
+const groupTotal = (g) => g.items.reduce((s, it) => s + (it.dying ? 0 : it.value), 0);
+const grandTotal = () => GROUPS.reduce((s, g) => s + groupTotal(g), 0);
+// layout totals use the animated value, so groups grow/shrink smoothly with their cells
+const layoutTotal = (g) => g.items.reduce((s, it) => s + it.vcur, 0);
+
+// ───── Geometry ─────
+const GG = 14;      // gap between groups (paper gutter)
+const HEADER = 20;  // group header strip height (name + total)
+const SEAM = 4;     // seam between cells within a group
+let ax = 0, ay = 0, aw = 0, ah = 0;
+let mouseX = -1e4, mouseY = -1e4;
+let hoverItem = null;
+let lastTapId = -1, lastTapTime = 0;
+let lastCount = -1;                   // cell count last frame; a change means add/remove happened
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const m = Math.max(26, Math.min(W, H) * 0.075);
+  ax = m; ay = m; aw = W - 2 * m; ah = H - 2 * m;
+}
+
+// ───── Slice-and-dice treemap (Shneiderman) ─────
+// Each cell gets a proportional slice of the rect along ONE axis, in the caller's order.
+// This is order-preserving and fully continuous: a cell's rect is a smooth function of the
+// values, so the layout never restructures, never teleports, and never overlaps - it just
+// resizes. That stability is what makes it animate perfectly (vs squarified, which re-breaks
+// rows under value changes). `rows=true` cuts along Y (stacked rows); false cuts along X.
+function sliceDice(entries, x, y, w, h, rows) {
+  entries = entries.filter(e => e.value > 0);
+  const total = entries.reduce((s, e) => s + e.value, 0);
+  if (total <= 0 || w <= 0 || h <= 0) return;
+  let off = 0;
+  for (const e of entries) {
+    const frac = e.value / total;
+    if (rows) { const hh = h * frac; e.set(x, y + off, w, hh); off += hh; }
+    else      { const ww = w * frac; e.set(x + off, y, ww, h); off += ww; }
+  }
+}
+
+// ───── Frame ─────
+// The whole trick against glitching: we squarify the ANIMATED values (vcur) every frame.
+// Squarify always returns a valid tiling, so every in-between frame is valid too - cells
+// smoothly grow/shrink toward their target value, they never slide through each other, and
+// with a stable order they never teleport. Add = grow from 0; remove = shrink to 0, then prune.
+function step(now) {
+  tickBar(now);
+
+  // ease each cell's value toward its target (or 0 if it's being removed)
+  for (const it of allItems()) it.vcur += ((it.dying ? 0 : it.value) - it.vcur) * 0.2;
+  // prune fully-shrunk removed cells + any emptied group
+  for (const g of GROUPS) g.items = g.items.filter(it => !(it.dying && it.vcur < 0.5));
+  GROUPS = GROUPS.filter(g => g.items.length);
+
+  // 1) lay the GROUPS as columns across the artboard, width proportional to their totals
+  const gEntries = GROUPS.map(g => ({ value: layoutTotal(g), set: (x, y, w, h) => { g.gx = x; g.gy = y; g.gw = w; g.gh = h; } }));
+  sliceDice(gEntries, ax, ay, aw, ah, false);
+
+  // 2) lay each group's CELLS as rows within its column (below the header), height by value
+  for (const g of GROUPS) {
+    const gx = g.gx + GG / 2, gy = g.gy + GG / 2, gw = g.gw - GG, gh = g.gh - GG;
+    const iy = gy + HEADER, ih = gh - HEADER;
+    g._hx = gx; g._hy = gy; g._hw = gw;
+    if (gw <= 2 || ih <= 2) { for (const it of g.items) { it.tw = 0; it.th = 0; } continue; }
+    const iEntries = g.items.map(it => ({ value: it.vcur, set: (x, y, w, h) => { it.tx = x; it.ty = y; it.tw = w; it.th = h; } }));
+    sliceDice(iEntries, gx, iy, gw, ih, true);
+  }
+
+  // Ease each DRAWN rect toward its target. Because slice-and-dice is continuous and the
+  // order is stable, uniformly easing every cell keeps their shared edges aligned exactly -
+  // so the tiling stays valid throughout a scroll (no overlap, no teleport). The one thing
+  // that breaks alignment is a change in the cell SET (add/remove), so on those frames we
+  // re-snap everything to the target (the changing cell has ~0 area then, so it's invisible).
+  const count = allItems().length;
+  const restructured = count !== lastCount;
+  lastCount = count;
+  for (const it of allItems()) {
+    if (restructured || (!it.placed && it.tw > 0)) {
+      it.ax = it.tx; it.ay = it.ty; it.aw = it.tw; it.ah = it.th; if (it.tw > 0) it.placed = true;
+    } else {
+      const e = 0.3; it.ax += (it.tx - it.ax) * e; it.ay += (it.ty - it.ay) * e; it.aw += (it.tw - it.aw) * e; it.ah += (it.th - it.ah) * e;
+    }
+    it.appear += (1 - it.appear) * 0.18;
+  }
+
+  draw();
+  requestAnimationFrame(step);
+}
+
+function objRGB() {
+  const m = getComputedStyle(document.body).getPropertyValue('--obj').match(/\d+/g);
+  return m ? m.map(Number) : [98, 103, 113];
+}
+// each group a distinct grey TIER (categorical -> grey value, per the house colour system)
+function groupColor(i, base) {
+  const f = GROUPS.length > 1 ? (0.78 + 0.52 * (i / (GROUPS.length - 1))) : 1;
+  const c = base.map(v => clamp(Math.round(v * f), 26, 232));
+  return { css: 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')', lum: (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255 };
+}
+
+function draw() {
+  const cs = getComputedStyle(document.body);
+  const bg = cs.getPropertyValue('--bg').trim();
+  const midc = cs.getPropertyValue('--mid').trim();
+  const base = objRGB();
+  const total = grandTotal();
+
+  X.fillStyle = bg; X.fillRect(0, 0, W, H);
+
+  GROUPS.forEach((g, gi) => {
+    const tier = groupColor(gi, base);
+    // group header: name + total, over paper
+    if (g._hw > 60) {
+      X.fillStyle = midc;
+      X.font = "500 12px 'IBM Plex Mono', ui-monospace, monospace";
+      X.textBaseline = 'top'; X.textAlign = 'left';
+      X.fillText(g.name + '  ' + groupTotal(g), g._hx + 2, g._hy + 3);
+    }
+    for (const it of g.items) {
+      const x = it.ax + SEAM / 2, y = it.ay + SEAM / 2, w = it.aw - SEAM, h = it.ah - SEAM;
+      if (w <= 0.5 || h <= 0.5) continue;
+      const charged = it === hoverItem;
+      X.save();
+      X.globalAlpha = it.appear;
+      X.fillStyle = charged ? '#FBF251' : tier.css;
+      X.fillRect(x, y, w, h);
+      cellLabel(it, x, y, w, h, charged ? 0 : tier.lum, total);
+      X.restore();
+    }
+  });
+}
+
+function cellLabel(it, x, y, w, h, lum, total) {
+  const dark = lum < 0.6;                         // white text on darker tiers, ink on light/accent
+  const ink = dark ? 'rgba(250,250,250,0.94)' : 'rgba(10,10,10,0.86)';
+  const dim = dark ? 'rgba(250,250,250,0.55)' : 'rgba(10,10,10,0.5)';
+  const pad = Math.max(7, Math.min(w, h) * 0.08);
+  if (w > 52 && h > 30) {                          // name only where it actually fits
+    const fs = clamp(Math.min(w * 0.16, h * 0.24, 20), 11, 20);
+    X.fillStyle = ink;
+    X.font = "500 " + fs + "px 'DM Sans', sans-serif";
+    X.textBaseline = 'top'; X.textAlign = 'left';
+    if (X.measureText(it.name).width <= w - 2 * pad) X.fillText(it.name, x + pad, y + pad);
+  }
+  if (w > 34 && h > 18) {                           // value + share, bottom-right
+    const ss = clamp(Math.min(w, h) * 0.11, 8, 13);
+    X.fillStyle = dim;
+    X.font = "400 " + ss + "px 'IBM Plex Mono', ui-monospace, monospace";
+    X.textBaseline = 'bottom'; X.textAlign = 'right';
+    X.fillText(it.value + '  ' + Math.round(it.value / total * 100) + '%', x + w - pad, y + h - pad);
+  }
+}
+
+// ───── Hit testing ─────
+function itemAt(px, py) {
+  for (const it of allItems()) if (!it.dying && px >= it.ax && px <= it.ax + it.aw && py >= it.ay && py <= it.ay + it.ah) return it;
+  return null;
+}
+function groupAt(px, py) {
+  for (const g of GROUPS) if (px >= g.gx && px <= g.gx + g.gw && py >= g.gy && py <= g.gy + g.gh) return g;
+  return null;
+}
+
+// ───── Pointer ─────
+C.addEventListener('pointermove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  updateCursor(e);
+  hoverItem = itemAt(mouseX, mouseY);
+  document.body.classList.toggle('hovering', !!hoverItem);
+});
+C.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  const it = itemAt(e.clientX, e.clientY);
+  const t = performance.now();
+  if (it && it.id === lastTapId && t - lastTapTime < 320) {   // double-click: remove (shrink out, then prune)
+    it.dying = true;
+    lastTapId = -1; hoverItem = null; document.body.classList.remove('hovering'); flashStats();
+    return;
+  }
+  lastTapId = it ? it.id : -1; lastTapTime = t;
+});
+// scroll a cell to change its value - the whole map re-tiles live. Gentle, bounded step
+// (a trackpad floods wheel events, so a compounding factor would explode the value).
+C.addEventListener('wheel', (e) => {
+  const it = itemAt(e.clientX, e.clientY);
+  if (!it) return;
+  e.preventDefault();
+  const dir = e.deltaY > 0 ? -1 : 1;
+  it.value = clamp(it.value + dir * Math.max(1, Math.round(it.value * 0.06)), 1, 240);
+  flashMsg(it.name + '  ' + it.value + '  (' + Math.round(it.value / grandTotal() * 100) + '%)');
+}, { passive: false });
+
+function updateCursor(e) { const c = document.getElementById('cursor'); c.style.left = e.clientX + 'px'; c.style.top = e.clientY + 'px'; }
+
+// ───── Keys ─────
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  const k = e.key;
+  if (k === 'c' || k === 'C') copyData();
+  else if (k === 's' || k === 'S') savePNG();
+  else if (k === 'r' || k === 'R') { seedData(); flashStats(); }
+  else if (k === 'a' || k === 'A') {                            // add a cell to the hovered group
+    const g = (hoverItem && GROUPS.find(gr => gr.items.includes(hoverItem))) || groupAt(mouseX, mouseY) || GROUPS[0];
+    if (g) { const c = cell('Item ' + (allItems().length + 1), Math.max(6, Math.round(groupTotal(g) / Math.max(g.items.length, 1) * 0.6))); c.vcur = 0; g.items.push(c); flashStats(); }
+  }
+});
+
+// The payoff: the dataset behind the map (labels, values, computed shares), as JSON.
+function copyData() {
+  const total = grandTotal();
+  const rows = GROUPS.flatMap(g => g.items.map(it => ({
+    group: g.name, item: it.name, value: it.value, share: +(it.value / total * 100).toFixed(1),
+  })));
+  const json = JSON.stringify(rows, null, 2);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(json).then(() => flashMsg('Copied data to clipboard'), () => flashMsg('Copy blocked - see console'));
+    console.log(json);
+  } else { console.log(json); flashMsg('Data logged to console'); }
+}
+function savePNG() {
+  C.toBlob((blob) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'treemap.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }, 'image/png');
+}
+
+document.getElementById('toggle').addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); ui.theme(dark ? 'dark' : 'light'); });
+window.addEventListener('resize', resize);
+resize();
+seedData();
+requestAnimationFrame(step);
+</script>
+</body>
+</html>

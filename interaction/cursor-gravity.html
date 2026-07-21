@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<!--
+  Cursor gravity - shapes that bend toward the cursor
+  Shapes inside an adjustable radius bend toward the cursor on mass-weighted springs, and recover once it leaves.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Cursor gravity - shapes that bend toward the cursor</title>
+<meta name="description" content="Shapes inside an adjustable radius bend toward the cursor on mass-weighted springs, and recover once it leaves.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Cursor gravity - shapes that bend toward the cursor">
+<meta property="og:description" content="Shapes inside an adjustable radius bend toward the cursor on mass-weighted springs, and recover once it leaves.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Cursor gravity",
+  "applicationCategory": "DesignApplication",
+  "description": "Shapes inside an adjustable radius bend toward the cursor on mass-weighted springs, and recover once it leaves.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "cursor gravity, interaction design, field, attraction, springs, cursor, physics, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg: #0a0a0c; --fg: rgba(255,255,255,0.92); --fg-dim: rgba(255,255,255,0.45); --fg-faint: rgba(255,255,255,0.18);
+    --grid: rgba(255,255,255,0.018); --chrome-bg: rgba(20,20,24,0.85); --chrome-bd: rgba(255,255,255,0.08);
+    --accent: #FBF251; --obj: rgb(132,137,148);
+  }
+  body.light { --bg: #FAFAFA; --fg: rgba(0,0,0,0.88); --fg-dim: rgba(0,0,0,0.45); --fg-faint: rgba(0,0,0,0.15); --grid: rgba(0,0,0,0.03); --chrome-bg: rgba(255,255,255,0.88); --chrome-bd: rgba(0,0,0,0.08); --accent: #FBF251; --obj: rgb(98,103,113); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s; }
+  canvas { position: fixed; inset: 0; display: block; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+  #cursor { position: fixed; left: 0; top: 0; width: 20px; height: 20px; border: 1.5px solid var(--fg); border-radius: 50%; pointer-events: none; z-index: 100; transform: translate(-50%, -50%); transition: border-color 0.2s; }
+  #cursor::before, #cursor::after { content: ''; position: absolute; background: var(--fg); }
+  #cursor::before { top: 50%; left: -3px; right: -3px; height: 1px; transform: translateY(-50%); }
+  #cursor::after { left: 50%; top: -3px; bottom: -3px; width: 1px; transform: translateX(-50%); }
+  #cursor.click { border-color: var(--fg); }
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <div id="toggle" title="Toggle theme"></div>
+  <div id="cursor"></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const cursor = document.getElementById('cursor');
+const readout = { set innerHTML(v){}, set textContent(v){} };
+const ui = PT.ui({ title: 'Cursor gravity', hints: 'Move bend shapes · Scroll radius · Shift repel · R reset', theme: 'light' });
+const toggle = document.getElementById('toggle');
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); document.body.classList.toggle('light', !dark); ui.theme(dark ? 'dark' : 'light'); });
+
+// state BEFORE resize
+let W = 0, H = 0;
+let seed = 464646;
+let shapes = [];
+let mx = -1000, my = -1000;
+let influence = 180;
+let shiftDown = false;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() { if (shapes.length === 0) build(); }
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) { return function() { let t = (s += 0x6D2B79F5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function build() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  // Grid-like placement with some jitter so distances are consistent
+  const cols = 6;
+  const rows = 4;
+  const padX = W / cols, padY = H / rows;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (shapes.length >= 16) break;
+      const x = padX * (c + 0.5) + (rng() - 0.5) * 30;
+      const y = padY * (r + 0.5) + (rng() - 0.5) * 30;
+      const size = 18 + rng() * 28;
+      // mass from size only
+      const mass = size * size * 0.005 + 1;
+      rng(); // (was the colour index; kept so the deterministic layout is unchanged)
+      shapes.push({
+        id: shapes.length + 1,
+        baseX: x, baseY: y,
+        x, y,
+        vx: 0, vy: 0,
+        size,
+        mass,
+      });
+    }
+  }
+}
+
+
+function drawInfluenceRing() {
+  X.save();
+  X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+  X.globalAlpha = 0.25;
+  X.lineWidth = 1;
+  X.setLineDash([3, 5]);
+  X.beginPath(); X.arc(mx, my, influence, 0, Math.PI * 2); X.stroke();
+  X.restore();
+}
+
+function update() {
+  const pull = shiftDown ? -1 : 1; // negative = repel
+  for (const s of shapes) {
+    // Cursor force
+    const dx = mx - s.baseX;
+    const dy = my - s.baseY;
+    const dist = Math.hypot(dx, dy);
+    let fx = 0, fy = 0;
+    if (dist < influence && dist > 1) {
+      const falloff = 1 - dist / influence;
+      // Strength scaled by falloff squared for nicer curve
+      const strength = falloff * falloff * 18 * pull;
+      fx = (dx / dist) * strength;
+      fy = (dy / dist) * strength;
+    }
+    // Target position = baseX + displacement
+    const targetX = s.baseX + fx;
+    const targetY = s.baseY + fy;
+    // Spring toward target, modulated by mass
+    const k = 0.28;
+    const damp = 0.72;
+    const ax = (targetX - s.x) * k / s.mass;
+    const ay = (targetY - s.y) * k / s.mass;
+    s.vx = (s.vx + ax) * damp;
+    s.vy = (s.vy + ay) * damp;
+    s.x += s.vx;
+    s.y += s.vy;
+  }
+}
+
+function draw() {
+  update();
+  X.clearRect(0, 0, W, H);
+  // Base positions as faint dots
+  X.save();
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg-faint');
+  for (const s of shapes) {
+    X.beginPath(); X.arc(s.baseX, s.baseY, 1.5, 0, Math.PI * 2); X.fill();
+  }
+  X.restore();
+  // Shapes
+  const objCol = getComputedStyle(document.body).getPropertyValue('--obj');
+  const dimCol = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+  const light = document.body.classList.contains('light');
+  for (const s of shapes) {
+    X.save();
+    // Charged = inside the cursor's influence field (the shapes the gravity is acting on).
+    const charged = Math.hypot(mx - s.baseX, my - s.baseY) < influence;
+    X.fillStyle = charged ? '#FBF251' : objCol;
+    X.beginPath(); X.arc(s.x, s.y, s.size, 0, Math.PI * 2); X.fill();
+    // Thin tether from base to current pos if displaced (always neutral - accent is fill only)
+    const displaced = Math.hypot(s.x - s.baseX, s.y - s.baseY);
+    if (displaced > 1.5) {
+      X.strokeStyle = dimCol;
+      X.globalAlpha = Math.min(displaced / 60, 0.5);
+      X.lineWidth = 1;
+      X.setLineDash([2, 3]);
+      X.beginPath(); X.moveTo(s.baseX, s.baseY); X.lineTo(s.x, s.y); X.stroke();
+    }
+    X.restore();
+  }
+  drawInfluenceRing();
+  // Peak displacement
+  let peak = 0;
+  for (const s of shapes) peak = Math.max(peak, Math.hypot(s.x - s.baseX, s.y - s.baseY));
+  readout.innerHTML = `Objects <b>${shapes.length}</b> · Influence <b>${influence}</b> · Peak <b>${peak.toFixed(0)}px</b>${shiftDown ? ' · <b>Repel</b>' : ''}`;
+}
+
+function loop() { draw(); requestAnimationFrame(loop); }
+loop();
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+});
+window.addEventListener('pointerdown', () => cursor.classList.add('click'));
+window.addEventListener('pointerup', () => cursor.classList.remove('click'));
+window.addEventListener('wheel', e => {
+  influence = clamp(influence - Math.sign(e.deltaY) * 16, 50, 500);
+  e.preventDefault();
+}, { passive: false });
+window.addEventListener('keydown', e => {
+  if (e.key === 'Shift') shiftDown = true;
+  else if (e.key === 'r' || e.key === 'R') { seed = Math.floor(Math.random() * 999999); build(); }
+});
+window.addEventListener('keyup', e => { if (e.key === 'Shift') shiftDown = false; });
+</script>
+</body>
+</html>

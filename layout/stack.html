@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<!--
+  Stack - the composite and the layers
+  Overlapping content panels whose composition IS their z-order. Peel the flat composite (2D) apart into an exploded depth stack (3D) to read and reorder the layers. The re-stacking solve is the animation; export the layered CSS.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Stack - the composite and the layers</title>
+<meta name="description" content="A layered composition read in 2D and 3D: overlapping panels whose arrangement is their z-order. Peel the flat composite apart into an exploded depth stack to reorder the layers; the re-stacking is the animation. Exports layered CSS.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Stack - the composite and the layers">
+<meta property="og:description" content="A layered composition read in 2D and 3D: overlapping panels whose arrangement is their z-order. Peel the composite into an exploded depth stack; the re-stacking is the animation.">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Stack",
+  "applicationCategory": "DesignApplication",
+  "description": "A dual 2D/3D layered-composition tool: overlapping panels whose arrangement is their z-order; peel the flat composite into an exploded depth stack, reorder layers, and export layered CSS.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "layout, composition, layers, z-order, stacking, exploded view, axonometric, 3D layout, interaction design, HTML canvas, generative",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white: #FAFAFA; --c-grey: #8A8A8A; --c-black: #0A0A0A;
+  --obj: rgb(98,103,113);
+  --bg: var(--c-white); --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.16); --grid: rgba(10,10,10,0.07);
+  --line: rgba(10,10,10,0.30);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black); --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.16); --grid: rgba(250,250,250,0.06);
+  --line: rgba(250,250,250,0.24);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+#c { position: fixed; inset: 0; z-index: 1; }
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: transform 0.22s var(--ease), border-color 0.22s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.22s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; } .cursor .cross.v { width: 1px; height: 10px; }
+body.hovering .cursor .ring { border-color: var(--fg); transform: scale(1.2); }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(0.5); }
+body.dragging .cursor .cross { background: var(--fg); }
+@media (hover: none) and (pointer: coarse) { html, body { cursor: auto; } .cursor { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+const HINTS = 'Space explode · Drag a layer to move · Scroll a layer to reorder depth · C copy CSS';
+const ui = PT.ui({ title: 'Stack', hints: HINTS, theme: 'light' });
+const pill = document.querySelector('.adui-pill');
+const seg = (h) => '<span class="adui-seg">' + h + '</span>';
+const kkey = (t) => '<b class="adui-key">' + t + '</b>';
+let flashUntil = 0;
+function flashMsg(t, ms = 1700) { if (!pill) return; pill.innerHTML = seg(kkey(t)); flashUntil = performance.now() + ms; }
+function tickBar(now) { if (flashUntil && now > flashUntil) { ui.setHints(HINTS); flashUntil = 0; } }
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// ───── Model ─────
+// LAYERS is the composition in array order = the stack, back(0) -> front(last). Each layer is a
+// panel on the composite plane (x,y,w,h in design units). Its DEPTH along the viewing axis is
+// stack-index * GAP * peel: peel=0 flattens every layer onto one plane (the 2D composite you'd
+// ship), peel=1 fans them apart into an exploded 3D stack you can read and reorder.
+const A_W = 100, A_H = 70;            // design-space artboard (centred on the origin)
+const GAP = 10.5;                     // depth between adjacent layers when fully exploded
+const THICK = 1.6;                    // slab thickness (a layer is a thin sheet)
+let LAYERS = [];
+let dragL = null, dragMoved = false, downX = 0, downY = 0;
+let charged = null, hoverL = null;
+
+function layer(label, x, y, w, h) { return { id: LAYERS.length, label, x, y, w, h, zc: 0 }; }
+function seed() {
+  // a believable layered composition (a poster / UI mock), deliberately overlapping
+  LAYERS = [
+    layer('Canvas', 6, 6, 88, 58),
+    layer('Photo', 10, 12, 46, 40),
+    layer('Panel', 46, 30, 46, 34),
+    layer('Header', 10, 9, 80, 13),
+    layer('Title', 15, 42, 40, 16),
+    layer('Tag', 62, 15, 18, 9),
+    layer('Button', 60, 50, 24, 11),
+  ];
+  for (const l of LAYERS) l.zc = 0;
+  charged = null;
+  fitScale(); recenter(); cx = cxT; cy = cyT;
+  wake();
+}
+
+// ───── View ─────
+const AZ = -0.62, PI_ = 0.46;         // camera azimuth + pitch at full explode (3/4 axonometric)
+let peel = 0, peelTarget = 0;         // 0 = flat composite (2D), 1 = exploded stack (3D)
+let s = 7, cx = 0, cy = 0, cxT = 0, cyT = 0;
+
+// Fit scale to the fully-EXPLODED extent (its widest state) so nothing clips as you peel.
+function fitScale() {
+  const ca = Math.cos(AZ), sa = Math.sin(AZ), cp = Math.cos(PI_), sp = Math.sin(PI_);
+  let mnx = 1e9, mxx = -1e9, mny = 1e9, mxy = -1e9;
+  for (let i = 0; i < LAYERS.length; i++) {
+    const r = rectWorld(LAYERS[i]);
+    const z0 = (i - (LAYERS.length - 1) / 2) * GAP, z1 = z0 + THICK;
+    for (const z of [z0, z1]) for (const x of [r.x0, r.x1]) for (const y of [r.y0, r.y1]) {
+      const rx = x * ca + z * sa, z1r = -x * sa + z * ca, ry = y * cp - z1r * sp;
+      mnx = Math.min(mnx, rx); mxx = Math.max(mxx, rx); mny = Math.min(mny, ry); mxy = Math.max(mxy, ry);
+    }
+  }
+  s = clamp(Math.min(W / ((mxx - mnx) || 1), H / ((mxy - mny) || 1)) * 0.82, 3, 26);
+}
+// Centre the projected content (both readings, every peel). Non-feedback: measures the raw
+// (offset-free) projection and sets the target offset directly, so it can't oscillate.
+function recenter() {
+  const a = peel * AZ, p = peel * PI_;
+  const ca = Math.cos(a), sa = Math.sin(a), cp = Math.cos(p), sp = Math.sin(p);
+  let mnx = 1e9, mxx = -1e9, mny = 1e9, mxy = -1e9;
+  for (const l of LAYERS) {
+    const r = rectWorld(l), z0 = l.zc, z1 = l.zc + THICK;
+    for (const z of [z0, z1]) for (const x of [r.x0, r.x1]) for (const y of [r.y0, r.y1]) {
+      const rx = (x * ca + z * sa) * s, z1r = -x * sa + z * ca, ry = (y * cp - z1r * sp) * s;
+      mnx = Math.min(mnx, rx); mxx = Math.max(mxx, rx); mny = Math.min(mny, ry); mxy = Math.max(mxy, ry);
+    }
+  }
+  cxT = W / 2 - (mnx + mxx) / 2; cyT = H / 2 - (mny + mxy) / 2;
+}
+
+// Parallel projection. Rotate the scene by peel*AZ about the vertical axis, then peel*PI_ about the
+// horizontal - so peel=0 is a dead-on front view (the flat composite) and peel=1 is a 3/4 axonometric.
+function project(x, y, z) {
+  const a = peel * AZ, p = peel * PI_;
+  const ca = Math.cos(a), sa = Math.sin(a), cp = Math.cos(p), sp = Math.sin(p);
+  const x1 = x * ca + z * sa, z1 = -x * sa + z * ca, y1 = y;
+  const y2 = y1 * cp - z1 * sp, z2 = y1 * sp + z1 * cp;
+  return { sx: cx + x1 * s, sy: cy + y2 * s, d: z2 };
+}
+// Which faces point at the camera (outward-normal . view-direction), for culling the thin edges.
+function viewDir() {
+  const a = peel * AZ, p = peel * PI_;
+  const ca = Math.cos(a), sa = Math.sin(a), cp = Math.cos(p), sp = Math.sin(p);
+  return { x: -sa * cp, y: sp, z: ca * cp };
+}
+// Invert the screen->plane map at a fixed depth z (for dragging a layer in its own plane).
+function screenDeltaToPlane(dsx, dsy) {
+  const a = peel * AZ, p = peel * PI_;
+  const ca = Math.cos(a), sa = Math.sin(a), cp = Math.cos(p), sp = Math.sin(p);
+  const dx = dsx / (s * ca);
+  const dy = (-dsx * sa * sp + dsy * ca) / (s * ca * cp);
+  return { dx, dy };
+}
+// world coords of a layer's rect corners (centred design space); depth = its animated zc
+function rectWorld(l) {
+  return { x0: l.x - A_W / 2, y0: l.y - A_H / 2, x1: l.x + l.w - A_W / 2, y1: l.y + l.h - A_H / 2 };
+}
+function targetZ(idx) { return (idx - (LAYERS.length - 1) / 2) * GAP * peel; }
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fitScale(); recenter(); cx = cxT; cy = cyT;
+}
+
+// ───── Interaction plumbing ─────
+let mouseX = -1e4, mouseY = -1e4;
+let mode = null;                          // 'drag' (a layer) | 'peel' (scrub explode on empty)
+let pointerActive = false;
+let lastX = 0, lastY = 0;
+let running = false, settleFrames = 0;
+function wake() { settleFrames = 0; if (!running) { running = true; requestAnimationFrame(step); } }
+
+// ───── Colour ─────
+function parseRGB(str) { const m = str.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/); return m ? [ +m[1], +m[2], +m[3] ] : [ 98, 103, 113 ]; }
+function scaleRGB(rgb, f) { return 'rgb(' + rgb.map(v => clamp(Math.round(v * f), 0, 255)).join(',') + ')'; }
+
+// ───── Frame ─────
+function step(now) {
+  tickBar(now);
+  if (dragL && !pointerActive) endPointer();     // safety net: never leave a layer stuck to the cursor
+
+  peel = lerp(peel, peelTarget, 0.16);
+  let moving = Math.abs(peel - peelTarget) > 1e-4;
+
+  for (let i = 0; i < LAYERS.length; i++) {
+    const l = LAYERS[i], tz = targetZ(i);
+    const nz = lerp(l.zc, tz, 0.2);
+    if (Math.abs(nz - l.zc) > 1e-3) moving = true;
+    l.zc = nz;
+  }
+
+  if (mode !== 'drag') recenter();      // freeze the recentre while dragging a layer (no slide under the pointer)
+  cx = lerp(cx, cxT, 0.25); cy = lerp(cy, cyT, 0.25);
+  if (Math.abs(cx - cxT) > 0.4 || Math.abs(cy - cyT) > 0.4) moving = true;
+
+  draw();
+
+  if (mode || moving) settleFrames = 0; else settleFrames++;
+  if (settleFrames > 3) { running = false; return; }
+  requestAnimationFrame(step);
+}
+
+function poly(pts) { X.beginPath(); X.moveTo(pts[0].sx, pts[0].sy); for (let i = 1; i < pts.length; i++) X.lineTo(pts[i].sx, pts[i].sy); X.closePath(); }
+
+function draw() {
+  const csS = getComputedStyle(document.body);
+  const bg = csS.getPropertyValue('--bg').trim();
+  const objRGB = parseRGB(csS.getPropertyValue('--obj').trim());
+  const linec = csS.getPropertyValue('--line').trim();
+  const paper = 'rgba(250,250,250,0.94)';
+  const ink = 'rgba(10,10,10,0.86)';
+
+  X.fillStyle = bg; X.fillRect(0, 0, W, H);
+  const V = viewDir();
+  const N = LAYERS.length;
+
+  // painter order from the STABLE stack index (targetZ), not the animated zc, so the draw order
+  // never flips while a re-stack eases (that frame-to-frame flip is what would read as flashing).
+  const idxOf = new Map(LAYERS.map((l, i) => [l, i]));
+  const list = LAYERS.slice().sort((p, q) => (targetZ(idxOf.get(p)) - targetZ(idxOf.get(q))) || (idxOf.get(p) - idxOf.get(q)));
+
+  for (const l of list) {
+    const i = idxOf.get(l);
+    const r = rectWorld(l);
+    const z0 = l.zc, z1 = l.zc + THICK;
+    const isC = l === charged;
+    // depth cue: back layers darker, front layers lighter (a grey-value ramp); charged = yellow
+    const tier = 0.74 + 0.5 * (N > 1 ? i / (N - 1) : 1);
+    const base = isC ? [251, 242, 81] : objRGB;
+    const faceF = scaleRGB(base, isC ? 1.0 : tier);
+    const edge = scaleRGB(base, isC ? 0.78 : tier * 0.8);
+
+    // thin side edges (only when exploded enough to see them)
+    if (peel > 0.02) {
+      const sides = [];
+      if (V.x > 0) sides.push([ project(r.x1, r.y0, z0), project(r.x1, r.y1, z0), project(r.x1, r.y1, z1), project(r.x1, r.y0, z1) ]);
+      if (V.x < 0) sides.push([ project(r.x0, r.y1, z0), project(r.x0, r.y0, z0), project(r.x0, r.y0, z1), project(r.x0, r.y1, z1) ]);
+      if (V.y > 0) sides.push([ project(r.x1, r.y1, z0), project(r.x0, r.y1, z0), project(r.x0, r.y1, z1), project(r.x1, r.y1, z1) ]);
+      if (V.y < 0) sides.push([ project(r.x0, r.y0, z0), project(r.x1, r.y0, z0), project(r.x1, r.y0, z1), project(r.x0, r.y0, z1) ]);
+      for (const sp of sides) { poly(sp); X.fillStyle = edge; X.fill(); X.strokeStyle = linec; X.lineWidth = 1; X.stroke(); }
+    }
+
+    // the front face (the content) - what you see in the flat composite
+    const f = [ project(r.x0, r.y0, z1), project(r.x1, r.y0, z1), project(r.x1, r.y1, z1), project(r.x0, r.y1, z1) ];
+    poly(f); X.fillStyle = faceF; X.fill(); X.strokeStyle = linec; X.lineWidth = 1; X.stroke();
+
+    // label, upright on the front-face centroid
+    const ctr = project((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2, z1);
+    X.fillStyle = isC ? ink : paper; X.textAlign = 'center'; X.textBaseline = 'middle';
+    const fs = clamp(s * 1.9, 11, 21);
+    X.font = '500 ' + fs.toFixed(1) + "px 'DM Sans', sans-serif";
+    X.fillText(l.label, ctr.sx, ctr.sy - fs * 0.36);
+    X.font = '400 ' + (fs * 0.66).toFixed(1) + "px 'IBM Plex Mono', monospace";
+    X.globalAlpha = 0.75; X.fillText('z' + (i + 1), ctr.sx, ctr.sy + fs * 0.52); X.globalAlpha = 1;
+  }
+}
+
+function pointInPoly(px, py, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].sx, yi = pts[i].sy, xj = pts[j].sx, yj = pts[j].sy;
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+// topmost (frontmost) layer whose face is under the cursor
+function layerAt(px, py) {
+  for (let i = LAYERS.length - 1; i >= 0; i--) {
+    const l = LAYERS[i], r = rectWorld(l), z1 = l.zc + THICK;
+    const f = [ project(r.x0, r.y0, z1), project(r.x1, r.y0, z1), project(r.x1, r.y1, z1), project(r.x0, r.y1, z1) ];
+    if (pointInPoly(px, py, f)) return l;
+  }
+  return null;
+}
+// move a layer to a new stack index (bring forward / send back)
+function reorder(l, delta) {
+  const from = LAYERS.indexOf(l);
+  const to = clamp(from + delta, 0, LAYERS.length - 1);
+  if (to === from) return;
+  LAYERS.splice(from, 1); LAYERS.splice(to, 0, l);
+  wake();
+}
+
+// ───── Pointer ─────
+C.addEventListener('pointermove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  const cur = document.getElementById('cursor'); cur.style.left = e.clientX + 'px'; cur.style.top = e.clientY + 'px';
+  if ((mode || dragL) && e.buttons === 0) endPointer();
+  if (mode === 'drag' && dragL) {
+    dragMoved = dragMoved || Math.hypot(e.clientX - downX, e.clientY - downY) > 4;
+    const d = screenDeltaToPlane(e.clientX - lastX, e.clientY - lastY);
+    dragL.x += d.dx; dragL.y += d.dy;
+    dragL.x = clamp(dragL.x, -A_W, A_W); dragL.y = clamp(dragL.y, -A_H, A_H);
+    lastX = e.clientX; lastY = e.clientY; wake();
+  } else if (mode === 'peel') {
+    peelTarget = clamp(peelTarget - (e.clientY - lastY) * 0.006, 0, 1);
+    lastY = e.clientY; lastX = e.clientX; wake();
+  } else {
+    hoverL = layerAt(mouseX, mouseY);
+    document.body.classList.toggle('hovering', !!hoverL);
+  }
+});
+C.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  mouseX = downX = lastX = e.clientX; mouseY = downY = lastY = e.clientY;
+  pointerActive = true;
+  const l = layerAt(e.clientX, e.clientY);
+  if (l) { mode = 'drag'; dragL = l; charged = l; dragMoved = false; }
+  else { mode = 'peel'; }                    // drag empty space to scrub the explode
+  document.body.classList.add('dragging'); document.body.classList.remove('hovering');
+  try { C.setPointerCapture(e.pointerId); } catch (err) {}
+  wake();
+});
+function endPointer() {
+  pointerActive = false;
+  if (mode === 'drag' && dragL && !dragMoved) charged = dragL;   // a click just selects
+  mode = null; dragL = null;
+  document.body.classList.remove('dragging');
+  wake();
+}
+// End the gesture on a release ANYWHERE, on focus loss, and on any button-less move (covers a
+// missed pointerup - off-window, over the legend, or a lost capture - so a layer never sticks).
+window.addEventListener('pointerup', endPointer);
+window.addEventListener('pointercancel', endPointer);
+window.addEventListener('blur', endPointer);
+document.addEventListener('visibilitychange', () => { if (document.hidden) endPointer(); });
+window.addEventListener('pointermove', (e) => { if ((mode || dragL) && e.buttons === 0) endPointer(); });
+
+// scroll a layer to reorder its depth in the stack
+C.addEventListener('wheel', (e) => {
+  const l = layerAt(e.clientX, e.clientY);
+  if (!l) return;
+  e.preventDefault();
+  reorder(l, e.deltaY < 0 ? 1 : -1);        // up = bring forward, down = send back
+  charged = l;
+  flashMsg(l.label + ' - z' + (LAYERS.indexOf(l) + 1));
+}, { passive: false });
+
+// ───── Keys ─────
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.repeat) return;                       // ignore held-key auto-repeat (holding Space was flip-flopping the peel target -> wiggle)
+  if (dragL) endPointer();                   // a keypress ends any in-progress / stuck drag
+  const k = e.key;
+  if (k === ' ' || k === 'e' || k === 'E') { e.preventDefault(); peelTarget = peelTarget > 0.5 ? 0 : 1; flashMsg(peelTarget ? 'Exploded' : 'Composite'); wake(); }
+  else if ((k === ']' || k === '[') && charged) { reorder(charged, k === ']' ? 1 : -1); flashMsg(charged.label + ' - z' + (LAYERS.indexOf(charged) + 1)); }
+  else if (k === 'c' || k === 'C') copyCSS();
+  else if (k === 's' || k === 'S') savePNG();
+  else if (k === 'r' || k === 'R') { seed(); flashMsg('Reseeded'); }
+});
+
+// Payoff: the layered composition as real CSS - absolute panels + z-index = the stack order.
+function copyCSS() {
+  const cls = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  let out = '.stack {\n  position: relative;\n  width: ' + A_W * 10 + 'px;\n  aspect-ratio: ' + A_W + ' / ' + A_H + ';\n}\n';
+  out += '.stack > .layer {\n  position: absolute;\n}\n';
+  LAYERS.forEach((l, i) => {
+    out += '.layer-' + cls(l.label) + ' {\n' +
+      '  left: ' + (l.x / A_W * 100).toFixed(1) + '%;\n' +
+      '  top: ' + (l.y / A_H * 100).toFixed(1) + '%;\n' +
+      '  width: ' + (l.w / A_W * 100).toFixed(1) + '%;\n' +
+      '  height: ' + (l.h / A_H * 100).toFixed(1) + '%;\n' +
+      '  z-index: ' + (i + 1) + ';\n}\n';
+  });
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(out).then(() => flashMsg('Copied layered CSS to clipboard'), () => flashMsg('Copy blocked - see console'));
+    console.log(out);
+  } else { console.log(out); flashMsg('CSS logged to console'); }
+}
+function savePNG() { C.toBlob((b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'stack.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }, 'image/png'); }
+
+document.getElementById('toggle').addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); ui.theme(dark ? 'dark' : 'light'); wake(); });
+window.addEventListener('resize', () => { resize(); wake(); });
+document.fonts && document.fonts.ready && document.fonts.ready.then(wake);
+resize();
+seed();
+requestAnimationFrame(step);
+</script>
+</body>
+</html>

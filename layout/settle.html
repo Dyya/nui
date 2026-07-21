@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<!--
+  Settle - a modular grid that finds its own composition
+  Blocks span whole grid modules and a live skyline pack assigns each one a slot; every change re-solves and the whole board glides to fit. The packing solve is the animation.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Settle - a modular grid that finds its own composition</title>
+<meta name="description" content="Blocks span whole grid modules and a live skyline pack assigns each one a slot; every change re-solves and the whole board glides to fit. The packing solve is the animation.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Settle - a modular grid that finds its own composition">
+<meta property="og:description" content="Blocks span whole grid modules and a live skyline pack assigns each one a slot; every change re-solves and the whole board glides to fit.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Settle",
+  "applicationCategory": "DesignApplication",
+  "description": "A modular grid that finds its own composition: blocks span whole modules and a live skyline pack assigns each a slot, re-solving on every change while the board glides to fit.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "layout, composition, modular grid, bin packing, skyline, masonry, editorial grid, interaction design, HTML canvas, generative",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* UI neutrals - the interface is monochrome: proper white / grey / black */
+  --c-white: #FAFAFA;
+  --c-grey:  #8A8A8A;
+  --c-black: #0A0A0A;
+  /* Objects render in a theme-aware neutral; the one charged element fills accent yellow. */
+  --obj: rgb(98,103,113);
+
+  /* Light is the default theme; add `dark` on <body> for the option. */
+  --bg: var(--c-white);
+  --doc: #EDEDEF;
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.16);
+  --grid: rgba(10,10,10,0.07);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --doc: #16161A;
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.16);
+  --grid: rgba(250,250,250,0.06);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+#c { position: fixed; inset: 0; z-index: 1; }
+
+/* Theme toggle: the same glass as the floating legend, but circular, with a
+   small solid white/black dot in the centre (the dot follows the theme). */
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+
+/* Cursor */
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: transform 0.25s var(--ease), border-color 0.25s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.25s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; }
+.cursor .cross.v { width: 1px; height: 10px; }
+body.hovering .cursor .ring { border-color: var(--fg); transform: scale(1.25); }
+body.near-edge .cursor .ring { border-color: var(--fg); transform: scale(0.85); }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(0.5); }
+body.dragging .cursor .cross { background: var(--fg); }
+
+/* Touch devices: the finger is the pointer, so no custom crosshair. */
+@media (hover: none) and (pointer: coarse) {
+  html, body { cursor: auto; }
+  .cursor { display: none; }
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="toggle" title="Toggle theme"></div>
+
+<div class="cursor" id="cursor">
+  <div class="ring"></div>
+  <div class="cross h"></div>
+  <div class="cross v"></div>
+</div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+const HINTS = 'Drag the frame to re-pack · Drag a tile to reorder · Scroll to resize · C copy CSS';
+const ui = PT.ui({ title: 'Settle', hints: HINTS, theme: 'light' });
+
+// The legend doubles as a spec-sheet readout: any change to the composition flashes
+// the live block-count / column-count / fill-efficiency, then reverts to the how-to.
+const pill = document.querySelector('.adui-pill');
+const seg = (html) => '<span class="adui-seg">' + html + '</span>';
+const key = (t) => '<b class="adui-key">' + t + '</b>';
+let flashUntil = 0;
+function flashStats(ms = 1600) {
+  if (!pill) return;
+  const fill = Math.round(efficiency() * 100);
+  pill.innerHTML = seg(key(BLOCKS.length) + ' tiles')
+                 + seg(key(cols) + ' columns')
+                 + seg(key(fill + '%') + ' filled');
+  flashUntil = performance.now() + ms;
+}
+function flashMsg(text, ms = 1800) {
+  if (!pill) return;
+  pill.innerHTML = seg(key(text));
+  flashUntil = performance.now() + ms;
+}
+function tickBar(now) {
+  if (flashUntil && now > flashUntil) { ui.setHints(HINTS); flashUntil = 0; }
+}
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+// deterministic PRNG so a reshuffle is reproducible within a session
+let rngState = 0x9e3779b9;
+function rng() { rngState |= 0; rngState = (rngState + 0x6d2b79f5) | 0;
+  let t = Math.imul(rngState ^ (rngState >>> 15), 1 | rngState);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
+
+// ───── The grid ─────
+// The frame is a resizable container; the column count is DERIVED from its width against
+// a target column size (like CSS `repeat(auto-fill, minmax(colTarget, 1fr))`). Narrow the
+// frame and columns collapse, so the whole composition re-packs live - the responsive thesis.
+let cols = 6;                        // derived each frame from frame width / colTarget
+let colTarget = 150;                 // preferred column width in screen px ([ ] adjusts density)
+const GUT = 0.16;                    // gutter as a fraction of one module
+// A weighted palette of module spans, chosen to read editorial (mix of stances).
+const SPANS = [
+  [1,1],[1,1],[2,1],[1,2],[2,2],[2,2],[3,2],[2,3],[3,1],[1,3],[4,2],[3,3],[4,3],
+];
+
+// ───── State ─────
+let BLOCKS = [];                     // reading order === pack order
+let uid = 1;
+let drag = null;                     // { block, dx, dy, cool }  dx/dy = grab offset in nat px
+let mouseX = -1e4, mouseY = -1e4;
+let hoverBlock = null;
+let lastTapId = -1, lastTapTime = 0;
+let nextBirthAt = 0;                  // staggered-assembly clock (ms); a block eases in when now passes it
+let resizeMode = null;                // 'r' | 'b' | 'br' while dragging a frame edge/corner
+const HANDLE = 18;                    // px hit-zone around a frame edge
+
+// frame rect (user-resizable container) + the live nat→screen transform
+let docW = 0;                        // frame width in nat px (user-controlled; height follows content)
+let frameInit = false;                // frame set once, then owned by the user (not reset on window resize)
+let moduleW = 0, gutPx = 0;          // one module + gutter, in nat px
+let scale = 1, originX = 0, originY = 0;
+let usedRows = 1;
+
+function newBlock(spanIdx) {
+  const s = SPANS[spanIdx != null ? spanIdx : (rng() * SPANS.length) | 0];
+  return { id: uid++, w: s[0], h: s[1],
+           // current + target, in NAT px (pre-scale). init offscreen-low so new blocks rise in.
+           x: 0, y: 0, w0: 0, h0: 0, vx: 0, vy: 0,
+           tx: 0, ty: 0, tw: 0, th: 0,
+           col: 0, row: 0, born: false, appear: 0 };
+}
+
+function seed(n) {
+  BLOCKS = [];
+  for (let i = 0; i < n; i++) BLOCKS.push(newBlock());
+}
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const availW = W - 2 * Math.max(26, Math.min(W, H) * 0.075);
+  if (!frameInit) { docW = availW; frameInit = true; }   // first run: frame fills the width
+  else docW = clamp(docW, colTarget * 2 + 20, availW);   // window resize: keep it, clamp in
+}
+// set the frame's width (nat px), clamped to a sane range
+function setFrameWidth(w) {
+  const availW = W - 2 * Math.max(26, Math.min(W, H) * 0.075);
+  docW = clamp(w, colTarget * 2 + 20, availW);
+}
+
+// ───── The pack (skyline / bottom-left, deterministic) ─────
+// For each block in order, drop it into the column-run that keeps the top lowest.
+// This is the whole layout engine; everything else just animates toward its result.
+function pack() {
+  const heights = new Array(cols).fill(0);
+  for (const b of BLOCKS) {
+    const w = Math.min(b.w, cols);
+    let best = 0, bestTop = Infinity;
+    for (let c = 0; c <= cols - w; c++) {
+      let top = 0;
+      for (let i = c; i < c + w; i++) if (heights[i] > top) top = heights[i];
+      if (top < bestTop) { bestTop = top; best = c; }
+    }
+    b.col = best; b.row = bestTop;
+    for (let i = best; i < best + w; i++) heights[i] = bestTop + b.h;
+  }
+  usedRows = 0;
+  for (const h of heights) if (h > usedRows) usedRows = h;
+  if (usedRows < 1) usedRows = 1;
+}
+
+function efficiency() {
+  let used = 0;
+  for (const b of BLOCKS) used += Math.min(b.w, cols) * b.h;
+  return used / (cols * usedRows) || 0;
+}
+
+// The frame is a responsive CONTAINER: its width (docW) is what you drag, tiles always
+// fill that width, and its height follows the content. The whole frame is then scaled to
+// stay fully in view and centred - so narrowing it reflows the columns rather than clipping.
+let fitScale = 1, natW = 0, natH = 0;
+let fx = 0, fy = 0, fw = 0, fh = 0;                 // frame rect in SCREEN px (for hit-testing/draw)
+function computeTransform() {
+  const g = GUT;                                   // gutter in module units
+  const totalWModules = cols + (cols - 1) * g;      // width in module units incl. gutters
+  moduleW = docW / totalWModules;                   // nat px per module (drives everything)
+  gutPx = moduleW * g;
+  natW = docW;                                      // frame width, in nat px
+  natH = usedRows * moduleW + (usedRows - 1) * gutPx;   // frame height follows the content
+  const m = Math.max(26, Math.min(W, H) * 0.075);
+  const availW = W - 2 * m, availH = H - 2 * m;
+  const targetScale = Math.min(1, availW / natW, availH / Math.max(natH, 1));
+  fitScale += (targetScale - fitScale) * 0.12;      // glide, no snap
+  scale = fitScale;
+  originX = (W - natW * scale) / 2;                 // centre the frame in the viewport
+  originY = (H - natH * scale) / 2;
+  fx = originX; fy = originY; fw = natW * scale; fh = natH * scale;
+}
+// module coords → nat px (top-left of the module cell)
+const natX = (col) => col * (moduleW + gutPx);
+const natY = (row) => row * (moduleW + gutPx);
+const spanW = (w) => w * moduleW + (w - 1) * gutPx;
+const spanH = (h) => h * moduleW + (h - 1) * gutPx;
+// nat px → screen
+const sx = (nx) => originX + nx * scale;
+const sy = (ny) => originY + ny * scale;
+// screen px → nat px
+const toNatX = (px) => (px - originX) / scale;
+const toNatY = (py) => (py - originY) / scale;
+
+// ───── Reorder while dragging: open a hole where the held block will land ─────
+function insertionIndex(px, py) {
+  const nx = toNatX(px), ny = toNatY(py);
+  const pcol = clamp(Math.round(nx / (moduleW + gutPx)), 0, cols);
+  const prow = Math.max(0, ny / (moduleW + gutPx));
+  let idx = 0;
+  for (const b of BLOCKS) {
+    if (b === drag.block) continue;
+    // reading order: earlier row wins; same-ish row, earlier column wins
+    const before = (b.row + b.h * 0.5) < prow - 0.35 ||
+                   (Math.abs(b.row - prow) < 1.1 && b.col < pcol);
+    if (before) idx++;
+  }
+  return idx;
+}
+
+// ───── Frame ─────
+function step(now) {
+  tickBar(now);
+
+  // during a drag, walk the held block toward its target reading slot ONE step at a
+  // time on a short cooldown, so the rest reflow calmly instead of teleporting.
+  if (drag) {
+    const cur = BLOCKS.indexOf(drag.block);
+    const want = clamp(insertionIndex(mouseX, mouseY), 0, BLOCKS.length - 1);
+    if (want !== cur && now - drag.cool > 90) {
+      const stepIdx = cur + Math.sign(want - cur);
+      BLOCKS.splice(cur, 1);
+      BLOCKS.splice(stepIdx, 0, drag.block);
+      drag.cool = now;
+    }
+  }
+
+  cols = clamp(Math.round(docW / colTarget), 2, 12);   // responsive: columns follow frame width
+  pack();
+  computeTransform();
+
+  // assign targets (nat px) + glide toward them with critically-damped exponential
+  // easing: it decelerates into place and NEVER overshoots (a settle, not a spring).
+  for (const b of BLOCKS) {
+    if (drag && b === drag.block) {
+      // the charged block tracks the pointer directly (nat space), holding grab offset
+      b.tx = toNatX(mouseX) - drag.dx;
+      b.ty = toNatY(mouseY) - drag.dy;
+    } else {
+      b.tx = natX(b.col);
+      b.ty = natY(b.row);
+    }
+    b.tw = spanW(Math.min(b.w, cols));
+    b.th = spanH(b.h);
+    if (!b.born) {                       // staggered assembly: one block eases in every ~55ms
+      if (now < nextBirthAt) continue;   // not its turn yet - stay invisible
+      b.born = true; b.appear = 0.001;
+      b.x = b.tx; b.y = b.ty + (moduleW + gutPx) * 0.55;   // a small rise, not a full-frame launch
+      b.w0 = b.tw; b.h0 = b.th;
+      nextBirthAt = now + 55;
+    }
+    b.appear += (1 - b.appear) * 0.14;   // fade to full presence
+    const ease = (drag && b === drag.block) ? 0.32 : 0.15;
+    b.x  += (b.tx - b.x)  * ease;
+    b.y  += (b.ty - b.y)  * ease;
+    b.w0 += (b.tw - b.w0) * ease;
+    b.h0 += (b.th - b.h0) * ease;
+  }
+
+  draw();
+  requestAnimationFrame(step);
+}
+
+function draw() {
+  const cs = getComputedStyle(document.body);
+  const bg = cs.getPropertyValue('--bg').trim();
+  const objc = cs.getPropertyValue('--obj').trim();
+  const gridc = cs.getPropertyValue('--grid').trim();
+  const dimc = cs.getPropertyValue('--dim').trim();
+  const fgc = cs.getPropertyValue('--fg').trim();
+
+  X.fillStyle = bg;
+  X.fillRect(0, 0, W, H);
+
+  // the resizable frame (container): a thin outline so it reads as a page you can resize
+  X.strokeStyle = dimc; X.lineWidth = 1;
+  X.strokeRect(Math.round(fx) + 0.5, Math.round(fy) + 0.5, Math.round(fw), Math.round(fh));
+
+  // faint modular armature: the columns the blocks snap to
+  X.strokeStyle = gridc; X.lineWidth = 1;
+  X.beginPath();
+  for (let c = 0; c <= cols; c++) {
+    const gx = c < cols ? natX(c) : natX(cols - 1) + spanW(1);
+    const px = Math.round(sx(gx)) + 0.5;
+    X.moveTo(px, sy(0)); X.lineTo(px, sy(natH));
+  }
+  // baseline rows
+  for (let r = 0; r <= usedRows; r++) {
+    const gy = r < usedRows ? natY(r) : natY(usedRows - 1) + spanH(1);
+    const py = Math.round(sy(gy)) + 0.5;
+    X.moveTo(sx(0), py); X.lineTo(sx(natW), py);
+  }
+  X.stroke();
+
+  // tiles: opaque cool-slate fill; each labelled with its priority number (its order
+  // in the composition) + its module span, so reordering and resizing read as decisions.
+  // The held tile fills accent yellow.
+  const rad = Math.max(2, moduleW * scale * 0.06);
+  let charged = null, chargedIdx = 0;
+  BLOCKS.forEach((b, i) => {
+    if (!b.born) return;                          // not yet assembled - stays invisible
+    if (drag && b === drag.block) { charged = b; chargedIdx = i; return; }
+    const px = sx(b.x), py = sy(b.y), bw = b.w0 * scale, bh = b.h0 * scale;
+    X.save();
+    X.globalAlpha = b.appear;                     // fade in on assembly
+    roundRect(px, py, bw, bh, rad);
+    X.fillStyle = objc; X.fill();
+    tileLabel(b, i, px, py, bw, bh, false);
+    X.restore();
+  });
+  if (charged) {
+    // soft cast to lift the charged tile off the board (no ctx blur - layered alpha)
+    const px = sx(charged.x), py = sy(charged.y), bw = charged.w0 * scale, bh = charged.h0 * scale;
+    X.save();
+    X.globalAlpha = 0.10; X.fillStyle = '#000';
+    roundRect(px + 3, py + 6, bw, bh, rad); X.fill();
+    X.restore();
+    roundRect(px, py, bw, bh, rad);
+    X.fillStyle = '#FBF251'; X.fill();
+    tileLabel(charged, chargedIdx, px, py, bw, bh, true);
+  }
+
+  // width handle on the frame's right edge - lit when armed
+  const armed = resizeMode || (!drag && frameEdgeAt(mouseX, mouseY));
+  const r = fx + fw, tick = 20;
+  X.strokeStyle = armed ? fgc : dimc;
+  X.lineWidth = armed ? 3 : 2; X.lineCap = 'round';
+  X.beginPath();
+  X.moveTo(Math.round(r) + 0.5, fy + fh / 2 - tick);
+  X.lineTo(Math.round(r) + 0.5, fy + fh / 2 + tick);
+  X.stroke();
+}
+
+// A tile's identity: its priority number (top-left) + its module span (bottom-right).
+function tileLabel(b, i, px, py, bw, bh, onAccent) {
+  const s = moduleW * scale;                      // one module, in screen px
+  const pad = Math.max(7, s * 0.13);
+  const ink = onAccent ? 'rgba(10,10,10,0.85)' : 'rgba(250,250,250,0.92)';
+  const dim = onAccent ? 'rgba(10,10,10,0.42)' : 'rgba(250,250,250,0.48)';
+  const fs = clamp(s * 0.32, 12, 30);
+  X.fillStyle = ink;
+  X.font = "500 " + fs + "px 'IBM Plex Mono', ui-monospace, monospace";
+  X.textBaseline = 'top'; X.textAlign = 'left';
+  X.fillText(String(i + 1), px + pad, py + pad);
+  const ss = clamp(s * 0.15, 8, 13);
+  X.fillStyle = dim;
+  X.font = "400 " + ss + "px 'IBM Plex Mono', ui-monospace, monospace";
+  X.textBaseline = 'bottom'; X.textAlign = 'right';
+  X.fillText(Math.min(b.w, cols) + '×' + b.h, px + bw - pad, py + bh - pad);
+}
+
+function roundRect(x, y, w, h, r) {
+  r = Math.min(r, w * 0.5, h * 0.5);
+  X.beginPath();
+  X.moveTo(x + r, y);
+  X.arcTo(x + w, y, x + w, y + h, r);
+  X.arcTo(x + w, y + h, x, y + h, r);
+  X.arcTo(x, y + h, x, y, r);
+  X.arcTo(x, y, x + w, y, r);
+  X.closePath();
+}
+
+// ───── Hit testing (screen space) ─────
+function blockAt(px, py) {
+  for (let i = BLOCKS.length - 1; i >= 0; i--) {
+    const b = BLOCKS[i];
+    const x = sx(b.x), y = sy(b.y), w = b.w0 * scale, h = b.h0 * scale;
+    if (px >= x && px <= x + w && py >= y && py <= y + h) return b;
+  }
+  return null;
+}
+// is the pointer on the frame's right edge (the width handle)?
+function frameEdgeAt(px, py) {
+  const r = fx + fw;
+  const nearR = Math.abs(px - r) <= HANDLE && py >= fy - HANDLE && py <= fy + fh + HANDLE;
+  return nearR ? 'r' : null;
+}
+
+// ───── Pointer ─────
+C.addEventListener('pointermove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  updateCursor(e);
+  if (resizeMode) {                                  // right edge tracks the pointer (centre-anchored)
+    setFrameWidth((2 * mouseX - W) / scale);
+    return;
+  }
+  if (!drag) {
+    const edge = frameEdgeAt(mouseX, mouseY);
+    document.body.classList.toggle('near-edge', !!edge);
+    hoverBlock = edge ? null : blockAt(mouseX, mouseY);
+    document.body.classList.toggle('hovering', !!hoverBlock);
+  }
+});
+C.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  mouseX = e.clientX; mouseY = e.clientY;
+
+  // a frame edge takes priority over the tile beneath it
+  const edge = frameEdgeAt(mouseX, mouseY);
+  if (edge) {
+    resizeMode = edge;
+    document.body.classList.add('dragging');
+    document.body.classList.remove('hovering', 'near-edge');
+    C.setPointerCapture(e.pointerId);
+    return;
+  }
+  const b = blockAt(mouseX, mouseY);
+
+  // double-click a block to remove it
+  const t = performance.now();
+  if (b && b.id === lastTapId && t - lastTapTime < 320) {
+    BLOCKS = BLOCKS.filter(x => x !== b);
+    lastTapId = -1; flashStats();
+    document.body.classList.remove('hovering');
+    return;
+  }
+  lastTapId = b ? b.id : -1; lastTapTime = t;
+
+  if (b) {
+    drag = { block: b, dx: toNatX(mouseX) - b.x, dy: toNatY(mouseY) - b.y, cool: 0 };
+    document.body.classList.add('dragging');
+    document.body.classList.remove('hovering');
+    C.setPointerCapture(e.pointerId);
+  }
+});
+C.addEventListener('pointerup', (e) => {
+  if (resizeMode) { resizeMode = null; document.body.classList.remove('dragging'); flashStats(); return; }
+  if (drag) { drag = null; document.body.classList.remove('dragging'); flashStats(); }
+  else if (!blockAt(e.clientX, e.clientY) && !e.target.closest('#toggle, .adui')) {
+    // click on empty: add a block at that reading position
+    const b = newBlock();
+    BLOCKS.push(b);
+    drag = { block: b, dx: 0, dy: 0 };   // briefly own it so it inserts at the click, then drop
+    const want = insertionIndex(e.clientX, e.clientY);
+    BLOCKS.splice(BLOCKS.indexOf(b), 1);
+    BLOCKS.splice(clamp(want, 0, BLOCKS.length), 0, b);
+    drag = null;
+    flashStats();
+  }
+});
+
+// scroll over a block cycles its module span (aspect) - resize animates in place
+C.addEventListener('wheel', (e) => {
+  const b = drag ? drag.block : blockAt(e.clientX, e.clientY);
+  if (!b) return;
+  e.preventDefault();
+  const dir = e.deltaY > 0 ? 1 : -1;
+  // find current span in palette, step to the next distinct one
+  let idx = SPANS.findIndex(s => s[0] === b.w && s[1] === b.h);
+  if (idx < 0) idx = 0;
+  idx = (idx + dir + SPANS.length) % SPANS.length;
+  b.w = SPANS[idx][0]; b.h = SPANS[idx][1];
+  flashStats();
+}, { passive: false });
+
+function updateCursor(e) {
+  const cur = document.getElementById('cursor');
+  cur.style.left = e.clientX + 'px';
+  cur.style.top = e.clientY + 'px';
+}
+
+// ───── Keys ─────
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  const k = e.key;
+  if (k === '[' || k === '-' || k === '_') { colTarget = clamp(colTarget + 24, 90, 360); flashStats(); }   // coarser: fewer, larger columns
+  else if (k === ']' || k === '=' || k === '+') { colTarget = clamp(colTarget - 24, 90, 360); flashStats(); }  // denser: more, smaller columns
+  else if (k === 'r' || k === 'R') { rngState = (rngState * 1664525 + 1013904223) | 0; seed(BLOCKS.length || 9); nextBirthAt = 0; flashStats(); }
+  else if (k === 's' || k === 'S') { savePNG(); }
+  else if (k === 'c' || k === 'C') { copyCSS(); }
+  else if (k === 'a' || k === 'A') { const b = newBlock(); BLOCKS.push(b); flashStats(); }
+  else if (k === 'Backspace' || k === 'Delete') { const b = hoverBlock || BLOCKS[BLOCKS.length - 1]; if (b) { BLOCKS = BLOCKS.filter(x => x !== b); flashStats(); } }
+});
+
+function savePNG() {
+  // grab the strongest frame: re-render clean (no cursor/UI is on the canvas anyway)
+  C.toBlob((blob) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'settle.png';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }, 'image/png');
+}
+
+// The real payoff: the RESPONSIVE grid you arranged, as usable CSS. The frame width maps
+// to `minmax(colTarget, 1fr)` auto-fill (so it re-packs at any container width, exactly
+// like here); priority order becomes source order; each tile exports its module span.
+function copyCSS() {
+  let css = '.grid {\n  display: grid;\n' +
+            '  grid-template-columns: repeat(auto-fill, minmax(' + Math.round(colTarget) + 'px, 1fr));\n' +
+            '  grid-auto-rows: ' + Math.round(colTarget) + 'px;   /* square modules */\n' +
+            '  grid-auto-flow: dense;\n  gap: 16px;\n}\n';
+  BLOCKS.forEach((b, i) => {
+    css += '.grid > :nth-child(' + (i + 1) + ') { ' +
+           'grid-column: span ' + b.w + '; grid-row: span ' + b.h + '; }\n';
+  });
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(css).then(
+      () => flashMsg('Copied CSS grid to clipboard'),
+      () => flashMsg('Copy blocked - see console'));
+    console.log(css);
+  } else {
+    console.log(css); flashMsg('CSS grid logged to console');
+  }
+}
+
+// ───── Theme toggle (the showcase shell drives this in-frame; standalone gets the dot) ─────
+document.getElementById('toggle').addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  ui.theme(dark ? 'dark' : 'light');
+});
+
+window.addEventListener('resize', resize);
+resize();
+seed(9);
+requestAnimationFrame(step);
+</script>
+</body>
+</html>

@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<!--
+  Fit - the frame is the word budget
+  A paragraph renegotiates its own words to fit a resizable frame: it never shrinks the type, it walks a rewrite ladder and re-flows, so the core claim stays legible at every length.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Fit - the frame is the word budget</title>
+<meta name="description" content="A paragraph renegotiates its own words to fit a resizable frame: it never shrinks the type, it walks a rewrite ladder and re-flows, so the core claim stays legible at every length.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Fit - the frame is the word budget">
+<meta property="og:description" content="A paragraph renegotiates its own words to fit a resizable frame: it never shrinks the type, it walks a rewrite ladder and re-flows, so the core claim stays legible at every length.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Fit",
+  "applicationCategory": "DesignApplication",
+  "description": "A paragraph renegotiates its own words to fit a resizable frame: it never shrinks the type, it walks a rewrite ladder and re-flows, so the core claim stays legible at every length.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "responsive copy, content-aware, rewrite ladder, word diff, LCS, reflow, editorial, AI UI, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg:#0a0a0c; --fg:rgba(255,255,255,0.92); --fg-dim:rgba(255,255,255,0.45); --fg-faint:rgba(255,255,255,0.18);
+    --grid:rgba(255,255,255,0.018); --accent:#FBF251; --obj:rgb(132,137,148);
+  }
+  body.light { --bg:#FAFAFA; --fg:rgba(0,0,0,0.88); --fg-dim:rgba(0,0,0,0.45); --fg-faint:rgba(0,0,0,0.15); --grid:rgba(0,0,0,0.03); --accent:#FBF251; --obj:rgb(98,103,113); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; transition: background 0.4s; }
+  canvas { position: fixed; inset: 0; display: block; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+
+  /* transient toast */
+  #toast{position:fixed;left:50%;bottom:64px;transform:translateX(-50%) translateY(8px);z-index:9997;
+    pointer-events:none;opacity:0;transition:opacity .25s ease,transform .25s ease;
+    font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.02em;
+    padding:8px 14px;border-radius:12px;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
+    background:rgba(10,10,10,.55);color:rgba(255,255,255,.9);border:1px solid rgba(255,255,255,.08);}
+  body.light #toast{background:rgba(255,255,255,.7);color:rgba(0,0,0,.8);border-color:rgba(0,0,0,.06);}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  /* connect-a-key modal */
+  #modal{position:fixed;inset:0;z-index:9996;display:none;align-items:center;justify-content:center;
+    background:rgba(0,0,0,.32);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);}
+  #modal.open{display:flex;}
+  #modal .card{width:min(520px,calc(100vw - 32px));border-radius:18px;padding:20px;
+    font-family:'IBM Plex Mono',monospace;-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);
+    background:rgba(18,18,22,.92);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.9);}
+  body.light #modal .card{background:rgba(255,255,255,.96);border-color:rgba(0,0,0,.08);color:rgba(0,0,0,.85);}
+  #modal h3{font-size:13px;font-weight:600;letter-spacing:.01em;margin-bottom:4px;}
+  #modal p{font-size:10.5px;line-height:1.55;opacity:.6;margin-bottom:14px;}
+  #modal label{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;opacity:.5;margin:10px 0 5px;}
+  #modal input,#modal textarea{width:100%;font-family:'IBM Plex Mono',monospace;font-size:12px;
+    background:rgba(127,127,127,.12);border:1px solid rgba(127,127,127,.25);border-radius:9px;
+    padding:9px 11px;color:inherit;resize:vertical;}
+  #modal textarea{min-height:92px;line-height:1.5;}
+  #modal input:focus,#modal textarea:focus{outline:none;border-color:rgba(127,127,127,.5);}
+  #modal .row{display:flex;gap:9px;margin-top:16px;justify-content:flex-end;align-items:center;}
+  #modal .status{margin-right:auto;font-size:10px;opacity:.6;}
+  #modal button{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.02em;cursor:pointer;
+    padding:8px 15px;border-radius:9px;border:1px solid rgba(127,127,127,.3);background:transparent;color:inherit;transition:background .15s;}
+  #modal button:hover{background:rgba(127,127,127,.14);}
+  #modal button.primary{background:#FBF251;border-color:#FBF251;color:#0a0a0a;font-weight:600;}
+  #modal button.primary:hover{background:#f4ea3a;}
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <div id="toggle" title="Toggle theme"></div>
+  <div id="toast"></div>
+  <div id="modal">
+    <div class="card">
+      <h3>Connect a key</h3>
+      <p>Optional. Paste any text and an Anthropic key to generate a fresh seven rung ladder for it. The key stays in this browser only. Everything already works offline without one.</p>
+      <label>Anthropic API key</label>
+      <input id="m-key" type="password" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+      <label>Your text (the full length version)</label>
+      <textarea id="m-text" placeholder="Paste the longest version of the sentence you want to make responsive."></textarea>
+      <div class="row">
+        <span class="status" id="m-status"></span>
+        <button id="m-cancel">Cancel</button>
+        <button id="m-go" class="primary">Generate</button>
+      </div>
+    </div>
+  </div>
+<script src="../typography/core/ui.js"></script>
+<script>
+"use strict";
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const ui = PT.ui({
+  title: 'Fit',
+  hints: 'Drag frame edge to refit · C copy this length · E export pack · 1-3 switch text · R reset · K connect a key',
+  theme: 'light'
+});
+const toggle = document.getElementById('toggle');
+
+/* ------------------------------------------------------------------ *
+ * The rewrite ladders. Each text is one message written at seven
+ * lengths, shortest to longest. Adjacent rungs share their core
+ * words so the word-level diff morph stays legible and stable.
+ * ------------------------------------------------------------------ */
+const RUNG_NAMES = ['label','caption','deck','standfirst','summary','full','expanded'];
+const FULL_INDEX = 5; // the 100% reference rung
+
+const LADDERS = [
+  {
+    title: 'Responsive copy',
+    rungs: [
+      "Text that fits itself.",
+      "Text that rewrites itself to fit.",
+      "Copy that rewrites itself to fit any space it is given.",
+      "Copy that rewrites its own words to fit any space, instead of shrinking.",
+      "Copy that rewrites its own words to fit any space you give it, instead of shrinking the type down.",
+      "Copy that rewrites its own words to fit any space you give it, instead of shrinking the type down until nobody can read it.",
+      "Copy that rewrites its own words to fit any space you give it, choosing a shorter or a longer phrasing for the same idea, instead of shrinking the type down until nobody can read it."
+    ]
+  },
+  {
+    title: 'Quiet headphones',
+    rungs: [
+      "Only the music stays.",
+      "The room goes quiet. Only the music stays.",
+      "It removes the room around you so only the music stays.",
+      "It quietly removes the room around you, so only the music you chose stays.",
+      "It quietly removes the room around you, so the only thing left is the music you chose.",
+      "It listens to the room around you and quietly removes it, so the only thing left to hear is the music you chose.",
+      "It listens to the room around you a thousand times a second and quietly removes it, so the only thing left to hear is the music you actually chose to play."
+    ]
+  },
+  {
+    title: 'Coastline survey',
+    rungs: [
+      "We map the coast.",
+      "We map how the coast is moving.",
+      "We map how the coast is moving, one tide at a time.",
+      "We map how the coastline is moving inland, one tide at a time, so towns can plan.",
+      "We map how the coastline is moving inland, one tide at a time, so the towns behind it can plan ahead.",
+      "We map how the coastline is moving inland, measuring one tide at a time, so the towns behind it can plan for the water ahead.",
+      "We map how the coastline is slowly moving inland, measuring it one tide at a time along the whole shore, so the towns behind it can plan for the water that is coming ahead."
+    ]
+  }
+];
+
+/* ------------------------------------------------------------------ *
+ * State
+ * ------------------------------------------------------------------ */
+let W = 0, H = 0;
+let demoIndex = 0;
+let ladder = LADDERS[0].rungs;
+let title = LADDERS[0].title;
+let curRung = 3;
+
+let FONT = "500 26px 'DM Sans', sans-serif";
+let fontPx = 26, lineH = 37, SPACE_W = 8, PAD = 18;
+
+const frame = { x: 0, y: 0, w: 0, h: 0 };
+const defaultFrame = { w: 0, h: 0 };
+
+let items = [];   // active words of the current rung (flow-packed)
+let ghosts = [];  // leaving words, collapsing in place
+let drag = null;  // { edge, sx, sy, sw, sh }
+let hoverEdge = null;
+
+const COL = {};
+function updateColors() {
+  const cs = getComputedStyle(document.body);
+  COL.fg    = cs.getPropertyValue('--fg').trim();
+  COL.dim   = cs.getPropertyValue('--fg-dim').trim();
+  COL.faint = cs.getPropertyValue('--fg-faint').trim();
+  COL.grid  = cs.getPropertyValue('--grid').trim();
+  COL.obj   = cs.getPropertyValue('--obj').trim();
+  COL.bg    = cs.getPropertyValue('--bg').trim();
+  COL.accent = '#FBF251';
+}
+updateColors();
+
+/* ------------------------------------------------------------------ *
+ * Measurement
+ * ------------------------------------------------------------------ */
+function measure(word) { X.font = FONT; return X.measureText(word).width; }
+function tokenize(t) { return String(t).trim().split(/\s+/).filter(Boolean); }
+function norm(w) { return w.toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
+// Static line count for a rung at a given text width (used to choose the rung).
+function lineCountOf(text, textW) {
+  X.font = FONT;
+  const words = tokenize(text);
+  let cx = 0, lines = 1, first = true;
+  for (const w of words) {
+    const ww = X.measureText(w).width;
+    if (first) { cx = ww; first = false; }
+    else if (cx + SPACE_W + ww > textW) { lines++; cx = ww; }
+    else cx += SPACE_W + ww;
+  }
+  return lines;
+}
+
+function maxLinesNow() {
+  return Math.max(1, Math.floor((frame.h - 2 * PAD) / lineH));
+}
+
+// Pick the LONGEST rung that fits the frame; floor at the shortest.
+function selectRung() {
+  const textW = Math.max(10, frame.w - 2 * PAD);
+  const maxLines = maxLinesNow();
+  for (let i = ladder.length - 1; i >= 0; i--) {
+    if (lineCountOf(ladder[i], textW) <= maxLines) return i;
+  }
+  return 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * Word items
+ * ------------------------------------------------------------------ */
+function makeItem(word, entering) {
+  const nat = measure(word);
+  return {
+    text: word,
+    natW: nat,
+    x: NaN, y: NaN,           // animated position (NaN = snap on first pack)
+    tx: 0, ty: 0,             // target position
+    w: entering ? 0 : nat,    // animated width
+    alpha: entering ? 0 : 1,
+    fresh: entering ? 1 : 0   // 1 = wet yellow, dries to 0 = ink
+  };
+}
+
+function buildFresh() {
+  items = [];
+  ghosts = [];
+  for (const w of tokenize(ladder[curRung])) {
+    const it = makeItem(w, false);
+    items.push(it);
+  }
+  relayout(true); // snap positions
+}
+
+// LCS-based diff of two word arrays (normalized), returns aligned ops.
+function lcsOps(a, b) {
+  const n = a.length, m = b.length;
+  const dp = [];
+  for (let i = 0; i <= n; i++) dp.push(new Int32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const ops = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { ops.push({ t: 'keep', j }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push({ t: 'del' }); i++; }
+    else { ops.push({ t: 'ins', j }); j++; }
+  }
+  while (i < n) { ops.push({ t: 'del' }); i++; }
+  while (j < m) { ops.push({ t: 'ins', j }); j++; }
+  return ops;
+}
+
+// Transition the live words to rung `idx` with a word-level morph.
+function transitionTo(idx) {
+  const newWords = tokenize(ladder[idx]);
+  const oldNorm = items.map(it => norm(it.text));
+  const newNorm = newWords.map(norm);
+  const ops = lcsOps(oldNorm, newNorm);
+  const next = [];
+  let p = 0;
+  for (const op of ops) {
+    if (op.t === 'keep') {
+      const it = items[p++];
+      it.text = newWords[op.j];        // adopt exact casing/punctuation of new rung
+      next.push(it);
+    } else if (op.t === 'del') {
+      const it = items[p++];
+      // becomes a ghost: collapses to zero width and fades where it sits
+      ghosts.push(it);
+      if (ghosts.length > 60) ghosts.shift();
+    } else { // ins
+      next.push(makeItem(newWords[op.j], true));
+    }
+  }
+  items = next;
+  curRung = idx;
+  wake();
+}
+
+/* ------------------------------------------------------------------ *
+ * Flow layout (dynamic packing on the current animated widths)
+ * ------------------------------------------------------------------ */
+function relayout(snap) {
+  const left = frame.x + PAD, top = frame.y + PAD;
+  const maxW = frame.w - 2 * PAD;
+  let cx = left, cy = top, first = true;
+  for (const it of items) {
+    const w = Math.max(it.w, 0);
+    if (!first && (cx - left) + SPACE_W + w > maxW) { cx = left; cy += lineH; first = true; }
+    if (!first) cx += SPACE_W;
+    it.tx = cx; it.ty = cy;
+    cx += w;
+    first = false;
+    if (snap || isNaN(it.x)) { it.x = it.tx; it.y = it.ty; }
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Animation
+ * ------------------------------------------------------------------ */
+const POS_K = 0.24, W_K = 0.24, A_K = 0.28, FRESH_K = 0.09;
+const lerp = (a, b, k) => a + (b - a) * k;
+
+function step() {
+  relayout(false);
+  let moving = false;
+
+  for (const it of items) {
+    it.x = lerp(it.x, it.tx, POS_K);
+    it.y = lerp(it.y, it.ty, POS_K);
+    it.w = lerp(it.w, it.natW, W_K);
+    it.alpha = lerp(it.alpha, 1, A_K);
+    it.fresh = lerp(it.fresh, 0, FRESH_K);
+    if (Math.abs(it.x - it.tx) > 0.3 || Math.abs(it.y - it.ty) > 0.3 ||
+        Math.abs(it.w - it.natW) > 0.3 || it.alpha < 0.98 || it.fresh > 0.02) moving = true;
+  }
+
+  for (let i = ghosts.length - 1; i >= 0; i--) {
+    const g = ghosts[i];
+    g.w = lerp(g.w, 0, W_K);
+    g.alpha = lerp(g.alpha, 0, A_K);
+    if (g.w < 0.5 && g.alpha < 0.02) ghosts.splice(i, 1);
+    else moving = true;
+  }
+
+  return moving;
+}
+
+/* ------------------------------------------------------------------ *
+ * Drawing
+ * ------------------------------------------------------------------ */
+function roundRect(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  X.beginPath();
+  X.moveTo(x + r, y);
+  X.arcTo(x + w, y, x + w, y + h, r);
+  X.arcTo(x + w, y + h, x, y + h, r);
+  X.arcTo(x, y + h, x, y, r);
+  X.arcTo(x, y, x + w, y, r);
+  X.closePath();
+}
+
+function drawWord(it, isGhost) {
+  if (it.alpha <= 0.01) return;
+  const sx = it.natW > 0.01 ? Math.max(0, it.w / it.natW) : 0;
+  if (sx <= 0.001) return;
+  const hy = it.y - fontPx * 0.06;
+  const hh = fontPx * 1.06;
+
+  // wet-yellow highlight under an arriving word, drying to nothing (fill only)
+  if (!isGhost && it.fresh > 0.02) {
+    X.save();
+    X.globalAlpha = Math.min(1, it.fresh) * 0.92;
+    X.fillStyle = COL.accent;
+    roundRect(it.x - 2.5, hy, it.w + 5, hh, 4);
+    X.fill();
+    X.restore();
+  }
+
+  X.save();
+  X.globalAlpha = Math.max(0, Math.min(1, it.alpha));
+  X.fillStyle = COL.fg;
+  X.font = FONT;
+  X.textBaseline = 'top';
+  X.translate(it.x, it.y);
+  X.scale(sx, 1);
+  X.fillText(it.text, 0, 0);
+  X.restore();
+}
+
+function drawFrame() {
+  // card
+  X.save();
+  X.fillStyle = COL.grid;
+  X.fillRect(frame.x, frame.y, frame.w, frame.h);
+  X.restore();
+
+  // border
+  X.save();
+  X.strokeStyle = COL.faint;
+  X.lineWidth = 1;
+  X.strokeRect(Math.round(frame.x) + 0.5, Math.round(frame.y) + 0.5, Math.round(frame.w), Math.round(frame.h));
+  X.restore();
+
+  // edge grips: right (E) and bottom (S). Grabbed grip is the charged element -> yellow fill.
+  const gr = 3;
+  const eMid = frame.y + frame.h / 2;
+  const sMid = frame.x + frame.w / 2;
+  const eHot = (drag && drag.edge.includes('e')) || (!drag && hoverEdge && hoverEdge.includes('e'));
+  const sHot = (drag && drag.edge.includes('s')) || (!drag && hoverEdge && hoverEdge.includes('s'));
+
+  // right edge grip
+  X.save();
+  X.fillStyle = (drag && drag.edge.includes('e')) ? COL.accent : (eHot ? COL.fg : COL.faint);
+  roundRect(frame.x + frame.w - gr, eMid - 15, gr * 2, 30, gr);
+  X.fill();
+  X.restore();
+
+  // bottom edge grip
+  X.save();
+  X.fillStyle = (drag && drag.edge.includes('s')) ? COL.accent : (sHot ? COL.fg : COL.faint);
+  roundRect(sMid - 15, frame.y + frame.h - gr, 30, gr * 2, gr);
+  X.fill();
+  X.restore();
+}
+
+// Rung gauge, sitting on the frame's right edge, reads the current length.
+function drawGauge() {
+  const gx = frame.x + frame.w + 22;
+  const n = ladder.length;
+  const top = frame.y + 4, bot = frame.y + frame.h - 4;
+  const span = Math.max(40, bot - top);
+  X.save();
+  X.font = "500 9px 'IBM Plex Mono', monospace";
+  X.textBaseline = 'middle';
+  X.textAlign = 'left';
+  // spine
+  X.strokeStyle = COL.faint;
+  X.lineWidth = 1;
+  X.beginPath();
+  X.moveTo(gx + 0.5, top);
+  X.lineTo(gx + 0.5, bot);
+  X.stroke();
+  for (let i = 0; i < n; i++) {
+    // longest rung at the top, shortest at the bottom
+    const y = bot - (i / (n - 1)) * span;
+    const active = i === curRung;
+    if (active) {
+      X.fillStyle = COL.accent;               // the charged / selected length
+      roundRect(gx - 5, y - 6.5, 10, 13, 3);
+      X.fill();
+    }
+    // tick
+    X.strokeStyle = active ? COL.fg : COL.dim;
+    X.lineWidth = active ? 1.5 : 1;
+    X.beginPath();
+    X.moveTo(gx - (active ? 0 : 4), y + 0.5);
+    X.lineTo(gx + 8, y + 0.5);
+    X.stroke();
+    // label
+    X.fillStyle = active ? COL.fg : COL.dim;
+    X.globalAlpha = active ? 1 : 0.75;
+    X.fillText(RUNG_NAMES[i], gx + 13, y);
+    X.globalAlpha = 1;
+  }
+  X.restore();
+}
+
+function drawSpec() {
+  const text = ladder[curRung];
+  const chars = text.length;
+  const fullChars = ladder[FULL_INDEX].length;
+  const pct = Math.round((chars / fullChars) * 100);
+  const lines = lineCountOf(text, Math.max(10, frame.w - 2 * PAD));
+  const s = `${RUNG_NAMES[curRung]}  ·  ${chars} chars  ·  ${lines} ${lines === 1 ? 'line' : 'lines'}  ·  ${pct}% of full  ·  ${title.toLowerCase()}`;
+  X.save();
+  X.font = "400 11px 'IBM Plex Mono', monospace";
+  X.fillStyle = COL.dim;
+  X.textBaseline = 'top';
+  X.textAlign = 'left';
+  X.fillText(s, frame.x, frame.y + frame.h + 16);
+  X.restore();
+}
+
+function draw() {
+  X.clearRect(0, 0, W, H);
+  drawFrame();
+
+  // clip text to the card interior so an overflowing floor rung stays clean
+  X.save();
+  X.beginPath();
+  X.rect(frame.x + 1, frame.y + 1, frame.w - 2, frame.h - 2);
+  X.clip();
+  for (const g of ghosts) drawWord(g, true);
+  for (const it of items) drawWord(it, false);
+  X.restore();
+
+  drawGauge();
+  drawSpec();
+}
+
+/* ------------------------------------------------------------------ *
+ * RAF loop with idle-stop
+ * ------------------------------------------------------------------ */
+let running = false;
+function loop() {
+  const moving = step();
+  draw();
+  if (moving || drag) requestAnimationFrame(loop);
+  else running = false;
+}
+function wake() {
+  if (!running) { running = true; requestAnimationFrame(loop); }
+}
+
+/* ------------------------------------------------------------------ *
+ * Layout / resize
+ * ------------------------------------------------------------------ */
+function computeMetrics() {
+  fontPx = Math.round(Math.max(18, Math.min(30, Math.min(W, H) * 0.032)));
+  FONT = `500 ${fontPx}px 'DM Sans', sans-serif`;
+  lineH = Math.round(fontPx * 1.42);
+  PAD = Math.round(fontPx * 0.72);
+  X.font = FONT;
+  SPACE_W = X.measureText(' ').width;
+  defaultFrame.w = Math.round(Math.min(560, W * 0.46));
+  defaultFrame.h = Math.round(2 * PAD + lineH * 3);
+}
+
+function clampFrame() {
+  const minW = fontPx * 4 + 2 * PAD;
+  const minH = 2 * PAD + lineH;
+  frame.w = Math.max(minW, Math.min(frame.w, W - frame.x - 150));
+  frame.h = Math.max(minH, Math.min(frame.h, H - frame.y - 90));
+}
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const first = frame.w === 0;
+  computeMetrics();
+  if (first) {
+    frame.w = defaultFrame.w;
+    frame.h = defaultFrame.h;
+    frame.x = Math.round((W - frame.w) / 2);
+    frame.y = Math.round(H * 0.42 - frame.h / 2);
+  } else {
+    frame.x = Math.min(frame.x, Math.max(20, W - frame.w - 150));
+    frame.y = Math.min(frame.y, Math.max(20, H - frame.h - 90));
+  }
+  clampFrame();
+  // remeasure natural widths at the new font
+  for (const it of items) it.natW = measure(it.text);
+  for (const g of ghosts) g.natW = measure(g.text);
+  const want = selectRung();
+  if (first) { curRung = want; buildFresh(); }
+  else if (want !== curRung) transitionTo(want);
+  wake();
+}
+
+/* ------------------------------------------------------------------ *
+ * Pointer: drag the frame edges to refit
+ * ------------------------------------------------------------------ */
+function edgeAt(px, py) {
+  const m = 12;
+  const nearRight = Math.abs(px - (frame.x + frame.w)) <= m && py >= frame.y - m && py <= frame.y + frame.h + m;
+  const nearBottom = Math.abs(py - (frame.y + frame.h)) <= m && px >= frame.x - m && px <= frame.x + frame.w + m;
+  if (nearRight && nearBottom) return 'se';
+  if (nearRight) return 'e';
+  if (nearBottom) return 's';
+  return null;
+}
+function cursorFor(edge) {
+  if (edge === 'se') return 'nwse-resize';
+  if (edge === 'e') return 'ew-resize';
+  if (edge === 's') return 'ns-resize';
+  return 'default';
+}
+
+C.addEventListener('pointermove', e => {
+  if (drag) {
+    if (drag.edge.includes('e')) frame.w = drag.sw + (e.clientX - drag.sx);
+    if (drag.edge.includes('s')) frame.h = drag.sh + (e.clientY - drag.sy);
+    clampFrame();
+    const want = selectRung();
+    if (want !== curRung) transitionTo(want);
+    wake();
+  } else {
+    const edge = edgeAt(e.clientX, e.clientY);
+    if (edge !== hoverEdge) { hoverEdge = edge; wake(); }
+    document.body.style.cursor = cursorFor(edge);
+  }
+});
+C.addEventListener('pointerdown', e => {
+  const edge = edgeAt(e.clientX, e.clientY);
+  if (!edge) return;
+  drag = { edge, sx: e.clientX, sy: e.clientY, sw: frame.w, sh: frame.h };
+  document.body.style.cursor = cursorFor(edge);
+  try { C.setPointerCapture(e.pointerId); } catch (err) {}
+  wake();
+});
+function endDrag(e) {
+  if (!drag) return;
+  drag = null;
+  hoverEdge = edgeAt(e.clientX, e.clientY);
+  document.body.style.cursor = cursorFor(hoverEdge);
+  wake();
+}
+C.addEventListener('pointerup', endDrag);
+C.addEventListener('pointercancel', endDrag);
+
+/* ------------------------------------------------------------------ *
+ * Toast + clipboard
+ * ------------------------------------------------------------------ */
+const toastEl = document.getElementById('toast');
+let toastT = null;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => toastEl.classList.remove('show'), 1600);
+}
+async function copyText(str) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(str); return true; }
+  } catch (err) {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = str; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (err) { return false; }
+}
+
+function copyPack() {
+  const fullChars = ladder[FULL_INDEX].length;
+  const pack = {
+    fit_copy_pack: {
+      source: title,
+      generated: new Date().toISOString(),
+      unit: 'characters',
+      rungs: ladder.map((t, i) => ({
+        name: RUNG_NAMES[i],
+        text: t,
+        chars: t.length,
+        percent: Math.round((t.length / fullChars) * 100)
+      }))
+    }
+  };
+  return JSON.stringify(pack, null, 2);
+}
+
+/* ------------------------------------------------------------------ *
+ * Text switching + reset
+ * ------------------------------------------------------------------ */
+function setDemo(i, animate) {
+  demoIndex = i;
+  ladder = LADDERS[i].rungs;
+  title = LADDERS[i].title;
+  for (const it of items) it.natW = measure(it.text);
+  const want = selectRung();
+  if (animate && items.length) transitionTo(want);
+  else { curRung = want; buildFresh(); }
+  wake();
+}
+function loadCustom(rungs, name) {
+  ladder = rungs;
+  title = name || 'Custom';
+  const want = selectRung();
+  transitionTo(want);
+  toast('Custom ladder loaded');
+  wake();
+}
+function resetAll() {
+  frame.w = defaultFrame.w;
+  frame.h = defaultFrame.h;
+  frame.x = Math.round((W - frame.w) / 2);
+  frame.y = Math.round(H * 0.42 - frame.h / 2);
+  clampFrame();
+  const want = selectRung();
+  if (want !== curRung) transitionTo(want); else wake();
+}
+
+/* ------------------------------------------------------------------ *
+ * Keyboard
+ * ------------------------------------------------------------------ */
+window.addEventListener('keydown', e => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  const k = e.key.toLowerCase();
+  if (k === 'c') { copyText(ladder[curRung]).then(ok => toast(ok ? 'Copied: ' + RUNG_NAMES[curRung] : 'Copy failed')); }
+  else if (k === 'e') { copyText(copyPack()).then(ok => toast(ok ? 'Copy pack copied (JSON)' : 'Copy failed')); }
+  else if (k === 'r') { resetAll(); }
+  else if (k === 'k') { openModal(); }
+  else if (k === '1') { setDemo(0, true); }
+  else if (k === '2') { setDemo(1, true); }
+  else if (k === '3') { setDemo(2, true); }
+});
+
+/* ------------------------------------------------------------------ *
+ * Theme
+ * ------------------------------------------------------------------ */
+toggle.addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  document.body.classList.toggle('light', !dark);
+  ui.theme(dark ? 'dark' : 'light');
+  document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#0a0a0c' : '#FAFAFA');
+  updateColors();
+  wake();
+});
+
+/* ------------------------------------------------------------------ *
+ * Optional live path: Connect a key (Anthropic, browser-direct).
+ * Never throws; any failure falls back to the baked ladders.
+ * ------------------------------------------------------------------ */
+const MODEL = 'claude-sonnet-5';
+const modal = document.getElementById('modal');
+const mKey = document.getElementById('m-key');
+const mText = document.getElementById('m-text');
+const mStatus = document.getElementById('m-status');
+const mGo = document.getElementById('m-go');
+const mCancel = document.getElementById('m-cancel');
+
+function openModal() {
+  try { mKey.value = localStorage.getItem('fit_anthropic_key') || ''; } catch (err) {}
+  mText.value = ladder[FULL_INDEX];
+  mStatus.textContent = '';
+  modal.classList.add('open');
+  setTimeout(() => (mKey.value ? mText : mKey).focus(), 30);
+}
+function closeModal() { modal.classList.remove('open'); }
+mCancel.addEventListener('click', closeModal);
+modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+
+async function generateLadder(text, key) {
+  const sys = "You rewrite one message at seven lengths to make it responsive to any space. " +
+    "Return ONLY a JSON array of exactly 7 strings, shortest first, longest last, no prose, no code fence. " +
+    "The core claim must stay identical and legible at every length; adjacent rungs should share most words so a word diff between them is small. " +
+    "Rough target lengths as a percent of the given text: 18, 30, 45, 62, 80, 100, 130. " +
+    "Never use em dashes or emoji.";
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 1024,
+      system: sys,
+      messages: [{ role: 'user', content: 'Text:\n' + text }]
+    })
+  });
+  if (!res.ok) throw new Error('http ' + res.status);
+  const data = await res.json();
+  let out = (data && data.content && data.content[0] && data.content[0].text) || '';
+  const s = out.indexOf('['), en = out.lastIndexOf(']');
+  if (s === -1 || en === -1) throw new Error('no array');
+  const arr = JSON.parse(out.slice(s, en + 1));
+  if (!Array.isArray(arr) || arr.length !== 7 || !arr.every(x => typeof x === 'string' && x.trim())) throw new Error('bad shape');
+  return arr.map(x => x.trim());
+}
+
+mGo.addEventListener('click', async () => {
+  const key = mKey.value.trim();
+  const text = mText.value.trim();
+  if (!key) { mStatus.textContent = 'Enter a key, or Cancel to stay offline.'; return; }
+  if (text.length < 12) { mStatus.textContent = 'Paste a longer sentence.'; return; }
+  try { localStorage.setItem('fit_anthropic_key', key); } catch (err) {}
+  mGo.disabled = true; mStatus.textContent = 'Generating...';
+  try {
+    const rungs = await generateLadder(text, key);
+    closeModal();
+    loadCustom(rungs, 'Custom');
+  } catch (err) {
+    mStatus.textContent = 'Failed (' + (err && err.message ? err.message : 'error') + '). Baked ladders kept.';
+  } finally {
+    mGo.disabled = false;
+  }
+});
+
+/* ------------------------------------------------------------------ *
+ * Boot
+ * ------------------------------------------------------------------ */
+window.addEventListener('resize', resize);
+resize();          // builds the initial frame + rung with the fallback face
+wake();
+
+// Re-measure once the real fonts land, so line-breaking is exact.
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => {
+    computeMetrics();
+    for (const it of items) it.natW = measure(it.text);
+    for (const g of ghosts) g.natW = measure(g.text);
+    const want = selectRung();
+    if (want !== curRung) transitionTo(want); else relayout(true);
+    wake();
+  }).catch(() => {});
+}
+</script>
+</body>
+</html>

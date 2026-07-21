@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<!--
+  Light as cursor - a cursor of light that reveals
+  The cursor is a light that reveals a hidden document; scroll sizes the beam, drag burns permanent pools of light in.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Light as cursor - a cursor of light that reveals</title>
+<meta name="description" content="The cursor is a light that reveals a hidden document; scroll sizes the beam, drag burns permanent pools of light in.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Light as cursor - a cursor of light that reveals">
+<meta property="og:description" content="The cursor is a light that reveals a hidden document; scroll sizes the beam, drag burns permanent pools of light in.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Light as cursor",
+  "applicationCategory": "DesignApplication",
+  "description": "The cursor is a light that reveals a hidden document; scroll sizes the beam, drag burns permanent pools of light in.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "light as cursor, interaction design, reveal, light, flashlight, exploration, cursor, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #050507;
+  --doc: #16161A;
+  --fg: rgba(255,255,255,0.95);
+  --dim: rgba(255,255,255,0.15);
+  --mid: rgba(255,255,255,0.28);
+  --active: rgba(255,255,255,0.55);
+  --hover: rgba(255,255,255,0.75);
+  --obj: rgb(132,137,148);
+  --grid: rgba(255,255,255,0.008);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.light {
+  --bg: #FAFAFA;
+  --doc: #EDEDEF;
+  --fg: rgba(10,10,10,0.9);
+  --obj: rgb(98,103,113);
+  --grid: rgba(0,0,0,0.02);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); }
+
+#c { position: fixed; inset: 0; z-index: 1; }
+
+
+#toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,.85);}
+body.light #toggle::after{background:rgba(0,0,0,.8);}
+#toggle:hover{transform:scale(1.08);}
+
+.cursor { position: fixed; z-index: 50; pointer-events: none; transform: translate(-50%, -50%); }
+.cursor .ring {
+  position: absolute;
+  border: 1px solid rgba(150,150,150,0.55);
+  border-radius: 50%;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.06s linear, height 0.06s linear, border-color 0.2s var(--ease);
+}
+body.burning .cursor .ring { border-color: rgba(150,150,150,0.95); border-width: 1.5px; }
+.cursor .dot {
+  position: absolute; left: 50%; top: 50%;
+  width: 3px; height: 3px; background: var(--fg); border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+</style>
+</head>
+<body class="light">
+<canvas id="c"></canvas>
+
+<div id="toggle" title="Toggle theme"></div>
+
+<div class="cursor" id="cursor">
+  <div class="ring" id="ring"></div>
+  <div class="dot"></div>
+</div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const off = document.createElement('canvas');
+const offX = off.getContext('2d');
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+const ui = PT.ui({ title: 'Light as cursor', hints: 'Move reveal · Scroll radius · Drag burn · R clear · F flood', theme: 'light' });
+
+let mouseX = -200, mouseY = -200;
+let lightRadius = 130;
+let burns = [];            // pinned light spots {x, y, r}
+let isDragging = false;
+let lastBurnX = 0, lastBurnY = 0;
+let floodMode = false;
+let seed = 404202;
+
+let docX = 0, docY = 0, docSize = 0;
+let shapes = [];
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  off.width = W * dpr; off.height = H * dpr;
+  offX.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() {
+  docSize = Math.min(W, H) * 0.78;
+  docX = (W - docSize) / 2;
+  docY = (H - docSize) / 2;
+  buildScene();
+}
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) {
+  return function() {
+    let t = (s += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// ───── Scene: shapes only (text phrases removed 2026-07-18) ─────
+
+function buildScene() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  let tries = 0;
+  while (shapes.length < 10 && tries < 2000) {
+    const x = 0.08 + rng() * 0.84;
+    const y = 0.06 + rng() * 0.88;
+    const r = 0.028 + rng() * 0.032;
+    // soft avoidance via min spacing between shapes
+    let ok = true;
+    for (const o of shapes) if (Math.hypot(x - o.nx, y - o.ny) < r + o.nr + 0.05) { ok = false; break; }
+    if (ok) {
+      shapes.push({
+        id: shapes.length + 1,
+        nx: x, ny: y, nr: r,
+      });
+    }
+    tries++;
+  }
+}
+
+// ───── Draw full scene (to main canvas) ─────
+function drawScene() {
+  const light = document.body.classList.contains('light');
+  // Doc background - color-system grey panel
+  X.fillStyle = light ? '#EDEDEF' : '#16161A';
+  X.fillRect(docX, docY, docSize, docSize);
+
+  // Shapes - neutral grey discs (theme-aware), so the doc reads as monochrome objects
+  const objCol = getComputedStyle(document.body).getPropertyValue('--obj');
+  for (const s of shapes) {
+    const x = docX + s.nx * docSize;
+    const y = docY + s.ny * docSize;
+    const r = s.nr * docSize;
+    // Body - flat disc, no halo
+    X.fillStyle = objCol;
+    X.beginPath();
+    X.arc(x, y, r, 0, Math.PI * 2);
+    X.fill();
+  }
+  X.globalAlpha = 1;
+}
+
+// ───── Build mask on offscreen ─────
+function buildMask() {
+  offX.setTransform(dpr, 0, 0, dpr, 0, 0);
+  offX.clearRect(0, 0, W, H);
+
+  if (floodMode) return; // empty mask = full reveal
+
+  // Full fog fill over the doc (near-white on light, near-black on dark)
+  offX.fillStyle = document.body.classList.contains('light') ? 'rgba(248,247,244,0.95)' : 'rgba(0,0,0,0.94)';
+  offX.fillRect(0, 0, W, H);
+
+  // Erase holes for burns + active cursor light
+  offX.globalCompositeOperation = 'destination-out';
+
+  // Burns (permanent)
+  for (const b of burns) {
+    const g = offX.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
+    g.addColorStop(0, 'rgba(0,0,0,1)');
+    g.addColorStop(0.55, 'rgba(0,0,0,0.82)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    offX.fillStyle = g;
+    offX.beginPath();
+    offX.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    offX.fill();
+  }
+
+  // Active cursor light - only if inside window
+  if (mouseX > -50) {
+    const g = offX.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, lightRadius);
+    g.addColorStop(0, 'rgba(0,0,0,1)');
+    g.addColorStop(0.6, 'rgba(0,0,0,0.78)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    offX.fillStyle = g;
+    offX.beginPath();
+    offX.arc(mouseX, mouseY, lightRadius, 0, Math.PI * 2);
+    offX.fill();
+  }
+
+  offX.globalCompositeOperation = 'source-over';
+}
+
+// ───── Render loop ─────
+function draw() {
+  // Clear + bg
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg').trim();
+  X.fillRect(0, 0, W, H);
+
+  // Full scene
+  drawScene();
+
+  // Build mask (dim + holes)
+  buildMask();
+
+  // Composite mask onto main (mask has holes where lights are; dim rest)
+  X.drawImage(off, 0, 0, W * dpr, H * dpr, 0, 0, W, H);
+
+  // Subtle warm glow edge around cursor (on top) - hints at light source
+  if (mouseX > -50 && !floodMode) {
+    const g = X.createRadialGradient(mouseX, mouseY, lightRadius * 0.85, mouseX, mouseY, lightRadius * 1.15);
+    g.addColorStop(0, 'rgba(150,150,150,0)');
+    g.addColorStop(0.5, 'rgba(150,150,150,0.04)');
+    g.addColorStop(1, 'rgba(150,150,150,0)');
+    X.fillStyle = g;
+    X.fillRect(0, 0, W, H);
+  }
+
+  // Doc border (subtle, always visible)
+  X.strokeStyle = document.body.classList.contains('light') ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.08)';
+  X.lineWidth = 1;
+  X.strokeRect(docX - 0.5, docY - 0.5, docSize + 1, docSize + 1);
+
+  requestAnimationFrame(draw);
+}
+
+// ───── Cursor visual - sync ring size to lightRadius ─────
+const cursor = document.getElementById('cursor');
+const ring   = document.getElementById('ring');
+function syncCursor() {
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top  = mouseY + 'px';
+  const d = Math.max(20, lightRadius * 2);
+  ring.style.width  = d + 'px';
+  ring.style.height = d + 'px';
+}
+
+// ───── Input ─────
+const val    = { set innerHTML(v){}, set textContent(v){} };
+const toggle = document.getElementById('toggle');
+
+window.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  syncCursor();
+  if (isDragging) {
+    // Paint burns along drag path every ~18px
+    const d = Math.hypot(mouseX - lastBurnX, mouseY - lastBurnY);
+    if (d >= 18) {
+      burns.push({ x: mouseX, y: mouseY, r: lightRadius });
+      lastBurnX = mouseX; lastBurnY = mouseY;
+    }
+  }
+});
+
+window.addEventListener('mousedown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  if (e.button !== 0) return;
+  isDragging = true;
+  burns.push({ x: e.clientX, y: e.clientY, r: lightRadius });
+  lastBurnX = e.clientX;
+  lastBurnY = e.clientY;
+  document.body.classList.add('burning');
+});
+
+window.addEventListener('mouseup', () => {
+  if (!isDragging) return;
+  isDragging = false;
+  document.body.classList.remove('burning');
+});
+
+window.addEventListener('wheel', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  e.preventDefault();
+  lightRadius = clamp(lightRadius - e.deltaY * 0.2, 30, 400);
+  syncCursor();
+}, { passive: false });
+
+window.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  const k = e.key.toLowerCase();
+  if (k === 'r') { burns = []; }
+  if (k === 'f') {
+    floodMode = !floodMode;
+  }
+});
+
+toggle.addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  document.body.classList.toggle('light', !dark);
+  ui.theme(dark ? 'dark' : 'light');
+});
+
+function updateInfo() {
+  val.innerHTML = `Radius <b>${Math.round(lightRadius)}</b> · Burns <b>${burns.length}</b>${floodMode ? ' · Flood' : ''}`;
+}
+setInterval(updateInfo, 50);
+
+syncCursor();
+draw();
+</script>
+</body>
+</html>

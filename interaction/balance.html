@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<!--
+  Balance - a balance scale for shapes
+  A balance scale that tips by torque: drop shapes into the pans to weigh and compare them.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Balance - a balance scale for shapes</title>
+<meta name="description" content="A balance scale that tips by torque: drop shapes into the pans to weigh and compare them.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Balance - a balance scale for shapes">
+<meta property="og:description" content="A balance scale that tips by torque: drop shapes into the pans to weigh and compare them.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Balance",
+  "applicationCategory": "DesignApplication",
+  "description": "A balance scale that tips by torque: drop shapes into the pans to weigh and compare them.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "balance, interaction design, physics, balance scale, torque, weight, comparison, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* UI neutrals - the interface is monochrome: proper white / grey / black */
+  --c-white: #FAFAFA;
+  --c-grey:  #8A8A8A;
+  --c-black: #0A0A0A;
+  /* Objects render in a theme-aware neutral; the one charged element fills accent yellow. */
+  --obj: rgb(98,103,113);
+
+  /* Light is the default theme; add `dark` on <body> for the option. */
+  --bg: var(--c-white);
+  --doc: #EDEDEF;
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.16);
+  --mid: rgba(10,10,10,0.28);
+  --active: rgba(10,10,10,0.55);
+  --hover: rgba(10,10,10,0.80);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --doc: #16161A;
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.16);
+  --mid: rgba(250,250,250,0.28);
+  --active: rgba(250,250,250,0.55);
+  --hover: rgba(250,250,250,0.80);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+#c { position: fixed; inset: 0; z-index: 1; }
+
+/* Theme toggle: the same glass as the floating legend, but circular, with a
+   small solid white/black dot in the centre (the dot follows the theme). */
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+
+/* Cursor */
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: all 0.25s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.25s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; }
+.cursor .cross.v { width: 1px; height: 10px; }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(1.4); }
+body.dragging .cursor .cross { background: var(--fg); }
+/* Holding a shape over a pan arms the cursor - it grows to signal it will weigh there on release. */
+body.dragging.arm .cursor .ring { border-color: var(--fg); transform: scale(1.7); }
+body.dragging.arm .cursor .cross { background: var(--fg); }
+
+/* Touch devices: the finger is the pointer, so no custom crosshair. */
+@media (hover: none) and (pointer: coarse) {
+  html, body { cursor: auto; }
+  .cursor { display: none; }
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="toggle" title="Toggle theme"></div>
+
+<div class="cursor" id="cursor">
+  <div class="ring"></div>
+  <div class="cross h"></div>
+  <div class="cross v"></div>
+</div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+const HINTS = 'Drag a shape into a pan to weigh it · Heavier side sinks · Scroll a shape to change its mass · R reset';
+const ui = PT.ui({ title: 'Balance', hints: HINTS, theme: 'light' });
+
+// The bottom legend doubles as a stage-reflective status bar: idle shows the how-to,
+// then weighing swaps in a live readout, and a drop or mass change flashes the running
+// comparison before reverting. We reuse the panel's own glass pill + segment classes.
+const pill = document.querySelector('.adui-pill');
+const seg = (html) => '<span class="adui-seg">' + html + '</span>';
+const key = (t) => '<b class="adui-key">' + t + '</b>';
+let lastBar = '';
+function setBar(html) { if (pill && html !== lastBar) { pill.innerHTML = html; lastBar = html; } }
+function idleBar() { lastBar = ''; ui.setHints(HINTS); }
+let flashUntil = 0;                 // committed messages hold the bar until this timestamp
+function flashBar(html, ms) { setBar(html); flashUntil = performance.now() + ms; }
+
+// ───── Scale geometry (all normalized; recomputed to pixels every frame - no drift) ─────
+const PIV   = { x: 0.5, y: 0.30 };  // fulcrum pivot, normalized to the artboard
+const BEAM  = 0.30;                  // beam half-length, as a fraction of docW
+const CORD  = 0.16;                  // pan cord length, as a fraction of minDim
+const PANR  = 0.072;                 // pan bowl radius, as a fraction of minDim
+const STAND = 0.21;                  // fulcrum height below the pivot, fraction of docH
+const MAXTILT = 22 * Math.PI / 180;  // beam is clamped here so pans never collide or invert
+const SAT   = 6;                     // torque units that nearly saturate the tilt
+const K = 95, D = 11;                // beam spring: under-damped so it rocks then stills
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// ───── State (declared with defaults BEFORE the first resize() - no TDZ) ─────
+let shapes = [];
+let beamTheta = 0, beamV = 0;        // beam tilt (rad, +ve = right end lower) and its velocity
+let drag = null;                     // { id, gx, gy, from }
+let hoverZone = 'tray';              // which pan the held shape is over: 'left' | 'right' | 'tray'
+let mouseX = -100, mouseY = -100;
+let placeCounter = 1;                // stacking order stamp when a shape lands in a pan
+let lastTapId = -1, lastTapTime = 0, lastEmptyTap = 0;
+const seed = 606060;
+
+let docX = 0, docY = 0, docW = 0, docH = 0, minDim = 0;
+// Live pan anchors + centres, filled by computeScale() each frame (world pixels).
+let PIVX = 0, PIVY = 0, cordLen = 0, panR = 0;
+const PAN = { left: { ax: 0, ay: 0, cx: 0, cy: 0 }, right: { ax: 0, ay: 0, cx: 0, cy: 0 } };
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() {
+  // The artboard fills most of the viewport, leaving headroom for the swing.
+  const m = Math.max(24, Math.min(W, H) * 0.06);
+  docX = m; docY = m;
+  docW = W - 2 * m; docH = H - 2 * m;
+  minDim = Math.min(docW, docH);
+  cordLen = CORD * minDim;
+  panR = PANR * minDim;
+}
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) {
+  return function() {
+    let t = (s += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const byId = (id) => shapes.find(s => s.id === id);
+
+// Shapes are labelled by their form; shared forms get a reading-order index (identity only; every shape renders in the same neutral).
+const TYPES  = ['circle', 'square', 'triangle'];
+const MASSES = [3, 5, 2, 4, 1, 3];   // each shape's starting mass
+
+function regen() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  const formCount = {};               // running tally per form -> disambiguating index
+  for (let i = 0; i < 6; i++) {
+    const type = TYPES[i % TYPES.length];
+    formCount[type] = (formCount[type] || 0) + 1;
+    // Home slot in the tray, spread across the bottom of the board.
+    const hx = 0.12 + (i / 5) * 0.76 + (rng() - 0.5) * 0.01;
+    shapes.push({
+      id: i + 1,
+      mass: MASSES[i],
+      loc: 'tray',                    // 'tray' | 'left' | 'right'
+      seq: 0,
+      hx, hy: 0.86,
+      cx: 0, cy: 0, cr: 0,            // live world position + radius, set each frame
+      name: cap(type) + ' ' + formCount[type],
+      type,
+    });
+  }
+  // Preload one shape into each pan so the tilt reads on open: right starts heavier.
+  shapes[0].loc = 'left';  shapes[0].seq = placeCounter++;
+  shapes[1].loc = 'right'; shapes[1].seq = placeCounter++;
+  beamTheta = 0; beamV = 0;           // animate the opening tilt from level (motion as source)
+}
+regen();
+
+// ───── Mass bookkeeping ─────
+const radiusOf = (s) => minDim * 0.02 * Math.sqrt(s.mass);
+function sides() {
+  let l = 0, r = 0;
+  const dId = drag ? drag.id : -1;    // the held shape is airborne - it weighs on neither side
+  for (const s of shapes) {
+    if (s.id === dId) continue;
+    if (s.loc === 'left') l += s.mass;
+    else if (s.loc === 'right') r += s.mass;
+  }
+  return { l, r };
+}
+
+// ───── Solve the beam + place every shape (pure function of state; runs each frame) ─────
+function computeScale(dt) {
+  // Net torque tips the beam; tanh saturates it smoothly so it never over-swings the clamp.
+  const { l, r } = sides();
+  const diff = r - l;                                 // +ve -> right heavier -> right sinks
+  const target = MAXTILT * Math.tanh(diff / SAT);     // NaN-safe: tanh(0) = 0 -> level
+  beamV += (target - beamTheta) * K * dt;
+  beamV *= Math.exp(-D * dt);
+  beamTheta += beamV * dt;
+  if (beamTheta >  MAXTILT) { beamTheta =  MAXTILT; if (beamV > 0) beamV = 0; }
+  if (beamTheta < -MAXTILT) { beamTheta = -MAXTILT; if (beamV < 0) beamV = 0; }
+
+  PIVX = docX + PIV.x * docW;
+  PIVY = docY + PIV.y * docH;
+  const L = BEAM * docW;
+  const c = Math.cos(beamTheta), s = Math.sin(beamTheta);
+  PAN.left.ax  = PIVX - L * c; PAN.left.ay  = PIVY - L * s;
+  PAN.right.ax = PIVX + L * c; PAN.right.ay = PIVY + L * s;
+  // Pans hang plumb: the bowl sits straight below the tilted anchor by the cord length.
+  PAN.left.cx  = PAN.left.ax;  PAN.left.cy  = PAN.left.ay  + cordLen;
+  PAN.right.cx = PAN.right.ax; PAN.right.cy = PAN.right.ay + cordLen;
+
+  // Place shapes: tray shapes rest at home, pan shapes stack in the bowl, the held one rides the cursor.
+  const dId = drag ? drag.id : -1;
+  for (const s of shapes) {
+    s.cr = radiusOf(s);
+    if (s.id === dId) { s.cx = mouseX - drag.gx; s.cy = mouseY - drag.gy; }
+    else if (s.loc === 'tray') { s.cx = docX + s.hx * docW; s.cy = docY + s.hy * docH; }
+  }
+  placeInPan('left',  PAN.left,  dId);
+  placeInPan('right', PAN.right, dId);
+}
+
+function placeInPan(side, pan, dId) {
+  const list = shapes.filter(s => s.loc === side && s.id !== dId).sort((a, b) => a.seq - b.seq);
+  let restY = pan.cy + panR * 0.12;   // the bowl's inner rest line
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    s.cy = restY - s.cr;
+    s.cx = pan.cx + (i % 2 ? 1 : -1) * s.cr * 0.16;   // a subtle pile offset, always inside the bowl
+    restY = s.cy - s.cr * 0.62;                        // the next shape nests above this one
+  }
+}
+
+// ───── Drop zones ─────
+function dropZone(x, y) {
+  const catchR = panR * 2.2;
+  const dL = Math.hypot(x - PAN.left.cx,  y - PAN.left.cy);
+  const dR = Math.hypot(x - PAN.right.cx, y - PAN.right.cy);
+  if (dL < catchR && dL <= dR) return 'left';
+  if (dR < catchR) return 'right';
+  return 'tray';
+}
+
+// ───── Theme colours (cached; custom props don't transition, re-read only on toggle) ─────
+let COL = {};
+function readTheme() {
+  const cs = getComputedStyle(document.body);
+  COL = {
+    bg:     cs.getPropertyValue('--bg').trim(),
+    doc:    cs.getPropertyValue('--doc').trim(),
+    fg:     cs.getPropertyValue('--fg').trim(),
+    dim:    cs.getPropertyValue('--dim').trim(),
+    mid:    cs.getPropertyValue('--mid').trim(),
+    active: cs.getPropertyValue('--active').trim(),
+    obj:    cs.getPropertyValue('--obj').trim(),
+  };
+}
+readTheme();
+
+// ───── Render primitives ─────
+function shapePath(type, x, y, r) {
+  X.beginPath();
+  if (type === 'square') {
+    const h = r * 0.9;
+    X.rect(x - h, y - h, h * 2, h * 2);
+  } else if (type === 'triangle') {
+    const tr = r * 1.1;
+    for (let i = 0; i < 3; i++) {
+      const a = -Math.PI / 2 + i * (Math.PI * 2 / 3);   // equilateral, pointing up
+      const px = x + tr * Math.cos(a), py = y + tr * Math.sin(a);
+      i ? X.lineTo(px, py) : X.moveTo(px, py);
+    }
+    X.closePath();
+  } else {
+    X.arc(x, y, r, 0, Math.PI * 2);
+  }
+}
+
+function drawShapeBody(s, selected) {
+  shapePath(s.type, s.cx, s.cy, s.cr);
+  if (selected) {
+    // the held shape is the one charged thing - fill it with the accent
+    X.fillStyle = '#FBF251'; X.fill();
+  } else {
+    X.fillStyle = COL.obj; X.fill();       // flat neutral - the scale does the depth work
+  }
+  // The shape's mass: ink on the accent, else the page colour so it reads on the neutral grey.
+  X.fillStyle = selected ? 'rgba(10,10,10,0.92)' : COL.bg;
+  X.font = '600 ' + Math.max(9, Math.round(s.cr * 0.92)) + 'px "IBM Plex Mono", monospace';
+  X.textAlign = 'center'; X.textBaseline = 'middle';
+  const ly = s.type === 'triangle' ? s.cy + s.cr * 0.2 : s.cy;
+  X.fillText(String(s.mass), s.cx, ly);
+}
+
+// One pan: two cords from the beam anchor to the bowl rim, the bowl, its stacked shapes, and a total.
+function drawPan(side, pan, val, heavy) {
+  const armed = drag && hoverZone === side;
+  const struct = COL.fg;
+  // Cords
+  X.strokeStyle = COL.mid; X.lineWidth = 1.2;
+  X.beginPath();
+  X.moveTo(pan.ax, pan.ay); X.lineTo(pan.cx - panR, pan.cy);
+  X.moveTo(pan.ax, pan.ay); X.lineTo(pan.cx + panR, pan.cy);
+  X.stroke();
+  // Anchor knuckle at the beam end
+  X.fillStyle = struct;
+  X.beginPath(); X.arc(pan.ax, pan.ay, minDim * 0.008, 0, Math.PI * 2); X.fill();
+  // Bowl rim (the elliptical opening) then the lower bowl; armed thickens the line, no hue
+  X.strokeStyle = COL.active; X.lineWidth = armed ? 2 : 1;
+  X.beginPath(); X.ellipse(pan.cx, pan.cy, panR, panR * 0.28, 0, 0, Math.PI * 2); X.stroke();
+  X.strokeStyle = struct; X.lineWidth = armed ? 2.4 : 1.8;
+  X.beginPath(); X.arc(pan.cx, pan.cy, panR, 0, Math.PI); X.stroke();
+  // Shapes resting in this pan (bottom-first so the pile draws back to front)
+  const list = shapes.filter(s => s.loc === side && (!drag || s.id !== drag.id)).sort((a, b) => a.seq - b.seq);
+  for (const s of list) drawShapeBody(s, false);
+  // Side total + caption; the beam tilt already shows which pan is heavier
+  X.fillStyle = COL.active;
+  X.textAlign = 'center'; X.textBaseline = 'top';
+  X.font = '600 ' + Math.round(minDim * 0.032) + 'px "IBM Plex Mono", monospace';
+  X.fillText(String(val), pan.cx, pan.cy + panR + minDim * 0.028);
+  X.fillStyle = COL.mid;
+  X.font = '500 ' + Math.round(minDim * 0.015) + 'px "IBM Plex Mono", monospace';
+  X.fillText(cap(side), pan.cx, pan.cy + panR + minDim * 0.075);
+}
+
+function drawFulcrum() {
+  const baseY = PIVY + STAND * docH;
+  const wedge = minDim * 0.05;
+  // Ground plate
+  X.strokeStyle = COL.mid; X.lineWidth = 2;
+  X.beginPath(); X.moveTo(PIVX - wedge * 1.8, baseY); X.lineTo(PIVX + wedge * 1.8, baseY); X.stroke();
+  // Wedge (apex meets the beam at the pivot)
+  X.fillStyle = COL.active;
+  X.beginPath();
+  X.moveTo(PIVX, PIVY); X.lineTo(PIVX - wedge, baseY); X.lineTo(PIVX + wedge, baseY); X.closePath();
+  X.fill();
+  // Plumb reference: a faint vertical from the pivot, so the tilt is legible against true down.
+  X.save();
+  X.strokeStyle = COL.dim; X.lineWidth = 1; X.setLineDash([3, 6]);
+  X.beginPath(); X.moveTo(PIVX, PIVY); X.lineTo(PIVX, baseY - 2); X.stroke();
+  X.restore();
+}
+
+function drawBeam() {
+  const L = BEAM * docW;
+  const h = minDim * 0.009;
+  X.save();
+  X.translate(PIVX, PIVY);
+  X.rotate(beamTheta);
+  X.fillStyle = COL.fg;
+  const r = h;                          // rounded end caps for a machined feel
+  X.beginPath();
+  X.moveTo(-L + r, -h); X.lineTo(L - r, -h);
+  X.arc(L - r, 0, h, -Math.PI / 2, Math.PI / 2);
+  X.lineTo(-L + r, h);
+  X.arc(-L + r, 0, h, Math.PI / 2, -Math.PI / 2);
+  X.closePath(); X.fill();
+  X.restore();
+  // Centre hub over the pivot
+  X.fillStyle = COL.fg;
+  X.beginPath(); X.arc(PIVX, PIVY, minDim * 0.016, 0, Math.PI * 2); X.fill();
+}
+
+// ───── Frame ─────
+let lastT = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000);
+  lastT = now;
+
+  computeScale(dt);
+  const { l, r } = sides();
+
+  // Bar: weighing readout while dragging, else a committed flash holds, else the how-to.
+  if (drag) {
+    const s = byId(drag.id);
+    if (s) setBar(
+      seg(key('Weighing') + ' ' + s.name) +
+      seg('Mass ' + s.mass) +
+      seg(hoverZone === 'left' ? 'Drop in the left pan'
+        : hoverZone === 'right' ? 'Drop in the right pan'
+        : 'Drag onto a pan')
+    );
+  } else if (now >= flashUntil && lastBar !== '') {
+    idleBar();
+  }
+
+  // Draw. Background repaints every frame (alpha:false context).
+  X.fillStyle = COL.bg; X.fillRect(0, 0, W, H);
+  // Work zone: docX/docY/docW/docH stays as an invisible limit zone (no visible panel).
+
+  drawFulcrum();
+  drawBeam();
+  drawPan('left',  PAN.left,  l, l > r);
+  drawPan('right', PAN.right, r, r > l);
+
+  // Tray shapes (loose stock), then the held shape on top.
+  for (const s of shapes) {
+    if (s.loc !== 'tray') continue;
+    if (drag && s.id === drag.id) continue;
+    drawShapeBody(s, false);
+  }
+  if (drag) { const s = byId(drag.id); if (s) drawShapeBody(s, true); }
+
+  requestAnimationFrame(frame);
+}
+
+// ───── Hit testing ─────
+function pickShape(x, y) {
+  let best = null;
+  for (const s of shapes) {
+    const dx = x - s.cx, dy = y - s.cy;
+    const hit = s.type === 'square'
+      ? (Math.abs(dx) <= s.cr * 0.9 && Math.abs(dy) <= s.cr * 0.9)
+      : (Math.hypot(dx, dy) <= s.cr);      // circle + triangle (circumcircle)
+    if (hit && (!best || (s.seq || 0) >= (best.seq || 0))) best = s;   // top-most pan shape wins
+  }
+  return best;
+}
+
+// ───── Readouts ─────
+function compareSegs() {
+  const { l, r } = sides();
+  if (l === 0 && r === 0) return seg(key('Empty')) + seg('Drag shapes into the pans');
+  if (l === r) return seg(key('Balanced')) + seg('Left ' + l) + seg('Right ' + r);
+  const heavy = l > r ? 'Left' : 'Right';
+  return seg('Left ' + l) + seg('Right ' + r) + seg(key(heavy + ' heavier') + ' by ' + Math.abs(l - r));
+}
+function flashCompare(lead) { flashBar((lead || '') + compareSegs(), 1900); }
+
+// ───── Input ─────
+const cursor = document.getElementById('cursor');
+const toggle = document.getElementById('toggle');
+
+window.addEventListener('pointermove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top  = mouseY + 'px';
+  if (drag) {
+    hoverZone = dropZone(mouseX, mouseY);
+    document.body.classList.toggle('arm', hoverZone !== 'tray');
+  }
+});
+
+window.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  mouseX = e.clientX; mouseY = e.clientY;
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top  = mouseY + 'px';
+
+  const hit = pickShape(mouseX, mouseY);
+  if (!hit) {
+    // Double-tap empty board resets (touch fallback for the R key).
+    const t = performance.now();
+    if (t - lastEmptyTap < 340) { doReset(); lastEmptyTap = 0; } else lastEmptyTap = t;
+    lastTapId = -1;
+    return;
+  }
+
+  e.preventDefault();
+  flashUntil = 0;                                 // a fresh gesture overrides any lingering flash
+
+  // Double-tap a shape cycles its mass up (touch fallback for the scroll wheel).
+  const t = performance.now();
+  if (lastTapId === hit.id && t - lastTapTime < 340) {
+    lastTapId = -1; lastTapTime = 0;
+    hit.mass = hit.mass >= 9 ? 1 : hit.mass + 1;
+    flashCompare(seg(key(cap(hit.name)) + ' mass ' + hit.mass));
+    return;
+  }
+  lastTapId = hit.id; lastTapTime = t;
+
+  try { C.setPointerCapture(e.pointerId); } catch (_) {}
+  drag = { id: hit.id, gx: mouseX - hit.cx, gy: mouseY - hit.cy, from: hit.loc };
+  hoverZone = dropZone(mouseX, mouseY);
+  document.body.classList.add('dragging');
+  document.body.classList.toggle('arm', hoverZone !== 'tray');
+});
+
+window.addEventListener('pointerup', () => {
+  if (!drag) return;
+  const s = byId(drag.id);
+  const zone = dropZone(mouseX, mouseY);
+  if (s) {
+    s.loc = zone;
+    s.seq = zone === 'tray' ? 0 : placeCounter++;
+  }
+  drag = null;
+  document.body.classList.remove('dragging', 'arm');
+  if (s) {
+    const word = zone === 'left' ? 'Into left' : zone === 'right' ? 'Into right' : 'To tray';
+    flashCompare(seg(key(word) + ' ' + s.name));
+  }
+});
+
+window.addEventListener('pointercancel', () => {
+  if (!drag) return;
+  const s = byId(drag.id);
+  if (s) s.loc = drag.from;                        // put it back where it came from
+  drag = null;
+  document.body.classList.remove('dragging', 'arm');
+  idleBar();
+});
+
+// Scroll a shape to change its mass, and watch the scale re-solve.
+window.addEventListener('wheel', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  const hit = pickShape(mouseX, mouseY);
+  if (!hit) return;
+  e.preventDefault();
+  hit.mass = clamp(hit.mass + (e.deltaY < 0 ? 1 : -1), 1, 9);
+  flashCompare(seg(key(cap(hit.name)) + ' mass ' + hit.mass));
+}, { passive: false });
+
+function doReset() {
+  drag = null; flashUntil = 0; hoverZone = 'tray';
+  document.body.classList.remove('dragging', 'arm');
+  placeCounter = 1;
+  regen();
+  idleBar();
+}
+
+window.addEventListener('keydown', (e) => {
+  if (!e.key) return;
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) doReset();
+});
+
+toggle.addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  ui.theme(dark ? 'dark' : 'light');
+  readTheme();
+});
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

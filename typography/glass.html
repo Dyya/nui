@@ -4,8 +4,8 @@
   Type seen through glass, a WebGL refraction and chromatic-dispersion lens drifting over set text, rendered live.
 
   Part of NUI - experiments in interface design and interaction.
-  Author · Adi Dizdarevic · AD& · http://adidizdarevic.com/
-  © 2026 Adi Dizdarevic. All rights reserved.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
 -->
 <html lang="en">
 <head>
@@ -14,7 +14,7 @@
 <title>Glass - refractive glass type</title>
 <meta name="description" content="Type seen through glass, a WebGL refraction and chromatic-dispersion lens drifting over set text, rendered live.">
 <meta name="author" content="Adi Dizdarevic">
-<link rel="author" href="http://adidizdarevic.com/">
+<link rel="author" href="https://adidizdarevic.com/">
 <meta name="theme-color" content="#FAFAFA">
 
 <!-- Open Graph (minimal) -->
@@ -34,9 +34,9 @@
   "browserRequirements": "Requires JavaScript and WebGL",
   "inLanguage": "en",
   "keywords": "typography, webgl, refraction, glass, shader, dispersion, generative",
-  "license": "All rights reserved",
-  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "http://adidizdarevic.com/" },
-  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "http://adidizdarevic.com/" },
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
   "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
 }
 </script>
@@ -46,10 +46,17 @@
 <style>
   html,body{margin:0;height:100%;background:#FAFAFA;overflow:hidden;font-family:'DM Sans',sans-serif;}
   #gl{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:crosshair;}
+  /* Theme toggle: base light/dark (nav-driven when embedded). B still cycles bg as a local override. */
+  #toggle { position: fixed; bottom: 14px; right: 16px; z-index: 9998; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); background: rgba(255,255,255,.5); border: 1px solid rgba(0,0,0,.06); display: grid; place-items: center; transition: transform .2s cubic-bezier(.5,.02,.15,1); }
+  body.dark #toggle { background: rgba(10,10,10,.35); border-color: rgba(255,255,255,.08); }
+  #toggle::after { content: ''; width: 10px; height: 10px; border-radius: 50%; background: #0A0A0A; }
+  body.dark #toggle::after { background: #FAFAFA; }
+  #toggle:hover { transform: scale(1.08); }
 </style>
 </head>
 <body>
 <canvas id="gl">Glass, refractive glass type. Requires JavaScript and WebGL.</canvas>
+<div id="toggle" title="Toggle theme"></div>
 
 <script src="./core/shader.js"></script>
 <script src="./core/exporters.js"></script>
@@ -617,6 +624,23 @@ const ui = PT.ui({
   title: 'Glass',
   hints: 'Click add · Drag move · Shift-click delete · Scroll resize · 1–4 shape · ←→ refraction · B bg · C layout · E export',
   theme: 'light',
+});
+
+// Theme: base light/dark. The nav switch (when embedded) drives this via #toggle;
+// it is "on top" - flipping it resets the refracted background to the white/black base.
+// B still cycles all BG_PALETTES entries as a local override until the next flip.
+const BG_LIGHT_IDX = Math.max(0, BG_PALETTES.findIndex(p => p.bg === '#FAFAFA'));
+const BG_DARK_IDX  = Math.max(0, BG_PALETTES.findIndex(p => p.bg === '#0A0A0A'));
+function applyTheme(dark){
+  bgIndex = dark ? BG_DARK_IDX : BG_LIGHT_IDX;
+  drawBackground();
+  uploadCanvasTexture(gl, bgTex, bgCanvas);
+  render();
+}
+document.getElementById('toggle').addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  ui.theme(dark ? 'dark' : 'light');
+  applyTheme(dark);
 });
 
 // Init.

@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<!--
+  Massing - the plan and the form, one composition
+  Modules pack onto a floor grid (a 2D plan); each module's height is its value. Tilt from plan (top-down) to massing (axonometric) and the same layout reads in 2D and 3D. The pack + extrude solve is the animation; export the composition.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Massing - the plan and the form</title>
+<meta name="description" content="A layout that reads in 2D and 3D: modules pack onto a floor grid (the plan), each module's height is its value. Tilt from plan to axonometric massing and orbit the same composition; the pack and extrude solve is the animation.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Massing - the plan and the form">
+<meta property="og:description" content="A layout that reads in 2D and 3D: modules pack onto a floor grid (the plan), height encodes value, tilt from plan to axonometric massing. The pack and extrude solve is the animation.">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Massing",
+  "applicationCategory": "DesignApplication",
+  "description": "A dual 2D/3D layout tool: modules pack onto a floor grid to form a plan, each module's height encodes its value; tilt from the top-down plan to an orbitable axonometric massing and reweight, reorder, and export the composition.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "layout, composition, axonometric, isometric, massing, plan, extrude, packing, 3D layout, interaction design, HTML canvas, generative",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white: #FAFAFA; --c-grey: #8A8A8A; --c-black: #0A0A0A;
+  --obj: rgb(98,103,113);
+  --bg: var(--c-white); --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.16); --grid: rgba(10,10,10,0.07);
+  --line: rgba(10,10,10,0.30);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black); --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.16); --grid: rgba(250,250,250,0.06);
+  --line: rgba(250,250,250,0.24);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+#c { position: fixed; inset: 0; z-index: 1; }
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: transform 0.22s var(--ease), border-color 0.22s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.22s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; } .cursor .cross.v { width: 1px; height: 10px; }
+body.hovering .cursor .ring { border-color: var(--fg); transform: scale(1.2); }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(0.5); }
+body.dragging .cursor .cross { background: var(--fg); }
+@media (hover: none) and (pointer: coarse) { html, body { cursor: auto; } .cursor { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+const HINTS = 'Drag to orbit · P plan / massing · Scroll a block to reweight · Drag a block to reorder · C copy';
+const ui = PT.ui({ title: 'Massing', hints: HINTS, theme: 'light' });
+const pill = document.querySelector('.adui-pill');
+const seg = (h) => '<span class="adui-seg">' + h + '</span>';
+const kkey = (t) => '<b class="adui-key">' + t + '</b>';
+let flashUntil = 0;
+function flashMsg(t, ms = 1700) { if (!pill) return; pill.innerHTML = seg(kkey(t)); flashUntil = performance.now() + ms; }
+function tickBar(now) { if (flashUntil && now > flashUntil) { ui.setHints(HINTS); flashUntil = 0; } }
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// ───── Model ─────
+// Each MODULE has a footprint (fw x fd grid cells) and a VALUE. A deterministic skyline
+// pack places footprints on a COLS-wide floor grid (that flat arrangement is the 2D plan);
+// the value extrudes each footprint into a block of that height (the 3D massing). Tilt the
+// camera from overhead (plan) to axonometric (massing) - the same layout, read two ways.
+const COLS = 5;
+const HU = 0.30;            // world height per value unit
+const LIFT = 0.9;          // how far a dragged block floats above the floor
+let MODULES = [];          // canonical set
+let order = [];            // list order -> drives the pack (reorder = re-pack)
+let ROWS = 1;              // floor depth after the pack
+let offX = 0, offY = 0, offXT = 0, offYT = 0;   // occupied-cell centroid (animated) + its target
+
+function mod(label, fw, fd, value) {
+  return { id: MODULES.length, label, fw, fd, value,
+           gx: 0, gy: 0,                       // packed grid origin (target)
+           ax: 0, ay: 0, ah: 0 };              // animated world origin (x,y) + height (z)
+}
+function seed() {
+  MODULES = [];
+  // a page-composition metaphor: modules of a layout, height = importance
+  const spec = [
+    ['Hero', 2, 2, 8], ['Feed', 1, 2, 5], ['Nav', 2, 1, 3],
+    ['Media', 2, 1, 6], ['Aside', 1, 2, 4], ['Stat', 1, 1, 7],
+    ['Stat', 1, 1, 2], ['Foot', 2, 1, 2], ['Tag', 1, 1, 5], ['Note', 1, 1, 3],
+  ];
+  for (const [l, w, d, v] of spec) MODULES.push(mod(l, w, d, v));
+  order = MODULES.slice();
+  pack(); fitScale();
+  offX = offXT; offY = offYT; s = sT;      // snap the camera on load (nothing to animate yet)
+  // start each block already at its packed footprint, height at 0 -> they rise (the extrude solve)
+  for (const b of MODULES) { b.ax = b.gx - offX; b.ay = b.gy - offY; b.ah = 0; }
+  wake();
+}
+
+// Deterministic skyline pack: leftmost slot with the lowest skyline. Order-preserving, so a
+// reorder re-packs continuously (blocks ease from their old cell to their new one).
+// recenter=false keeps the camera centroid frozen (used mid-drag: re-centring every reorder was
+// sliding the whole formation, which fed back into the reorder pick and caused a shake).
+function pack(recenter = true) {
+  const sky = new Array(COLS).fill(0);
+  for (const b of order) {
+    const w = b.fw, d = b.fd;
+    let bestX = 0, bestY = Infinity;
+    for (let x = 0; x + w <= COLS; x++) {
+      let y = 0; for (let k = x; k < x + w; k++) y = Math.max(y, sky[k]);
+      if (y < bestY) { bestY = y; bestX = x; }
+    }
+    b.gx = bestX; b.gy = bestY;
+    for (let k = bestX; k < bestX + w; k++) sky[k] = bestY + d;
+  }
+  ROWS = Math.max(1, ...sky);
+  if (!recenter) return;
+  // area-weighted centroid of the packed footprints -> the world origin, so the mass is centred.
+  // Only the TARGET moves here; offX/offY ease toward it so a re-pack recentres smoothly (no jump).
+  let sx = 0, sy = 0, sa = 0;
+  for (const b of order) { const a = b.fw * b.fd; sx += (b.gx + b.fw / 2) * a; sy += (b.gy + b.fd / 2) * a; sa += a; }
+  offXT = sa ? sx / sa : COLS / 2; offYT = sa ? sy / sa : ROWS / 2;
+}
+
+// ───── View ─────
+const TILT_PLAN = Math.PI / 2;          // straight down: the 2D plan
+const TILT_MASS = 0.70;                  // ~40deg: the default massing angle
+const TILT_MIN = 0.42;                   // lowest we let the camera drop
+let az = -0.62, azTarget = -0.62, savedAz = -0.62;   // azimuth (orbit); plan mode squares it up
+let tilt = TILT_MASS, tiltTarget = TILT_MASS;
+let s = 70, sT = 70;                     // pixels per world unit (eased toward sT)
+let cx = 0, cy = 0;                      // screen centre
+
+// fitScale only sets the TARGET zoom; s eases toward it so a re-pack that changes ROWS glides
+// instead of snapping. cx doesn't depend on the pack, so it's set immediately.
+function fitScale() {
+  const spread = Math.max(COLS, ROWS) * 1.42 + 2.4;
+  sT = clamp(Math.min(W, H) / spread, 34, 128);
+  cx = W / 2; updateCentreY();
+}
+// Vertical centre depends on tilt: the flat plan (tilt=90) sits dead-centre; tilting into the
+// massing drops it so the towers rising up-screen stay framed. Recomputed every frame as tilt eases.
+function updateCentreY() {
+  const m = clamp(Math.cos(tilt) / Math.cos(TILT_MASS), 0, 1);
+  cy = H * (0.5 + 0.07 * m);
+}
+
+// Parallel (axonometric) projection. World (x,y up-is-z) -> screen px + a depth key.
+// At tilt = 90deg height collapses and the floor shows flat (the plan); tilting down lifts
+// the height axis into view (the massing).
+function project(x, y, z) {
+  const ca = Math.cos(az), sa = Math.sin(az), ct = Math.cos(tilt), st = Math.sin(tilt);
+  const rx = x * ca - y * sa;
+  const ry = x * sa + y * ca;
+  return {
+    sx: cx + rx * s,
+    sy: cy + (-ry * st - z * ct) * s,
+    d: -ry * ct + z * st,                // larger = nearer the camera (painter sort)
+  };
+}
+// Invert the projection onto the floor plane (z = 0) - used to find where a drag points.
+function floorAt(px, py) {
+  const ca = Math.cos(az), sa = Math.sin(az), st = Math.sin(tilt);
+  const rx = (px - cx) / s;
+  const ry = -(py - cy) / (s * st);
+  return { x: rx * ca + ry * sa, y: -rx * sa + ry * ca };
+}
+// Which side faces point at the camera (outward-normal . view-direction > 0).
+function viewDir() {
+  const ca = Math.cos(az), sa = Math.sin(az), ct = Math.cos(tilt), st = Math.sin(tilt);
+  return { x: -sa * ct, y: -ca * ct, z: st };
+}
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fitScale(); s = sT;       // snap zoom on a window resize (no animation for that)
+}
+
+// ───── Interaction state ─────
+let mouseX = -1e4, mouseY = -1e4;
+let mode = null;                          // 'orbit' | 'drag'
+let pointerActive = false;                // true only while a pointer is genuinely down on us
+let dragBlock = null, dragDX = 0, dragDY = 0, dragMoved = false, downX = 0, downY = 0;
+let charged = null, hoverBlock = null;
+let lastAz = 0, lastTilt = 0;
+let running = false, settleFrames = 0;
+function wake() { settleFrames = 0; if (!running) { running = true; requestAnimationFrame(step); } }
+
+// ───── Colour ─────
+function parseRGB(str) { const m = str.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/); return m ? [ +m[1], +m[2], +m[3] ] : [ 98, 103, 113 ]; }
+function scaleRGB(rgb, f) { return 'rgb(' + rgb.map(v => clamp(Math.round(v * f), 0, 255)).join(',') + ')'; }
+
+// ───── Frame ─────
+function step(now) {
+  tickBar(now);
+
+  // Safety net: a block can never stay in its dragged state (lifted + drawn on top) once no pointer
+  // is down. Guards against a missed pointerup - released over the legend/toggle, off-window, a
+  // tab-switch, or a dropped pointer capture - which otherwise leaves it floating after you let go.
+  if (dragBlock && !pointerActive) endPointer();
+
+  // ease tilt (plan <-> massing) + azimuth (plan squares the grid up), the zoom + recentre (so a
+  // re-pack glides instead of snapping), and the pack / extrude
+  tilt = lerp(tilt, tiltTarget, 0.16);
+  az = lerp(az, azTarget, 0.16);
+  updateCentreY();
+  offX = lerp(offX, offXT, 0.2); offY = lerp(offY, offYT, 0.2); s = lerp(s, sT, 0.2);
+  let moving = Math.abs(tilt - tiltTarget) > 1e-4 || Math.abs(az - azTarget) > 1e-4
+    || Math.abs(offX - offXT) > 1e-4 || Math.abs(offY - offYT) > 1e-4 || Math.abs(s - sT) > 1e-3;
+
+  const fx = floorAt(mouseX, mouseY);
+  for (const b of MODULES) {
+    let tx, ty, th;
+    if (b === dragBlock) {
+      tx = fx.x + dragDX; ty = fx.y + dragDY; th = b.value * HU + LIFT;   // float it while dragging
+    } else {
+      tx = b.gx - offX; ty = b.gy - offY; th = b.value * HU;
+    }
+    const nax = lerp(b.ax, tx, b === dragBlock ? 0.35 : 0.2);
+    const nay = lerp(b.ay, ty, b === dragBlock ? 0.35 : 0.2);
+    const nah = lerp(b.ah, th, 0.18);
+    if (Math.abs(nax - b.ax) > 1e-4 || Math.abs(nay - b.ay) > 1e-4 || Math.abs(nah - b.ah) > 1e-4) moving = true;
+    b.ax = nax; b.ay = nay; b.ah = nah;
+  }
+  if (az !== lastAz || tilt !== lastTilt) { moving = true; lastAz = az; lastTilt = tilt; }
+
+  draw();
+
+  if (mode || moving) settleFrames = 0; else settleFrames++;
+  if (settleFrames > 3) { running = false; return; }   // idle: stop the loop (zero idle cost), input wakes it
+  requestAnimationFrame(step);
+}
+
+// ───── Draw ─────
+function drawFloor(gridc) {
+  X.strokeStyle = gridc; X.lineWidth = 1;
+  X.beginPath();
+  for (let i = 0; i <= COLS; i++) { const a = project(i - offX, -offY, 0), b = project(i - offX, ROWS - offY, 0); X.moveTo(a.sx, a.sy); X.lineTo(b.sx, b.sy); }
+  for (let j = 0; j <= ROWS; j++) { const a = project(-offX, j - offY, 0), b = project(COLS - offX, j - offY, 0); X.moveTo(a.sx, a.sy); X.lineTo(b.sx, b.sy); }
+  X.stroke();
+}
+function poly(pts) { X.beginPath(); X.moveTo(pts[0].sx, pts[0].sy); for (let i = 1; i < pts.length; i++) X.lineTo(pts[i].sx, pts[i].sy); X.closePath(); }
+
+function draw() {
+  const csS = getComputedStyle(document.body);
+  const bg = csS.getPropertyValue('--bg').trim();
+  const objRGB = parseRGB(csS.getPropertyValue('--obj').trim());
+  const gridc = csS.getPropertyValue('--grid').trim();
+  const linec = csS.getPropertyValue('--line').trim();
+  const dark = document.body.classList.contains('dark');
+  const paper = dark ? 'rgba(250,250,250,0.9)' : 'rgba(250,250,250,0.94)';
+  const ink = 'rgba(10,10,10,0.86)';
+
+  X.fillStyle = bg; X.fillRect(0, 0, W, H);
+  drawFloor(gridc);
+
+  const V = viewDir();
+
+  // Painter's order from the STABLE target cell (b.gx/b.gy), not the animated position. During a
+  // rearrange the animated centres slide through each other and an animated-depth sort flips order
+  // frame to frame - that flipping is exactly the flashing / z-fighting. Target cells hold still for
+  // the whole ease, so the order is stable; height breaks ties so a taller block reads in front of a
+  // shorter neighbour. The actively-dragged block is lifted and floats, so it always draws last (on
+  // top) rather than being sorted - that removes the overlap glitch while dragging.
+  const depthKey = (b) => (b.gx - offXT + b.fw / 2) * V.x + (b.gy - offYT + b.fd / 2) * V.y + (b.value * HU) * V.z;
+  const list = MODULES.filter(b => b !== dragBlock).sort((p, q) => (depthKey(p) - depthKey(q)) || (p.id - q.id));
+  if (dragBlock) list.push(dragBlock);
+
+  for (const b of list) {
+    const x0 = b.ax, x1 = b.ax + b.fw, y0 = b.ay, y1 = b.ay + b.fd, h = b.ah;
+    const isC = b === charged;
+    const base = isC ? [251, 242, 81] : objRGB;
+    const topF = scaleRGB(base, isC ? 1.04 : 1.22);
+    const xF = scaleRGB(base, isC ? 0.84 : 0.92);
+    const yF = scaleRGB(base, isC ? 0.66 : 0.72);
+
+    // side faces that point at the camera (skip when flat - height ~ 0 in plan view)
+    if (h > 0.012) {
+      const faces = [];
+      if (V.x > 0) faces.push({ f: xF, p: [ project(x1, y0, 0), project(x1, y1, 0), project(x1, y1, h), project(x1, y0, h) ] });
+      if (V.x < 0) faces.push({ f: xF, p: [ project(x0, y1, 0), project(x0, y0, 0), project(x0, y0, h), project(x0, y1, h) ] });
+      if (V.y > 0) faces.push({ f: yF, p: [ project(x1, y1, 0), project(x0, y1, 0), project(x0, y1, h), project(x1, y1, h) ] });
+      if (V.y < 0) faces.push({ f: yF, p: [ project(x0, y0, 0), project(x1, y0, 0), project(x1, y0, h), project(x0, y0, h) ] });
+      for (const fc of faces) { poly(fc.p); X.fillStyle = fc.f; X.fill(); X.strokeStyle = linec; X.lineWidth = 1; X.stroke(); }
+    }
+
+    // top face (the footprint, always visible)
+    const top = [ project(x0, y0, h), project(x1, y0, h), project(x1, y1, h), project(x0, y1, h) ];
+    poly(top); X.fillStyle = topF; X.fill(); X.strokeStyle = linec; X.lineWidth = 1; X.stroke();
+
+    // label + value, upright on the top-face centroid
+    const ctr = project(x0 + b.fw / 2, y0 + b.fd / 2, h);
+    const tc = isC ? ink : paper;
+    X.fillStyle = tc; X.textAlign = 'center'; X.textBaseline = 'middle';
+    const fs = clamp(s * 0.2, 11, 20);
+    X.font = '500 ' + fs.toFixed(1) + "px 'DM Sans', sans-serif";
+    X.fillText(b.label, ctr.sx, ctr.sy - fs * 0.42);
+    X.font = '400 ' + (fs * 0.72).toFixed(1) + "px 'IBM Plex Mono', monospace";
+    X.globalAlpha = 0.8; X.fillText(String(b.value), ctr.sx, ctr.sy + fs * 0.5); X.globalAlpha = 1;
+  }
+}
+
+// pick the topmost block whose top face is under the cursor
+function pointInPoly(px, py, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].sx, yi = pts[i].sy, xj = pts[j].sx, yj = pts[j].sy;
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+function blockAt(px, py) {
+  let best = null, bestD = -Infinity;
+  for (const b of MODULES) {
+    const x0 = b.ax, x1 = b.ax + b.fw, y0 = b.ay, y1 = b.ay + b.fd, h = b.ah;
+    const top = [ project(x0, y0, h), project(x1, y0, h), project(x1, y1, h), project(x0, y1, h) ];
+    if (pointInPoly(px, py, top)) { const d = project(x0 + b.fw / 2, y0 + b.fd / 2, h).d; if (d > bestD) { bestD = d; best = b; } }
+  }
+  return best;
+}
+
+// Reorder while dragging: swap the dragged block into whichever footprint its CENTRE is over.
+// point-in-footprint is a stable predicate (no oscillation while the cursor stays inside a cell),
+// unlike a nearest-centre test whose winner flips on tiny movements. Recenter stays frozen
+// (pack(false)) so the formation doesn't slide out from under the pointer.
+function reorderTo(qx, qy) {          // qx,qy = dragged block centre, world coords
+  let over = null;
+  for (const b of order) {
+    if (b === dragBlock) continue;
+    const bx = b.gx - offX, by = b.gy - offY;
+    if (qx >= bx && qx < bx + b.fw && qy >= by && qy < by + b.fd) { over = b; break; }
+  }
+  if (!over) return;
+  const from = order.indexOf(dragBlock), to = order.indexOf(over);
+  if (from === to || to < 0) return;
+  order.splice(from, 1); order.splice(to, 0, dragBlock);
+  pack(false);
+}
+
+// ───── Pointer ─────
+C.addEventListener('pointermove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  const cur = document.getElementById('cursor'); cur.style.left = e.clientX + 'px'; cur.style.top = e.clientY + 'px';
+  // no button held but we still think we're interacting => a release was missed; drop it now
+  if ((mode || dragBlock) && e.buttons === 0) endPointer();
+  if (mode === 'orbit') {
+    az += (e.clientX - downX) * 0.008; azTarget = az;
+    tiltTarget = clamp(tiltTarget - (e.clientY - downY) * 0.006, TILT_MIN, TILT_PLAN);
+    downX = e.clientX; downY = e.clientY; wake();
+  } else if (mode === 'drag' && dragBlock) {
+    dragMoved = dragMoved || Math.hypot(e.clientX - downX, e.clientY - downY) > 4;
+    const fx = floorAt(mouseX, mouseY);
+    reorderTo(fx.x + dragDX + dragBlock.fw / 2, fx.y + dragDY + dragBlock.fd / 2);
+    wake();
+  } else {
+    hoverBlock = blockAt(mouseX, mouseY);
+    document.body.classList.toggle('hovering', !!hoverBlock);
+  }
+});
+C.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  mouseX = downX = e.clientX; mouseY = downY = e.clientY;
+  pointerActive = true;
+  const b = blockAt(e.clientX, e.clientY);
+  if (b) {
+    mode = 'drag'; dragBlock = b; charged = b; dragMoved = false;
+    const fx = floorAt(e.clientX, e.clientY);
+    dragDX = b.ax - fx.x; dragDY = b.ay - fx.y;          // grab offset so it doesn't jump
+    document.body.classList.add('dragging'); document.body.classList.remove('hovering');
+  } else {
+    mode = 'orbit';
+    document.body.classList.add('dragging'); document.body.classList.remove('hovering');
+  }
+  try { C.setPointerCapture(e.pointerId); } catch (err) {}
+  wake();
+});
+function endPointer() {
+  pointerActive = false;
+  if (mode === 'drag' && dragBlock) {
+    if (!dragMoved) charged = dragBlock;   // a click just charges it
+    pack(true); fitScale();                // drop: re-enable recentre + refit, eased into final place
+  }
+  mode = null; dragBlock = null;
+  document.body.classList.remove('dragging');
+  wake();
+}
+// End the drag on a release ANYWHERE - not just on the canvas - so it can't get stuck if the
+// pointerup lands on the legend/toggle, off-window, or after a lost capture. blur/visibility cover
+// tab-switches and window-focus loss mid-drag.
+window.addEventListener('pointerup', endPointer);
+window.addEventListener('pointercancel', endPointer);
+window.addEventListener('blur', endPointer);
+document.addEventListener('visibilitychange', () => { if (document.hidden) endPointer(); });
+// Any pointer motion anywhere with no button held ends a lingering drag - covers the pointer
+// re-entering the window (after a release outside it) over the legend/toggle, not just the canvas.
+window.addEventListener('pointermove', (e) => { if ((mode || dragBlock) && e.buttons === 0) endPointer(); });
+
+// scroll a block to change its value (its height) - the extrude eases to the new value
+C.addEventListener('wheel', (e) => {
+  const b = blockAt(e.clientX, e.clientY);
+  if (!b) return;
+  e.preventDefault();
+  b.value = clamp(b.value + (e.deltaY < 0 ? 1 : -1), 1, 9);
+  charged = b;
+  flashMsg(b.label + ' = ' + b.value);
+  wake();
+}, { passive: false });
+
+C.addEventListener('dblclick', (e) => {
+  if (blockAt(e.clientX, e.clientY)) return;
+  azTarget = savedAz = -0.62; tiltTarget = TILT_MASS; flashMsg('View reset'); wake();
+});
+
+// ───── Keys ─────
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.repeat) return;                       // ignore held-key auto-repeat (holding P was flip-flopping the tilt target)
+  // a keypress means the user isn't mid mouse-drag; drop any in-progress OR stuck drag first, so a
+  // block can never carry its lifted/on-top state into a keyboard-driven view change (e.g. P).
+  if (dragBlock) endPointer();
+  const k = e.key;
+  if (k === 'p' || k === 'P') {
+    const inPlan = Math.abs(tiltTarget - TILT_PLAN) < 0.02;
+    if (inPlan) { tiltTarget = TILT_MASS; azTarget = savedAz; flashMsg('Massing'); }
+    else { savedAz = azTarget; azTarget = Math.round(az / (Math.PI / 2)) * (Math.PI / 2); tiltTarget = TILT_PLAN; flashMsg('Plan'); }
+    wake();
+  }
+  else if (k === 'c' || k === 'C') copyComposition();
+  else if (k === 's' || k === 'S') savePNG();
+  else if (k === 'r' || k === 'R') { seed(); flashMsg('Reseeded'); }
+});
+
+// Payoff: the composition the solver found - each module's floor cell + footprint + value/height.
+function copyComposition() {
+  const data = {
+    grid: { cols: COLS, rows: ROWS },
+    modules: order.map(b => ({ label: b.label, col: b.gx, row: b.gy, w: b.fw, d: b.fd, value: b.value, height: +(b.value * HU).toFixed(2) })),
+  };
+  const json = JSON.stringify(data, null, 2);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(json).then(() => flashMsg('Copied composition to clipboard'), () => flashMsg('Copy blocked - see console'));
+    console.log(json);
+  } else { console.log(json); flashMsg('Composition logged to console'); }
+}
+function savePNG() { C.toBlob((b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'massing.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }, 'image/png'); }
+
+document.getElementById('toggle').addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); ui.theme(dark ? 'dark' : 'light'); wake(); });
+window.addEventListener('resize', () => { resize(); wake(); });
+document.fonts && document.fonts.ready && document.fonts.ready.then(wake);
+resize();
+seed();
+requestAnimationFrame(step);
+</script>
+</body>
+</html>

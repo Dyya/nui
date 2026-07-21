@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<!--
+  Mitosis - stretch a cell to divide it
+  Stretch a cell to bud a copy, then pull it past the pinch to divide it in two.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Mitosis - stretch a cell to divide it</title>
+<meta name="description" content="Stretch a cell to bud a copy, then pull it past the pinch to divide it in two.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Mitosis - stretch a cell to divide it">
+<meta property="og:description" content="Stretch a cell to bud a copy, then pull it past the pinch to divide it in two.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Mitosis",
+  "applicationCategory": "DesignApplication",
+  "description": "Stretch a cell to bud a copy, then pull it past the pinch to divide it in two.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "mitosis, interaction design, gesture, duplication, split, stretch, cell division, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white:#FAFAFA; --c-grey:#8A8A8A; --c-black:#0A0A0A;
+  --obj: rgb(98,103,113);   /* objects: theme-aware neutral; the charged element fills accent yellow */
+  --bg: var(--c-white);
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.12);
+  --mid: rgba(10,10,10,0.30);
+  --active: rgba(10,10,10,0.60);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.12);
+  --mid: rgba(250,250,250,0.30);
+  --active: rgba(250,250,250,0.60);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); color:var(--fg); font-family:'DM Sans',sans-serif; cursor:none; transition:background .4s var(--ease); touch-action:none; overscroll-behavior:none; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+#c { position:fixed; inset:0; z-index:1; }
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+.cursor{position:fixed;z-index:50;pointer-events:none;width:28px;height:28px;transform:translate(-50%,-50%);}
+.cursor .ring{position:absolute;inset:0;border:1px solid var(--c-grey);border-radius:50%;transition:transform .2s var(--ease),border-color .2s var(--ease);}
+.cursor .cross{position:absolute;left:50%;top:50%;background:var(--c-grey);transform:translate(-50%,-50%);transition:background .2s var(--ease);}
+.cursor .cross.h{width:10px;height:1px;} .cursor .cross.v{width:1px;height:10px;}
+body.grabbing .cursor .ring{border-color:var(--fg);transform:scale(1.35);}
+body.grabbing .cursor .cross{background:var(--fg);}
+@media (hover:none) and (pointer:coarse){ html,body{cursor:auto;} .cursor{display:none;} }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+let W = 0, H = 0, prevW = 0, prevH = 0;
+
+const HINTS = 'Drag a cell to bud a copy · Pull past the pinch to divide · Shift-drag to move · R reset';
+const ui = PT.ui({ title: 'Mitosis', hints: HINTS, theme: 'light' });
+const pill = document.querySelector('.adui-pill');
+const seg = h => '<span class="adui-seg">' + h + '</span>';
+const key = t => '<b class="adui-key">' + t + '</b>';
+let barTimer = null, lastBar = '';
+function setBar(h){ clearTimeout(barTimer); if (pill && h !== lastBar){ pill.innerHTML = h; lastBar = h; } }
+function idleBar(){ clearTimeout(barTimer); lastBar = ''; ui.setHints(HINTS); }
+function flashBar(h, ms){ setBar(h); barTimer = setTimeout(() => { if (!pull && !move) idleBar(); }, ms); }
+
+const cursor = document.getElementById('cursor');
+const toggle = document.getElementById('toggle');
+
+let COL = {};
+function readTheme(){
+  const cs = getComputedStyle(document.body);
+  COL = { bg: cs.getPropertyValue('--bg').trim(), fg: cs.getPropertyValue('--fg').trim(),
+          mid: cs.getPropertyValue('--mid').trim(), active: cs.getPropertyValue('--active').trim(),
+          obj: cs.getPropertyValue('--obj').trim() };
+}
+readTheme();
+
+let cells = [];        // { x, y, r, vx, vy, sc }
+let pull = null;       // { i, cx, cy, ring }
+let move = null;       // { i, ox, oy }
+let pops = [];         // { x, y, t }
+let shiftHeld = false;
+let mx = -100, my = -100;
+
+function resize(){
+  prevW = W || window.innerWidth; prevH = H || window.innerHeight;
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (cells.length && prevW && prevH){
+    const sr = Math.min(W / prevW, H / prevH), ocx = prevW / 2, ocy = prevH / 2, ncx = W / 2, ncy = H / 2;
+    for (const c of cells){ c.x = ncx + (c.x - ocx) * sr; c.y = ncy + (c.y - ocy) * sr; c.r *= sr; }
+  }
+}
+
+function seed(){
+  cells = []; pull = null; move = null; pops = [];
+  const S = Math.min(W, H);
+  const spots = [[0.3, 0.34], [0.62, 0.3], [0.44, 0.6], [0.72, 0.64], [0.28, 0.66]];
+  for (let i = 0; i < spots.length; i++){
+    cells.push({ x: W * spots[i][0], y: H * spots[i][1], r: S * (0.05 + Math.random() * 0.02), vx: 0, vy: 0, sc: 1 });
+  }
+}
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+function hitCell(x, y){ for (let i = cells.length - 1; i >= 0; i--){ if (Math.hypot(x - cells[i].x, y - cells[i].y) < cells[i].r) return i; } return -1; }
+
+function childGeom(P){
+  const dx = pull.cx - P.x, dy = pull.cy - P.y, d = Math.hypot(dx, dy) || 0.0001;
+  const split = P.r * 2.6;
+  const progress = clamp(d / split, 0, 1);
+  const childR = P.r * clamp(d / (P.r * 2.2), 0.18, 1);
+  return { dx, dy, d, split, progress, childR, nx: dx / d, ny: dy / d };
+}
+
+// Filled gooey neck between parent circle and the bud, pinching as it stretches.
+function drawNeck(P, g){
+  const cx = pull.cx, cy = pull.cy;
+  const px = -g.ny, py = g.nx; // perpendicular
+  const w0 = P.r * 0.8, w1 = g.childR * 0.8;
+  const pinch = Math.max(2, Math.min(P.r, g.childR) * (1 - g.progress) * 0.95);
+  const mMidx = (P.x + cx) / 2, mMidy = (P.y + cy) / 2;
+  X.beginPath();
+  X.moveTo(P.x + px * w0, P.y + py * w0);
+  X.quadraticCurveTo(mMidx + px * pinch, mMidy + py * pinch, cx + px * w1, cy + py * w1);
+  X.lineTo(cx - px * w1, cy - py * w1);
+  X.quadraticCurveTo(mMidx - px * pinch, mMidy - py * pinch, P.x - px * w0, P.y - py * w0);
+  X.closePath();
+  X.fillStyle = '#FBF251';   // the neck belongs to the charged, dividing cell
+  X.fill();
+}
+
+function drawCell(c){
+  X.save();
+  const r = c.r * c.sc;
+  const charged = pull && cells[pull.i] === c;   // the cell being divided is the one charged thing
+  X.fillStyle = charged ? '#FBF251' : COL.obj;   // flat fill - no fake sphere shading
+  X.beginPath(); X.arc(c.x, c.y, r, 0, Math.PI * 2); X.fill();
+  X.restore();
+}
+
+function draw(){
+  X.fillStyle = COL.bg; X.fillRect(0, 0, W, H);
+  // settle recoil
+  for (const c of cells){
+    if (c.vx || c.vy){ c.x += c.vx; c.y += c.vy; c.vx *= 0.86; c.vy *= 0.86; if (Math.abs(c.vx) < 0.02) c.vx = 0; if (Math.abs(c.vy) < 0.02) c.vy = 0; }
+    c.x = clamp(c.x, c.r, W - c.r); c.y = clamp(c.y, c.r + 52, H - c.r - 52);
+    if (c.sc < 1) c.sc = Math.min(1, c.sc + (1 - c.sc) * 0.2 + 0.02);
+  }
+  // Neck renders UNDER both circles, so their round silhouettes stay clean and the
+  // stretch tucks behind the parent and the bud. Order: neck -> cells (parent) -> bud.
+  const g = pull ? childGeom(cells[pull.i]) : null;
+  if (pull) drawNeck(cells[pull.i], g);
+  for (const c of cells) drawCell(c);
+  if (pull){
+    const P = cells[pull.i];
+    X.save();
+    X.fillStyle = '#FBF251';   // the bud is part of the charged, dividing cell (flat fill)
+    X.beginPath(); X.arc(pull.cx, pull.cy, g.childR, 0, Math.PI * 2); X.fill();
+    X.restore();
+    setBar(g.progress >= 1 ? seg(key('Release')) + seg('to divide') : seg(key('Pull')) + seg(Math.round(g.progress * 100) + '% to pinch'));
+  }
+  // pops
+  for (let i = pops.length - 1; i >= 0; i--){
+    const p = pops[i]; p.t += 0.05;
+    if (p.t >= 1){ pops.splice(i, 1); continue; }
+    X.save(); X.globalAlpha = (1 - p.t) * 0.8; X.strokeStyle = COL.fg; X.lineWidth = 2;
+    X.beginPath(); X.arc(p.x, p.y, 6 + p.t * 40, 0, Math.PI * 2); X.stroke(); X.restore();
+  }
+  requestAnimationFrame(draw);
+}
+
+window.addEventListener('resize', resize);
+resize(); seed(); draw();
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (move){ const c = cells[move.i]; c.x = mx - move.ox; c.y = my - move.oy; return; }
+  if (pull){ pull.cx = mx; pull.cy = my; }
+});
+
+window.addEventListener('pointerdown', e => {
+  if (e.target.closest('#toggle, .adui')) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  const i = hitCell(mx, my);
+  if (i < 0) return;
+  try { C.setPointerCapture(e.pointerId); } catch(_) {}
+  document.body.classList.add('grabbing');
+  if (shiftHeld){ move = { i, ox: mx - cells[i].x, oy: my - cells[i].y }; }
+  else { pull = { i, cx: mx, cy: my }; }
+});
+
+window.addEventListener('pointerup', () => {
+  if (pull){
+    const P = cells[pull.i];
+    const g = childGeom(P);
+    if (g.progress >= 1){
+      const child = { x: pull.cx, y: pull.cy, r: P.r, vx: g.nx * 2.2, vy: g.ny * 2.2, sc: 0.7 };
+      P.vx = -g.nx * 1.4; P.vy = -g.ny * 1.4;
+      cells.push(child);
+      pops.push({ x: (P.x + pull.cx) / 2, y: (P.y + pull.cy) / 2, t: 0 });
+      flashBar(seg(key('Divided')) + seg(cells.length + ' cells'), 1400);
+      navigator.vibrate && navigator.vibrate(8);
+    } else idleBar();
+  } else if (move) idleBar();
+  pull = null; move = null;
+  document.body.classList.remove('grabbing');
+});
+window.addEventListener('pointercancel', () => { pull = null; move = null; document.body.classList.remove('grabbing'); idleBar(); });
+
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); ui.theme(dark ? 'dark' : 'light'); readTheme(); });
+
+window.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'Shift') shiftHeld = true;
+  if ((e.key === 'r' || e.key === 'R') && !e.repeat){ seed(); idleBar(); }
+});
+window.addEventListener('keyup', e => { if (e.key === 'Shift') shiftHeld = false; });
+</script>
+</body>
+</html>

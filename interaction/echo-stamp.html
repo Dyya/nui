@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<!--
+  Echo stamp - stamp a trail of echo copies
+  Hold E and drag an object to stamp a spaced trail of fading echo copies, committed as real objects; scroll sets the spacing.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Echo stamp - stamp a trail of echo copies</title>
+<meta name="description" content="Hold E and drag an object to stamp a spaced trail of fading echo copies, committed as real objects; scroll sets the spacing.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Echo stamp - stamp a trail of echo copies">
+<meta property="og:description" content="Hold E and drag an object to stamp a spaced trail of fading echo copies, committed as real objects; scroll sets the spacing.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Echo stamp",
+  "applicationCategory": "DesignApplication",
+  "description": "Hold E and drag an object to stamp a spaced trail of fading echo copies, committed as real objects; scroll sets the spacing.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "echo stamp, interaction design, duplicate, duplication, stamp, trail, echo, spacing, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg: #0a0a0c; --fg: rgba(255,255,255,0.92); --fg-dim: rgba(255,255,255,0.45); --fg-faint: rgba(255,255,255,0.18);
+    --grid: rgba(255,255,255,0.018); --chrome-bg: rgba(20,20,24,0.85); --chrome-bd: rgba(255,255,255,0.08);
+    --obj: rgb(132,137,148);
+  }
+  body.light { --bg: #FAFAFA; --fg: rgba(0,0,0,0.88); --fg-dim: rgba(0,0,0,0.45); --fg-faint: rgba(0,0,0,0.15); --grid: rgba(0,0,0,0.03); --chrome-bg: rgba(255,255,255,0.88); --chrome-bd: rgba(0,0,0,0.08); --obj: rgb(98,103,113); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s; }
+  canvas { position: fixed; inset: 0; display: block; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+  #cursor { position: fixed; left: 0; top: 0; width: 20px; height: 20px; border: 1.5px solid var(--fg); border-radius: 50%; pointer-events: none; z-index: 100; transform: translate(-50%, -50%); transition: border-color 0.2s, width 0.15s, height 0.15s; }
+  #cursor::before, #cursor::after { content: ''; position: absolute; background: var(--fg); }
+  #cursor::before { top: 50%; left: -3px; right: -3px; height: 1px; transform: translateY(-50%); }
+  #cursor::after { left: 50%; top: -3px; bottom: -3px; width: 1px; transform: translateX(-50%); }
+  #cursor.echo { border-color: var(--fg); width: 28px; height: 28px; }
+  #cursor.echo::after { background: var(--fg); }
+  #cursor.echo::before { background: var(--fg); }
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <div id="toggle" title="Toggle theme"></div>
+  <div id="cursor"></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const cursor = document.getElementById('cursor');
+const readout = { set innerHTML(v){}, set textContent(v){} };
+
+const ui = PT.ui({ title: 'Echo stamp', hints: 'E + drag stamps echoes · Scroll spacing · R reset', theme: 'light' });
+const toggle = document.getElementById('toggle');
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); document.body.classList.toggle('light', !dark); ui.theme(dark ? 'dark' : 'light'); });
+
+// state BEFORE resize
+let W = 0, H = 0;
+let seed = 919191;
+let shapes = [];
+let initialShapes = [];
+let echoKey = false;
+let drag = null; // { id, offX, offY, path: [{x,y}], lastEchoAt: {x,y} }
+let mx = -100, my = -100;
+let hoverId = null;
+let spacing = 90;
+let totalCommitted = 0;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() { if (shapes.length === 0) build(); }
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) { return function() { let t = (s += 0x6D2B79F5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+
+function build() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  initialShapes = [];
+  let tries = 0;
+  while (shapes.length < 6 && tries < 2000) {
+    const x = 0.12 + rng() * 0.76;
+    const y = 0.18 + rng() * 0.64;
+    const size = 30 + rng() * 14;
+    let ok = true;
+    for (const o of shapes) {
+      if (Math.hypot(x - o.nx, y - o.ny) < 0.14) { ok = false; break; }
+    }
+    if (ok) {
+      const sh = {
+        id: shapes.length + 1,
+        nx: x, ny: y,
+        x: x * W, y: y * H,
+        size,
+        shape: ['circle', 'square', 'triangle'][(rng() * 3) | 0],
+        rotation: Math.floor(rng() * 12) * 30,
+        origin: true,
+      };
+      shapes.push(sh);
+      initialShapes.push({ ...sh });
+    }
+    tries++;
+  }
+  totalCommitted = 0;
+}
+
+
+function drawShape(s, alpha = 1, scaleMul = 1, fill = null) {
+  X.save();
+  X.translate(s.x, s.y);
+  X.rotate(s.rotation * Math.PI / 180);
+  X.globalAlpha = alpha;
+  X.fillStyle = fill || getComputedStyle(document.body).getPropertyValue('--obj');
+  const r = s.size * scaleMul;
+  X.beginPath();
+  if (s.shape === 'circle') { X.arc(0, 0, r, 0, Math.PI * 2); }
+  else if (s.shape === 'square') { X.rect(-r, -r, r * 2, r * 2); }
+  else { X.moveTo(0, -r); X.lineTo(r, r * 0.8); X.lineTo(-r, r * 0.8); X.closePath(); }
+  X.fill();
+  // ink hairline so the charged (yellow) shape reads on the near-white ground
+  X.restore();
+}
+
+function draw() {
+  X.clearRect(0, 0, W, H);
+  // Commit: shapes that aren't "origin" have slightly lower alpha as echoes
+  for (const s of shapes) {
+    if (s.origin) continue;
+    drawShape(s, 0.82, s.scaleMul || 1);
+  }
+  for (const s of shapes) {
+    if (!s.origin) continue;
+    const isDrag = drag && drag.id === s.id;
+    const isHover = hoverId === s.id;
+    // the object being dragged is the one charged thing
+    drawShape(s, 1, 1, isDrag ? '#FBF251' : null);
+    if (isHover && !drag) {
+      X.save();
+      X.translate(s.x, s.y);
+      X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+      X.lineWidth = 1;
+      X.setLineDash(echoKey ? [4, 3] : [2, 4]);
+      X.beginPath(); X.arc(0, 0, s.size + 10, 0, Math.PI * 2); X.stroke();
+      X.restore();
+    }
+  }
+  // Draw pending echoes during drag
+  if (drag && echoKey) {
+    const s = shapes.find(x => x.id === drag.id);
+    if (s && drag.pendingEchoes && drag.pendingEchoes.length) {
+      // dashed path from current shape position backward through pending echoes
+      X.save();
+      X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+      X.globalAlpha = 0.45;
+      X.setLineDash([4, 5]);
+      X.lineWidth = 1;
+      X.beginPath();
+      X.moveTo(s.x, s.y);
+      for (const e of drag.pendingEchoes) X.lineTo(e.x, e.y);
+      X.stroke();
+      X.restore();
+      for (let i = 0; i < drag.pendingEchoes.length; i++) {
+        const e = drag.pendingEchoes[i];
+        const age = i / drag.pendingEchoes.length; // 0 newest, 1 oldest
+        const a = 0.85 - age * 0.55;
+        const sc = 1 - age * 0.25;
+        const ghost = { x: e.x, y: e.y, size: s.size, shape: s.shape, rotation: s.rotation };
+        drawShape(ghost, a, sc);
+      }
+    }
+  }
+  // Readout
+  const totalEchoes = shapes.filter(s => !s.origin).length;
+  readout.innerHTML = `Objects <b>${shapes.filter(s => s.origin).length}</b> · Echoes <b>${totalEchoes}</b> · Spacing <b>${spacing}</b>`;
+}
+
+function loop() { draw(); requestAnimationFrame(loop); }
+loop();
+
+function hit(x, y) {
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (!s.origin) continue;
+    if (Math.hypot(x - s.x, y - s.y) < s.size + 4) return s;
+  }
+  return null;
+}
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    if (s) {
+      s.x = mx - drag.offX;
+      s.y = my - drag.offY;
+      s.nx = s.x / W; s.ny = s.y / H;
+      if (echoKey) {
+        // record an echo if distance from lastEchoAt > spacing
+        const dx = s.x - drag.lastEchoAt.x, dy = s.y - drag.lastEchoAt.y;
+        if (Math.hypot(dx, dy) >= spacing) {
+          drag.pendingEchoes.unshift({ x: drag.lastEchoAt.x, y: drag.lastEchoAt.y });
+          if (drag.pendingEchoes.length > 14) drag.pendingEchoes.length = 14;
+          drag.lastEchoAt = { x: s.x, y: s.y };
+        }
+      }
+    }
+  } else {
+    const h = hit(mx, my);
+    hoverId = h ? h.id : null;
+  }
+});
+window.addEventListener('pointerdown', e => {
+  const h = hit(e.clientX, e.clientY);
+  if (h) {
+    drag = {
+      id: h.id,
+      offX: e.clientX - h.x,
+      offY: e.clientY - h.y,
+      pendingEchoes: [],
+      lastEchoAt: { x: h.x, y: h.y },
+    };
+    if (echoKey) cursor.classList.add('echo');
+  }
+});
+window.addEventListener('pointerup', () => {
+  if (drag && echoKey && drag.pendingEchoes.length) {
+    // commit pending echoes as real shapes
+    const parent = shapes.find(x => x.id === drag.id);
+    for (let i = 0; i < drag.pendingEchoes.length; i++) {
+      const e = drag.pendingEchoes[i];
+      const age = i / drag.pendingEchoes.length;
+      shapes.push({
+        id: Date.now() + Math.random(),
+        nx: e.x / W, ny: e.y / H,
+        x: e.x, y: e.y,
+        size: parent.size,
+        shape: parent.shape,
+        rotation: parent.rotation,
+        origin: false,
+        scaleMul: 1 - age * 0.25,
+      });
+    }
+    totalCommitted += drag.pendingEchoes.length;
+  }
+  drag = null;
+  cursor.classList.remove('echo');
+});
+window.addEventListener('keydown', e => {
+  if (e.key === 'e' || e.key === 'E') {
+    if (!echoKey) {
+      echoKey = true;
+      if (drag) cursor.classList.add('echo');
+    }
+  } else if (e.key === 'r' || e.key === 'R') {
+    shapes = shapes.filter(s => s.origin);
+    // reset positions too
+    for (let i = 0; i < shapes.length; i++) {
+      const init = initialShapes[i];
+      if (init) {
+        shapes[i].nx = init.nx; shapes[i].ny = init.ny;
+        shapes[i].x = init.nx * W; shapes[i].y = init.ny * H;
+      }
+    }
+  }
+});
+window.addEventListener('keyup', e => {
+  if (e.key === 'e' || e.key === 'E') {
+    echoKey = false;
+    cursor.classList.remove('echo');
+  }
+});
+window.addEventListener('wheel', e => {
+  spacing = clamp(spacing - Math.sign(e.deltaY) * 6, 40, 220);
+  e.preventDefault();
+}, { passive: false });
+</script>
+</body>
+</html>

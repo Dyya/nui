@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<!--
+  Radar - ping the canvas to surface hidden tags
+  Double-click to emit an expanding ping that surfaces each object's hidden tag in the order the ring reaches it.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Radar - ping the canvas to surface hidden tags</title>
+<meta name="description" content="Double-click to emit an expanding ping that surfaces each object's hidden tag in the order the ring reaches it.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Radar - ping the canvas to surface hidden tags">
+<meta property="og:description" content="Double-click to emit an expanding ping that surfaces each object's hidden tag in the order the ring reaches it.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Radar",
+  "applicationCategory": "DesignApplication",
+  "description": "Double-click to emit an expanding ping that surfaces each object's hidden tag in the order the ring reaches it.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "radar, interaction design, probe, ping, reveal, tags, discovery, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg: #0a0a0c; --fg: rgba(255,255,255,0.92); --fg-dim: rgba(255,255,255,0.45); --fg-faint: rgba(255,255,255,0.18);
+    --grid: rgba(255,255,255,0.018); --chrome-bg: rgba(20,20,24,0.85); --chrome-bd: rgba(255,255,255,0.08);
+    --obj: rgb(132,137,148);
+  }
+  body.light { --bg: #FAFAFA; --fg: rgba(0,0,0,0.88); --fg-dim: rgba(0,0,0,0.45); --fg-faint: rgba(0,0,0,0.15); --grid: rgba(0,0,0,0.03); --chrome-bg: rgba(255,255,255,0.88); --chrome-bd: rgba(0,0,0,0.08); --obj: rgb(98,103,113); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s; }
+  canvas { position: fixed; inset: 0; display: block; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+  #cursor { position: fixed; left: 0; top: 0; width: 20px; height: 20px; border: 1.5px solid var(--fg); border-radius: 50%; pointer-events: none; z-index: 100; transform: translate(-50%, -50%); transition: border-color 0.2s, width 0.15s, height 0.15s; }
+  #cursor::before, #cursor::after { content: ''; position: absolute; background: var(--fg); }
+  #cursor::before { top: 50%; left: -3px; right: -3px; height: 1px; transform: translateY(-50%); }
+  #cursor::after { left: 50%; top: -3px; bottom: -3px; width: 1px; transform: translateX(-50%); }
+  #cursor.ping { border-color: var(--fg); transform: translate(-50%, -50%) scale(1.4); }
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <div id="toggle" title="Toggle theme"></div>
+  <div id="cursor"></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const cursor = document.getElementById('cursor');
+const readout = { set innerHTML(v){}, set textContent(v){} };
+const ui = PT.ui({ title: 'Radar', hints: 'Double-click ping · R reseed', theme: 'light' });
+const toggle = document.getElementById('toggle');
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); document.body.classList.toggle('light', !dark); ui.theme(dark ? 'dark' : 'light'); });
+
+// state BEFORE resize
+let W = 0, H = 0;
+let seed = 777777;
+let objects = [];
+let pings = []; // { x, y, t0, radius, hitQueue }
+let mx = -100, my = -100;
+let lastClickTime = 0;
+
+const EFFECTS_LIST = ['NONE', 'BLUR', 'GLOW', 'GRAIN', 'DITHER', 'HALFTONE', 'ABERRATION'];
+const TYPES = ['CIRCLE', 'SQUARE', 'TRI'];
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() { if (objects.length === 0) build(); }
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) { return function() { let t = (s += 0x6D2B79F5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+
+function build() {
+  const rng = mulberry32(seed);
+  objects = [];
+  let tries = 0;
+  while (objects.length < 14 && tries < 3000) {
+    const nx = 0.08 + rng() * 0.84;
+    const ny = 0.14 + rng() * 0.72;
+    const size = 22 + Math.floor(rng() * 30);
+    let ok = true;
+    for (const o of objects) {
+      if (Math.hypot(nx * W - o.x, ny * H - o.y) < size + o.size + 20) { ok = false; break; }
+    }
+    if (ok) {
+      const id = objects.length + 1;
+      const type = TYPES[(rng() * TYPES.length) | 0];
+      const layer = `L.0${1 + Math.floor(rng() * 4)}`;
+      const numEffects = Math.floor(rng() * 3);
+      const effectSet = new Set();
+      while (effectSet.size < numEffects) effectSet.add(EFFECTS_LIST[1 + Math.floor(rng() * (EFFECTS_LIST.length - 1))]);
+      objects.push({
+        id,
+        x: nx * W, y: ny * H,
+        size,
+        type,
+        layer,
+        effects: Array.from(effectSet),
+        surfaceAlpha: 0,
+        hitAt: -1,
+      });
+    }
+    tries++;
+  }
+  pings = [];
+}
+
+
+function objPath(o) {
+  X.beginPath();
+  if (o.type === 'CIRCLE') { X.arc(o.x, o.y, o.size, 0, Math.PI * 2); }
+  else if (o.type === 'SQUARE') { X.rect(o.x - o.size, o.y - o.size, o.size * 2, o.size * 2); }
+  else { X.moveTo(o.x, o.y - o.size); X.lineTo(o.x + o.size, o.y + o.size * 0.85); X.lineTo(o.x - o.size, o.y + o.size * 0.85); X.closePath(); }
+}
+
+function drawObj(o) {
+  X.save();
+  // grey at rest
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--obj');
+  objPath(o); X.fill();
+  // an object surfaced by the ping is the charged one - tint toward the accent by its surface alpha
+  if (o.surfaceAlpha > 0.01) {
+    X.globalAlpha = o.surfaceAlpha;
+    X.fillStyle = '#FBF251';
+    objPath(o); X.fill();
+  }
+  X.restore();
+}
+
+function drawTag(o) {
+  if (o.surfaceAlpha < 0.01) return;
+  const lines = [
+    `S${String(o.id).padStart(2, '0')} · ${o.layer}`,
+    `${o.type} · ${o.size}px`,
+    `FX · ${o.effects.length ? o.effects.join(' / ') : 'none'}`,
+  ];
+  X.save();
+  X.font = '9px "IBM Plex Mono", monospace';
+  X.textBaseline = 'top';
+  X.textAlign = 'left';
+  const padX = 8, padY = 6;
+  const widths = lines.map(l => X.measureText(l).width);
+  const bw = Math.max(...widths) + padX * 2;
+  const bh = lines.length * 13 + padY * 2;
+  // place tag near object, avoiding edges
+  let bx = o.x + o.size + 12;
+  let by = o.y - bh / 2;
+  if (bx + bw > W - 20) bx = o.x - o.size - 12 - bw;
+  if (by < 80) by = 80;
+  if (by + bh > H - 80) by = H - 80 - bh;
+  // Connector line
+  X.save();
+  X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+  X.globalAlpha = o.surfaceAlpha * 0.7;
+  X.lineWidth = 1;
+  X.setLineDash([2, 3]);
+  const anchorX = bx > o.x ? bx : bx + bw;
+  X.beginPath(); X.moveTo(o.x, o.y); X.lineTo(anchorX, by + bh / 2); X.stroke();
+  X.restore();
+  // Card
+  X.globalAlpha = o.surfaceAlpha * 0.96;
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--chrome-bg');
+  X.fillRect(bx, by, bw, bh);
+  X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--chrome-bd');
+  X.lineWidth = 1;
+  X.globalAlpha = o.surfaceAlpha;
+  X.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+  // Content
+  X.globalAlpha = o.surfaceAlpha;
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg');
+  X.fillText(lines[0], bx + padX, by + padY);
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg');
+  X.fillText(lines[1], bx + padX, by + padY + 13);
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+  X.fillText(lines[2], bx + padX, by + padY + 26);
+  X.restore();
+}
+
+function drawPing(p, now) {
+  const elapsed = (now - p.t0) / 1000;
+  const maxTime = 1.6; // seconds for ping to reach its max radius
+  if (elapsed > maxTime + 0.3) return false;
+  const progress = clamp(elapsed / maxTime, 0, 1);
+  const r = progress * p.radius;
+  X.save();
+  X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg');
+  X.globalAlpha = (1 - progress) * 0.8;
+  X.lineWidth = 1.5;
+  X.beginPath(); X.arc(p.x, p.y, r, 0, Math.PI * 2); X.stroke();
+  // Inner ring fading more
+  X.globalAlpha = (1 - progress) * 0.4;
+  X.lineWidth = 1;
+  X.beginPath(); X.arc(p.x, p.y, r * 0.7, 0, Math.PI * 2); X.stroke();
+  X.restore();
+  // Check hits as ping expands
+  for (const o of objects) {
+    const dist = Math.hypot(o.x - p.x, o.y - p.y);
+    if (dist <= r && o.hitAt < 0) {
+      o.hitAt = now;
+    }
+  }
+  return true;
+}
+
+function draw() {
+  const now = performance.now();
+  X.clearRect(0, 0, W, H);
+  // objects
+  for (const o of objects) drawObj(o);
+  // pings
+  pings = pings.filter(p => drawPing(p, now));
+  // fade surface alpha per object
+  let surfacedCount = 0;
+  for (const o of objects) {
+    if (o.hitAt > 0) {
+      const age = (now - o.hitAt) / 3500;
+      if (age < 1) {
+        const target = 1 - age;
+        o.surfaceAlpha += (target - o.surfaceAlpha) * 0.2;
+        surfacedCount++;
+      } else {
+        o.surfaceAlpha *= 0.85;
+        if (o.surfaceAlpha < 0.01) { o.surfaceAlpha = 0; o.hitAt = -1; }
+      }
+    } else {
+      o.surfaceAlpha *= 0.9;
+    }
+  }
+  // draw tags on top
+  for (const o of objects) drawTag(o);
+  // chrome
+  readout.innerHTML = `Objects <b>${objects.length}</b> · Surfaced <b>${surfacedCount}</b> · Pings <b>${pings.length}</b>`;
+}
+
+function loop() { draw(); requestAnimationFrame(loop); }
+loop();
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+});
+window.addEventListener('pointerdown', e => {
+  const now = performance.now();
+  // double-click detection
+  if (now - lastClickTime < 380) {
+    // start ping
+    // reset hitAt on all so a fresh ping surfaces them fresh
+    for (const o of objects) o.hitAt = -1;
+    const maxR = Math.hypot(W, H);
+    pings.push({ x: e.clientX, y: e.clientY, t0: now, radius: maxR });
+    cursor.classList.add('ping');
+    setTimeout(() => cursor.classList.remove('ping'), 280);
+  }
+  lastClickTime = now;
+});
+window.addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R') { seed = Math.floor(Math.random() * 999999); build(); }
+});
+</script>
+</body>
+</html>

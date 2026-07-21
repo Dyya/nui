@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<!--
+  Crank - wind a radial array by cranking
+  Circle a shape to wind a radial array, each turn adding a copy, release to place.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Crank - wind a radial array by cranking</title>
+<meta name="description" content="Circle a shape to wind a radial array, each turn adding a copy, release to place.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Crank - wind a radial array by cranking">
+<meta property="og:description" content="Circle a shape to wind a radial array, each turn adding a copy, release to place.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Crank",
+  "applicationCategory": "DesignApplication",
+  "description": "Circle a shape to wind a radial array, each turn adding a copy, release to place.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "crank, interaction design, gesture, radial array, winding, rotation, duplication, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white:#FAFAFA; --c-grey:#8A8A8A; --c-black:#0A0A0A;
+  --obj: rgb(98,103,113);   /* objects: theme-aware neutral; the charged element fills accent yellow */
+  --bg: var(--c-white);
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.12);
+  --mid: rgba(10,10,10,0.30);
+  --active: rgba(10,10,10,0.60);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.12);
+  --mid: rgba(250,250,250,0.30);
+  --active: rgba(250,250,250,0.60);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); color:var(--fg); font-family:'DM Sans',sans-serif; cursor:none; transition:background .4s var(--ease); touch-action:none; overscroll-behavior:none; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+#c { position:fixed; inset:0; z-index:1; }
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+.cursor{position:fixed;z-index:50;pointer-events:none;width:28px;height:28px;transform:translate(-50%,-50%);}
+.cursor .ring{position:absolute;inset:0;border:1px solid var(--c-grey);border-radius:50%;transition:transform .2s var(--ease),border-color .2s var(--ease);}
+.cursor .cross{position:absolute;left:50%;top:50%;background:var(--c-grey);transform:translate(-50%,-50%);transition:background .2s var(--ease);}
+.cursor .cross.h{width:10px;height:1px;} .cursor .cross.v{width:1px;height:10px;}
+body.grabbing .cursor .ring{border-color:var(--fg);transform:scale(1.35);}
+body.grabbing .cursor .cross{background:var(--fg);}
+@media (hover:none) and (pointer:coarse){ html,body{cursor:auto;} .cursor{display:none;} }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+let W = 0, H = 0, prevW = 0, prevH = 0;
+
+const HINTS = 'Drag a source and circle it to wind a radial array · Each turn adds copies · Release to place · Shift-drag to move · R reset';
+const ui = PT.ui({ title: 'Crank', hints: HINTS, theme: 'light' });
+const pill = document.querySelector('.adui-pill');
+const seg = h => '<span class="adui-seg">' + h + '</span>';
+const key = t => '<b class="adui-key">' + t + '</b>';
+let barTimer = null, lastBar = '';
+function setBar(h){ clearTimeout(barTimer); if (pill && h !== lastBar){ pill.innerHTML = h; lastBar = h; } }
+function idleBar(){ clearTimeout(barTimer); lastBar = ''; ui.setHints(HINTS); }
+function flashBar(h, ms){ setBar(h); barTimer = setTimeout(() => { if (!crank && !move) idleBar(); }, ms); }
+
+const cursor = document.getElementById('cursor');
+const toggle = document.getElementById('toggle');
+
+let COL = {};
+function readTheme(){
+  const cs = getComputedStyle(document.body);
+  COL = { bg: cs.getPropertyValue('--bg').trim(), fg: cs.getPropertyValue('--fg').trim(),
+          dim: cs.getPropertyValue('--dim').trim(), mid: cs.getPropertyValue('--mid').trim(), active: cs.getPropertyValue('--active').trim(),
+          obj: cs.getPropertyValue('--obj').trim() };
+}
+readTheme();
+
+const TYPES = ['circle', 'square', 'triangle'];
+const STEP = Math.PI / 6;   // 30 deg wound per copy -> 12 copies per revolution
+const MAXN = 48;
+
+let shapes = [];
+let crank = null;   // { i, lastAng, accum, radius, count }
+let move = null;
+let shiftHeld = false;
+let mx = -100, my = -100;
+
+function resize(){
+  prevW = W || window.innerWidth; prevH = H || window.innerHeight;
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (shapes.length && prevW && prevH){
+    const sr = Math.min(W / prevW, H / prevH), ocx = prevW / 2, ocy = prevH / 2, ncx = W / 2, ncy = H / 2;
+    for (const s of shapes){ s.x = ncx + (s.x - ocx) * sr; s.y = ncy + (s.y - ocy) * sr; s.r *= sr; }
+  }
+}
+
+function seed(){
+  shapes = []; crank = null; move = null;
+  const S = Math.min(W, H);
+  const spots = [[0.3, 0.45], [0.7, 0.42], [0.5, 0.66]];
+  for (let i = 0; i < spots.length; i++){
+    shapes.push({ x: W * spots[i][0], y: H * spots[i][1], r: S * 0.035, type: TYPES[i % TYPES.length], source: true });
+  }
+}
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const wrap = a => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
+function hitShape(x, y){ for (let i = shapes.length - 1; i >= 0; i--){ if (Math.hypot(x - shapes[i].x, y - shapes[i].y) < shapes[i].r + 6) return i; } return -1; }
+
+function shapePath(type, r){
+  X.beginPath();
+  if (type === 'square'){ const h = r * 0.88; X.rect(-h, -h, h * 2, h * 2); }
+  else if (type === 'triangle'){ const tr = r * 1.12; for (let i = 0; i < 3; i++){ const a = -Math.PI / 2 + i * (Math.PI * 2 / 3); const px = tr * Math.cos(a), py = tr * Math.sin(a); i ? X.lineTo(px, py) : X.moveTo(px, py); } X.closePath(); }
+  else X.arc(0, 0, r, 0, Math.PI * 2);
+}
+
+function drawShape(s, x, y, ghost){
+  X.save();
+  X.translate(x, y);
+  if (ghost){ X.strokeStyle = COL.mid; X.globalAlpha = 0.55; X.lineWidth = 1.4; shapePath(s.type, s.r); X.stroke(); }
+  else {
+    const charged = crank && shapes[crank.i] === s;   // the source being wound is the one charged thing
+    X.fillStyle = charged ? '#FBF251' : COL.obj;
+    shapePath(s.type, s.r); X.fill();
+  }
+  X.restore();
+}
+
+function ringPositions(S, radius, count, startAng){
+  const out = [];
+  for (let k = 0; k < count; k++){ const a = startAng + k * (Math.PI * 2 / count); out.push({ x: S.x + Math.cos(a) * radius, y: S.y + Math.sin(a) * radius }); }
+  return out;
+}
+
+function draw(){
+  X.fillStyle = COL.bg; X.fillRect(0, 0, W, H);
+  for (const s of shapes) drawShape(s, s.x, s.y, false);
+  if (crank){
+    const S = shapes[crank.i];
+    // winding ring guide
+    X.save();
+    X.strokeStyle = COL.mid; X.setLineDash([2, 4]); X.lineWidth = 1;
+    X.beginPath(); X.arc(S.x, S.y, crank.radius, 0, Math.PI * 2); X.stroke();
+    X.setLineDash([]);
+    // accumulated-turn arc near the source
+    X.strokeStyle = COL.fg; X.lineWidth = 2;
+    const a0 = -Math.PI / 2, a1 = a0 + clamp(crank.accum, -Math.PI * 6, Math.PI * 6);
+    X.beginPath(); X.arc(S.x, S.y, S.r + 12, a0, a1, crank.accum < 0); X.stroke();
+    X.restore();
+    // ghosts
+    const cursorAng = Math.atan2(my - S.y, mx - S.x);
+    const pos = ringPositions(S, crank.radius, crank.count, cursorAng);
+    for (const p of pos) drawShape(S, p.x, p.y, true);
+    // handle dot at cursor
+    X.save(); X.fillStyle = COL.fg; X.beginPath(); X.arc(mx, my, 4, 0, Math.PI * 2); X.fill(); X.restore();
+    const turns = (Math.abs(crank.accum) / (Math.PI * 2)).toFixed(2);
+    setBar(seg(key(crank.count + ' copies')) + seg(turns + ' turns'));
+  }
+  requestAnimationFrame(draw);
+}
+
+window.addEventListener('resize', resize);
+resize(); seed(); draw();
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (move){ const s = shapes[move.i]; s.x = mx - move.ox; s.y = my - move.oy; return; }
+  if (crank){
+    const S = shapes[crank.i];
+    const ang = Math.atan2(my - S.y, mx - S.x);
+    crank.accum += wrap(ang - crank.lastAng);
+    crank.lastAng = ang;
+    crank.radius = clamp(Math.hypot(mx - S.x, my - S.y), S.r + 24, Math.min(W, H) * 0.42);
+    const n = clamp(Math.round(crank.accum / STEP), 0, MAXN);
+    if (n !== crank.count){ crank.count = n; navigator.vibrate && navigator.vibrate(3); }
+  }
+});
+
+window.addEventListener('pointerdown', e => {
+  if (e.target.closest('#toggle, .adui')) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  const i = hitShape(mx, my);
+  if (i < 0) return;
+  try { C.setPointerCapture(e.pointerId); } catch(_) {}
+  document.body.classList.add('grabbing');
+  if (shiftHeld){ move = { i, ox: mx - shapes[i].x, oy: my - shapes[i].y }; }
+  else { const S = shapes[i]; crank = { i, lastAng: Math.atan2(my - S.y, mx - S.x), accum: 0, radius: clamp(Math.hypot(mx - S.x, my - S.y), S.r + 24, Math.min(W, H) * 0.42), count: 0 }; }
+});
+
+window.addEventListener('pointerup', () => {
+  if (crank){
+    if (crank.count > 0){
+      const S = shapes[crank.i];
+      const cursorAng = Math.atan2(my - S.y, mx - S.x);
+      for (const p of ringPositions(S, crank.radius, crank.count, cursorAng)){
+        shapes.push({ x: clamp(p.x, S.r, W - S.r), y: clamp(p.y, S.r + 52, H - S.r - 52), r: S.r, type: S.type, source: false });
+      }
+      flashBar(seg(key('Arrayed')) + seg(crank.count + ' copies'), 1400);
+    } else idleBar();
+  } else if (move) idleBar();
+  crank = null; move = null;
+  document.body.classList.remove('grabbing');
+});
+window.addEventListener('pointercancel', () => { crank = null; move = null; document.body.classList.remove('grabbing'); idleBar(); });
+
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); ui.theme(dark ? 'dark' : 'light'); readTheme(); });
+
+window.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'Shift') shiftHeld = true;
+  if ((e.key === 'r' || e.key === 'R') && !e.repeat){ seed(); idleBar(); }
+});
+window.addEventListener('keyup', e => { if (e.key === 'Shift') shiftHeld = false; });
+</script>
+</body>
+</html>

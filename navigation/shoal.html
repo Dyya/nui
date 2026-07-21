@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<!--
+  Shoal - search as a place, nothing ever leaves
+  Items keep a stable home coordinate seeded from their own text, so a thing always lives in one spot; each keystroke scores every item and gathers the matches into a sunflower-spiral shoal around the query, while non-matches recede but never unmount. Search becomes geography you build muscle memory for.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Shoal - search as a place</title>
+<meta name="description" content="A spatial search field: items keep a fixed home coordinate, and each keystroke gathers the matches into a sunflower-spiral shoal while non-matches recede without ever unmounting.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Shoal - search as a place">
+<meta property="og:description" content="A spatial search field: items keep a fixed home coordinate, and each keystroke gathers the matches into a sunflower-spiral shoal while non-matches recede without ever unmounting.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Shoal",
+  "applicationCategory": "DesignApplication",
+  "description": "A spatial search field: items keep a fixed home coordinate seeded from their own text, and each keystroke scores every item and gathers the matches into a sunflower-spiral shoal around the query anchor, while non-matches recede but never unmount.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "search, spatial search, fuzzy match, launcher, navigation, muscle memory, sunflower spiral, phyllotaxis, HTML canvas, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg:#0a0a0c; --fg:rgba(255,255,255,0.92); --fg-dim:rgba(255,255,255,0.45); --fg-faint:rgba(255,255,255,0.18);
+    --grid:rgba(255,255,255,0.018); --accent:#FBF251; --obj:rgb(132,137,148);
+  }
+  body.light { --bg:#FAFAFA; --fg:rgba(0,0,0,0.88); --fg-dim:rgba(0,0,0,0.45); --fg-faint:rgba(0,0,0,0.15); --grid:rgba(0,0,0,0.03); --accent:#FBF251; --obj:rgb(98,103,113); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: default; transition: background 0.4s; }
+  canvas { position: fixed; inset: 0; display: block; }
+  /* The real input drives the query but stays invisible; the canvas paints everything. */
+  #q { position: fixed; left: -9999px; top: 0; opacity: 0; width: 1px; height: 1px; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <input id="q" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="48" />
+  <div id="toggle" title="Toggle theme"></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+'use strict';
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+const Q = document.getElementById('q');
+const toggle = document.getElementById('toggle');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const TAU = Math.PI * 2;
+const GOLD = 2.399963229728653;      // golden angle - the sunflower spiral
+const clamp = (v, lo, hi) => v < lo ? lo : (v > hi ? hi : v);
+
+const ui = PT.ui({
+  title: 'Shoal',
+  hints: 'Type to gather matches · Enter copy top match · Shift P paste a list · Shift E export map · Esc clear · Shift R defaults',
+  theme: 'light'
+});
+
+// ───── Theme (cached, never read from the DOM per-item) ─────
+const TH = { bg: '#FAFAFA', fg: '#0A0A0A', obj: 'rgb(98,103,113)', accent: '#FBF251' };
+function readTheme() {
+  const dark = document.body.classList.contains('dark');
+  TH.bg = dark ? '#0a0a0c' : '#FAFAFA';
+  TH.fg = dark ? '#FAFAFA' : '#0A0A0A';
+  TH.obj = dark ? 'rgb(132,137,148)' : 'rgb(98,103,113)';
+}
+readTheme();
+
+// ───── Default corpus - a real, useful spatial launcher out of the box ─────
+const DEFAULT_CORPUS = [
+  // apps
+  'Safari','Chrome','Arc','Figma','Xcode','Terminal','iTerm','Warp','Finder','Notes','Calendar','Mail','Messages',
+  'Spotify','Slack','Discord','Notion','Linear','Obsidian','VS Code','Cursor','Photoshop','Illustrator','Preview',
+  'System Settings','Activity Monitor','Console','Disk Utility','Music','Photos','Reminders','Maps','Keynote','Numbers',
+  'Pages','Docker Desktop','Postman','TablePlus','Zoom','1Password','Raycast',
+  // git
+  'git status','git commit','git push','git pull','git fetch','git rebase','git merge','git stash','git log','git diff',
+  'git branch','git checkout','git switch','git clone','git init','git reset','git cherry-pick','git blame','git tag',
+  'git remote','git bisect','git worktree','git restore','git revert',
+  // shell / dev
+  'npm install','npm run build','npm run dev','npm test','yarn add','pnpm install','bun run','docker build',
+  'docker compose up','make','cargo run','cargo build','go build','go test','python3','pip install','node','deno run',
+  'brew install','brew update','ssh','scp','rsync','curl','wget','grep','ripgrep','fd find','tmux','vim','nano','ls',
+  'cd home','mkdir','chmod','chown','kill process','top','htop','ping','traceroute','history','which','env',
+  // actions / settings
+  'Toggle dark mode','Open preferences','New window','New tab','Close tab','Reopen closed tab','Split editor',
+  'Zoom in','Zoom out','Reset zoom','Take screenshot','Record screen','Empty trash','Lock screen','Sleep display',
+  'Restart','Shut down','Airplane mode','Do not disturb','Bluetooth settings','Wifi settings','Display settings',
+  'Sound settings','Keyboard settings','Battery health','Storage','Software update','Night shift','True tone',
+  'Mission Control','Spotlight search','Command palette','Toggle sidebar','Toggle terminal','Find in files',
+  'Go to definition','Rename symbol','Format document','Comment line','Duplicate line','Move line up',
+  // files
+  'readme.md','package.json','tsconfig.json','index.html','main.css','styles.scss','app.tsx','server.js','router.ts',
+  'dockerfile','makefile','license','changelog.md','.gitignore','.env','config.yaml','schema.sql','utils.ts',
+  'index.ts','vite.config.ts','tailwind.config.js','eslintrc.json',
+  // places / bookmarks
+  'github.com','stack overflow','hacker news','youtube','wikipedia','mdn web docs','can i use','figma community',
+  'dribbble','are.na','gmail','google drive','notion workspace','localhost 3000','localhost 5173','staging dashboard',
+  'production dashboard','design system','component library','api reference'
+];
+
+let corpus = loadCorpus();
+
+// ───── Typed-array state - built once per corpus, mutated per frame ─────
+let N = 0;
+let text = [];          // display strings
+let lower = [];         // lowercased for matching
+let nx, ny;             // normalized stable home in [0,1] (seeded hash)
+let hx, hy;             // home in pixels (per resize)
+let cx, cy, cs, ca;     // current x, y, scale, alpha
+let tx, ty, ts, ta;     // targets
+let score, rank, term;  // per-item match score, rank in shoal, owning anchor
+let built = false, justBuilt = false;
+
+let W = 0, H = 0;
+let query = '';
+let terms = [];
+let anchors = [];
+let chargedIdx = -1;    // the single yellow element (top match or clicked pin)
+let pinnedIdx = -1;     // click-pinned item, overrides the top match until next keystroke
+let hoverIdx = -1;
+let mx = -1e4, my = -1e4;
+let flashText = '', flashUntil = 0;
+let running = false;
+
+// ───── Seeded hash: a stable home coordinate from the item's own text ─────
+function hash32(str, salt) {
+  let h = 2166136261 ^ salt;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995); h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+
+function build() {
+  N = corpus.length;
+  text = corpus.slice();
+  lower = new Array(N);
+  nx = new Float32Array(N); ny = new Float32Array(N);
+  hx = new Float32Array(N); hy = new Float32Array(N);
+  cx = new Float32Array(N); cy = new Float32Array(N);
+  cs = new Float32Array(N); ca = new Float32Array(N);
+  tx = new Float32Array(N); ty = new Float32Array(N);
+  ts = new Float32Array(N); ta = new Float32Array(N);
+  score = new Float32Array(N); rank = new Int16Array(N); term = new Int16Array(N);
+  for (let i = 0; i < N; i++) {
+    lower[i] = text[i].toLowerCase();
+    nx[i] = hash32(text[i], 0x9e3779b1);   // two independent salts -> a 2D home
+    ny[i] = hash32(text[i], 0x85ebca6b);
+    rank[i] = -1; term[i] = -1;
+  }
+  built = true; justBuilt = true;
+}
+
+function computeHomes() {
+  for (let i = 0; i < N; i++) {
+    hx[i] = W * (0.06 + nx[i] * 0.88);
+    hy[i] = H * (0.11 + ny[i] * 0.74);
+  }
+}
+
+// ───── Fuzzy subsequence score in [0,1] (0 = not a subsequence) ─────
+function fuzzy(needle, hay) {
+  const nl = needle.length; if (!nl) return 0;
+  const hl = hay.length;
+  let hi = 0, run = 0, raw = 0, first = -1;
+  for (let ni = 0; ni < nl; ni++) {
+    const c = needle.charCodeAt(ni);
+    let found = -1;
+    for (let h = hi; h < hl; h++) { if (hay.charCodeAt(h) === c) { found = h; break; } }
+    if (found === -1) return 0;
+    if (first === -1) first = found;
+    if (found === hi) { run++; raw += 1 + run; } else { run = 0; raw += 1; }
+    const pc = found > 0 ? hay.charCodeAt(found - 1) : 32;
+    if (pc === 32 || pc === 47 || pc === 45 || pc === 46 || pc === 95) raw += 2; // word-boundary bonus
+    hi = found + 1;
+  }
+  let norm = raw / (nl * 4);
+  if (first === 0) norm += 0.12;
+  norm -= first * 0.004;
+  norm += (nl / hl) * 0.15;               // reward covering more of a short item
+  return clamp(norm, 0.02, 1);
+}
+
+// ───── The solve: score every item, gather matches into their shoal ─────
+function spiralSlot(a, r, sp, out) {
+  const rad = sp * Math.sqrt(r + 0.5);
+  const ang = r * GOLD;
+  out.x = clamp(a.x + Math.cos(ang) * rad, 40, W - 40);
+  out.y = clamp(a.y + Math.sin(ang) * rad, 60, H - 60);
+}
+const _slot = { x: 0, y: 0 };
+
+function solve() {
+  const t = query.trim();
+  terms = t.length ? t.split(/\s+/) : [];
+  const M = terms.length;
+  anchors = [];
+  for (let i = 0; i < M; i++) {
+    anchors.push({ term: terms[i], lower: terms[i].toLowerCase(), count: 0,
+                   x: W * (i + 1) / (M + 1), y: H * 0.46 });
+  }
+
+  if (M === 0) {                          // dissolved: everything home, calm grey field
+    for (let i = 0; i < N; i++) {
+      tx[i] = hx[i]; ty[i] = hy[i]; ts[i] = 0.85; ta[i] = 0.42;
+      rank[i] = -1; term[i] = -1; score[i] = 0;
+    }
+    chargedIdx = pinnedIdx;
+    return;
+  }
+
+  const sp = M > 1 ? 17 : 22;
+  const cx0 = W / 2, cy0 = H / 2;
+  const lists = [];
+  for (let a = 0; a < M; a++) lists.push([]);
+
+  for (let i = 0; i < N; i++) {
+    let bs = 0, bt = -1;
+    for (let a = 0; a < M; a++) { const s = fuzzy(anchors[a].lower, lower[i]); if (s > bs) { bs = s; bt = a; } }
+    score[i] = bs; term[i] = bt;
+    if (bt >= 0 && bs > 0) { lists[bt].push(i); }
+    else {
+      // non-match: hold its home, drift a touch outward, shrink, de-ink (never unmount)
+      term[i] = -1; rank[i] = -1;
+      let dx = hx[i] - cx0, dy = hy[i] - cy0; const d = Math.hypot(dx, dy) || 1;
+      tx[i] = hx[i] + dx / d * 30; ty[i] = hy[i] + dy / d * 30;
+      ts[i] = 0.48; ta[i] = 0.13;
+    }
+  }
+
+  let best = -1, bestScore = -1;
+  for (let a = 0; a < M; a++) {
+    const list = lists[a];
+    list.sort((p, q) => (score[q] - score[p]) || (nx[p] - nx[q]) || (p - q));
+    anchors[a].count = list.length;
+    for (let r = 0; r < list.length; r++) {
+      const idx = list[r];
+      rank[idx] = r;
+      spiralSlot(anchors[a], r, sp, _slot);
+      tx[idx] = _slot.x; ty[idx] = _slot.y;
+      ts[idx] = r === 0 ? 1.18 : 1.0;
+      ta[idx] = 0.92 - Math.min(r * 0.018, 0.55);
+      if (r === 0 && score[idx] > bestScore) { bestScore = score[idx]; best = idx; }
+    }
+  }
+  chargedIdx = pinnedIdx >= 0 ? pinnedIdx : best;
+}
+
+// ───── Motion: exponential settle only ─────
+function update(dt) {
+  const k = clamp(dt * 13, 0.02, 1);
+  let moved = 0;
+  for (let i = 0; i < N; i++) {
+    const dx = tx[i] - cx[i], dy = ty[i] - cy[i], ds = ts[i] - cs[i], da = ta[i] - ca[i];
+    cx[i] += dx * k; cy[i] += dy * k; cs[i] += ds * k; ca[i] += da * k;
+    moved += Math.abs(dx) + Math.abs(dy) + Math.abs(ds) * 60 + Math.abs(da) * 60;
+  }
+  return moved;
+}
+
+// ───── Draw ─────
+function draw() {
+  X.fillStyle = TH.bg; X.fillRect(0, 0, W, H);
+
+  // items - non-charged first, charged painted last (on top)
+  for (let i = 0; i < N; i++) if (i !== chargedIdx) drawItem(i, false);
+  if (chargedIdx >= 0 && chargedIdx < N) drawItem(chargedIdx, true);
+
+  drawAnchors();
+
+  // empty-state prompt
+  if (terms.length === 0 && flashText === '') {
+    X.globalAlpha = 0.5; X.fillStyle = TH.fg;
+    X.font = "13px 'IBM Plex Mono', monospace"; X.textAlign = 'center'; X.textBaseline = 'middle';
+    X.fillText('Type to gather the shoal', W / 2, H * 0.46);
+    X.globalAlpha = 0.3; X.font = "11px 'IBM Plex Mono', monospace";
+    X.fillText(N + ' items, each one always in the same place', W / 2, H * 0.46 + 22);
+    X.globalAlpha = 1;
+  }
+
+  // copied / mapped flash
+  if (flashText && performance.now() < flashUntil) {
+    let fx = W / 2, fy = H * 0.46 - 40;
+    if (chargedIdx >= 0 && chargedIdx < N) { fx = cx[chargedIdx]; fy = cy[chargedIdx] - 18; }
+    X.globalAlpha = 0.9; X.fillStyle = TH.fg;
+    X.font = "11px 'IBM Plex Mono', monospace"; X.textAlign = 'center'; X.textBaseline = 'middle';
+    X.fillText(flashText, fx, fy);
+    X.globalAlpha = 1;
+  }
+}
+
+const LABEL_CAP = 15;
+function drawItem(i, charged) {
+  const x = cx[i], y = cy[i], s = cs[i];
+  const dotR = (charged ? 4.6 : 2.4) * Math.max(s, 0.25);
+  X.globalAlpha = charged ? 1 : ca[i];
+  X.fillStyle = charged ? TH.accent : TH.fg;
+  X.beginPath(); X.arc(x, y, dotR, 0, TAU); X.fill();
+
+  const labelled = charged || hoverIdx === i || (rank[i] >= 0 && rank[i] < LABEL_CAP);
+  if (labelled) {
+    X.globalAlpha = charged ? 1 : Math.max(ca[i], 0.82);
+    X.fillStyle = TH.fg;                       // the accent is the dot fill only - label stays ink
+    X.font = (charged ? "600 13px" : "13px") + " 'DM Sans', sans-serif";
+    // stagger the label to the far side of the anchor so the shoal's names don't collide
+    const a = term[i] >= 0 ? anchors[term[i]] : null;
+    if (a && x < a.x) { X.textAlign = 'right'; X.fillText(text[i], x - dotR - 6, y); }
+    else { X.textAlign = 'left'; X.fillText(text[i], x + dotR + 6, y); }
+  }
+  X.globalAlpha = 1;
+}
+
+function drawAnchors() {
+  X.textAlign = 'center'; X.textBaseline = 'alphabetic';
+  for (let a = 0; a < anchors.length; a++) {
+    const an = anchors[a];
+    X.font = "500 13px 'IBM Plex Mono', monospace";
+    X.globalAlpha = 0.92; X.fillStyle = TH.fg;
+    X.fillText(an.term, an.x, an.y - 52);
+    X.font = "11px 'IBM Plex Mono', monospace";
+    X.globalAlpha = an.count ? 0.42 : 0.7;
+    X.fillText(an.count ? '(' + an.count + ')' : '(no shoal)', an.x, an.y - 36);
+  }
+  X.globalAlpha = 1;
+}
+
+// ───── Loop with idle-stop ─────
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  const moved = update(dt);
+  draw();
+  const flashing = flashText && now < flashUntil;
+  if (flashText && now >= flashUntil) flashText = '';
+  if (moved < 0.35 && !flashing) { running = false; return; }   // rest -> stop; wake on input
+  requestAnimationFrame(frame);
+}
+function wake() { if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame); } }
+
+// ───── Resize ─────
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (!built) build();
+  computeHomes();
+  if (justBuilt) { entrance(); justBuilt = false; }
+  solve(); wake();
+}
+function entrance() {
+  for (let i = 0; i < N; i++) { cx[i] = hx[i]; cy[i] = hy[i]; cs[i] = 0; ca[i] = 0; }
+}
+window.addEventListener('resize', resize);
+
+// ───── Input: sticky focus so a keystroke is never dropped ─────
+function focusInput() { try { Q.focus({ preventScroll: true }); } catch (e) { try { Q.focus(); } catch (e2) {} } }
+Q.addEventListener('input', () => { query = Q.value; pinnedIdx = -1; solve(); wake(); });
+Q.addEventListener('blur', () => setTimeout(focusInput, 0));
+
+Q.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (chargedIdx >= 0 && chargedIdx < N) { copyText(text[chargedIdx]); flash('Copied  ' + text[chargedIdx]); wake(); }
+    return;
+  }
+  if (e.key === 'Escape') { e.preventDefault(); clearQuery(); }
+});
+
+// A multi-line / multi-item paste remaps the whole place; a single token is just query text.
+Q.addEventListener('paste', (e) => {
+  const t = (e.clipboardData || window.clipboardData).getData('text') || '';
+  if (splitList(t).length >= 2) { e.preventDefault(); commitList(t); }
+});
+
+// Shift-commands are unambiguous: lowercase letters type into the query, capitals are commands.
+window.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'P') { e.preventDefault(); pasteList(); }
+  else if (e.key === 'E') { e.preventDefault(); exportPNG(); }
+  else if (e.key === 'R') { e.preventDefault(); resetDefaults(); }
+});
+
+function clearQuery() { Q.value = ''; query = ''; pinnedIdx = -1; flashText = ''; solve(); wake(); }
+function flash(msg) { flashText = msg; flashUntil = performance.now() + 1150; }
+
+// ───── Pointer: hover reveals labels, click grabs (copies) an item ─────
+function nearest(px, py, radius) {
+  let bi = -1, bd = radius * radius;
+  for (let i = 0; i < N; i++) {
+    const dx = cx[i] - px, dy = cy[i] - py, d = dx * dx + dy * dy;
+    if (d < bd) { bd = d; bi = i; }
+  }
+  return bi;
+}
+window.addEventListener('pointermove', (e) => {
+  mx = e.clientX; my = e.clientY;
+  const h = nearest(mx, my, 16);
+  if (h !== hoverIdx) { hoverIdx = h; wake(); }
+  C.style.cursor = h >= 0 ? 'pointer' : 'default';
+});
+window.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui, a')) return;
+  focusInput();
+  const h = nearest(e.clientX, e.clientY, 20);
+  if (h >= 0) { pinnedIdx = h; chargedIdx = h; copyText(text[h]); flash('Copied  ' + text[h]); wake(); }
+});
+
+// ───── Corpus persistence + list paste (the spatial launcher) ─────
+function splitList(t) { return [...new Set(t.split(/[\n,]+/).map(s => s.trim()).filter(Boolean))]; }
+function commitList(t) {
+  const items = splitList(t);
+  if (items.length < 2) return;
+  corpus = items; persist(items);
+  built = false; build(); computeHomes(); entrance(); justBuilt = false;
+  solve(); flash('Mapped ' + items.length + ' items'); wake();
+}
+async function pasteList() {
+  let t = '';
+  try { t = await navigator.clipboard.readText(); } catch (e) {}
+  if (splitList(t).length < 2) { t = window.prompt('Paste a newline or comma list to map as a place:') || ''; }
+  focusInput();
+  if (splitList(t).length >= 2) commitList(t);
+}
+function resetDefaults() {
+  corpus = DEFAULT_CORPUS.slice(); try { localStorage.removeItem('nui.shoal.corpus'); } catch (e) {}
+  Q.value = ''; query = ''; pinnedIdx = -1;
+  built = false; build(); computeHomes(); entrance(); justBuilt = false;
+  solve(); flash('Restored ' + corpus.length + ' defaults'); wake();
+}
+function persist(items) { try { localStorage.setItem('nui.shoal.corpus', JSON.stringify(items)); } catch (e) {} }
+function loadCorpus() {
+  try {
+    const raw = localStorage.getItem('nui.shoal.corpus');
+    if (raw) { const a = JSON.parse(raw); if (Array.isArray(a) && a.length >= 2) return a.map(String); }
+  } catch (e) {}
+  return DEFAULT_CORPUS.slice();
+}
+
+// ───── Clipboard ─────
+function copyText(t) {
+  try { navigator.clipboard.writeText(t).catch(() => fallbackCopy(t)); }
+  catch (e) { fallbackCopy(t); }
+}
+function fallbackCopy(t) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    focusInput();
+  } catch (e) {}
+}
+
+// ───── PNG export of the current geography ─────
+function exportPNG() {
+  try {
+    C.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'shoal-geography.png';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }, 'image/png');
+    flash('Exported map'); wake();
+  } catch (e) {}
+}
+
+// ───── Theme toggle ─────
+toggle.addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  document.body.classList.toggle('light', !dark);
+  ui.theme(dark ? 'dark' : 'light');
+  readTheme();
+  setTimeout(focusInput, 0);
+  wake();
+});
+
+// re-layout with correct metrics once fonts arrive
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => wake());
+
+// ───── Go ─────
+resize();
+focusInput();
+setTimeout(focusInput, 60);
+</script>
+</body>
+</html>

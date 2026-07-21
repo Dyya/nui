@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<!--
+  Tempo - tap shapes into a polyrhythm
+  Tap a shape to set its tempo; separate tempos phase-lock into a living polyrhythm.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Tempo - tap shapes into a polyrhythm</title>
+<meta name="description" content="Tap a shape to set its tempo; separate tempos phase-lock into a living polyrhythm.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Tempo - tap shapes into a polyrhythm">
+<meta property="og:description" content="Tap a shape to set its tempo; separate tempos phase-lock into a living polyrhythm.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Tempo",
+  "applicationCategory": "DesignApplication",
+  "description": "Tap a shape to set its tempo; separate tempos phase-lock into a living polyrhythm.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "tempo, interaction design, rhythm, polyrhythm, phase lock, timing, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* UI neutrals - the interface is monochrome: proper white / grey / black */
+  --c-white: #FAFAFA;
+  --c-grey:  #8A8A8A;
+  --c-black: #0A0A0A;
+  /* Objects render in a theme-aware neutral; the one charged element fills accent yellow. */
+  --obj: rgb(98,103,113);
+
+  /* Light is the default theme; add `dark` on <body> for the option. */
+  --bg: var(--c-white);
+  --doc: #EDEDEF;
+  --fg: rgba(10,10,10,0.95);
+  --dim: rgba(10,10,10,0.16);
+  --mid: rgba(10,10,10,0.28);
+  --active: rgba(10,10,10,0.55);
+  --hover: rgba(10,10,10,0.80);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black);
+  --doc: #16161A;
+  --fg: rgba(250,250,250,0.95);
+  --dim: rgba(250,250,250,0.16);
+  --mid: rgba(250,250,250,0.28);
+  --active: rgba(250,250,250,0.55);
+  --hover: rgba(250,250,250,0.80);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+#c { position: fixed; inset: 0; z-index: 1; }
+
+/* Theme toggle: the same glass as the floating legend, but circular, with a
+   small solid white/black dot in the centre (the dot follows the theme). */
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+
+/* Cursor */
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: all 0.25s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.25s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; }
+.cursor .cross.v { width: 1px; height: 10px; }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(1.4); }
+body.dragging .cursor .cross { background: var(--fg); }
+
+/* Touch devices: the finger is the pointer, so no custom crosshair. */
+@media (hover: none) and (pointer: coarse) {
+  html, body { cursor: auto; }
+  .cursor { display: none; }
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="toggle" title="Toggle theme"></div>
+
+<div class="cursor" id="cursor">
+  <div class="ring"></div>
+  <div class="cross h"></div>
+  <div class="cross v"></div>
+</div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+const HINTS = 'Tap a shape twice to set its tempo · Tap more to refine · Scroll to nudge tempo · Drag between shapes to phase-offset · Space play or pause · R reset · M or long-press mute · S or two-finger tap solo';
+const ui = PT.ui({ title: 'Tempo', hints: HINTS, theme: 'light' });
+
+// The bottom legend doubles as a stage-reflective status bar: idle shows the how-to,
+// while a live gesture (tapping / nudging / dragging) swaps in the readout, and a
+// committed action flashes then reverts. We reuse the panel's own glass pill + segments.
+const pill = document.querySelector('.adui-pill');
+const seg = (html) => '<span class="adui-seg">' + html + '</span>';
+const key = (t) => '<b class="adui-key">' + t + '</b>';
+let barTimer = null, lastBar = '';
+function setBar(html) { clearTimeout(barTimer); if (pill && html !== lastBar) { pill.innerHTML = html; lastBar = html; } }
+function idleBar() { clearTimeout(barTimer); lastBar = ''; ui.setHints(HINTS); }
+function baseBar() {           // the resting state: paused indicator, else the how-to
+  if (!playing) { clearTimeout(barTimer); lastBar = '_paused_'; if (pill) pill.innerHTML = seg(key('Paused')) + seg('Space or double-tap empty to resume'); }
+  else idleBar();
+}
+function flashBar(html, ms) { setBar(html); clearTimeout(barTimer); barTimer = setTimeout(() => { if (!pending || !pending.dragging) baseBar(); }, ms); }
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const bpmOf = (period) => Math.round(60000 / period);
+const letterOf = (i) => String.fromCharCode(65 + i);   // A, B, C ...
+
+// ───── State (all declared before resize() runs, to avoid the TDZ let-hoist bug) ─────
+let shapes = [];
+let T = 0;                     // global transport time (ms) - advances only while playing
+let lastNow = performance.now();
+let playing = true;
+let pending = null;            // active press: { id, sx, sy, downT, dragging, longpressed }
+let hoverTarget = null;        // shape being hovered as a drag drop target
+let mouseX = -100, mouseY = -100;
+let lpTimer = null;            // long-press timer
+let lastEmptyTapT = -1e9;      // for touch double-tap play/pause
+const activePointers = new Set();  // live pointer ids, for the two-finger solo tap
+const seed = 717171;
+
+let docX = 0, docY = 0, docSize = 0;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() {
+  docSize = Math.min(W, H) * 0.6;
+  docX = (W - docSize) / 2;
+  docY = (H - docSize) / 2 - Math.min(H, W) * 0.04;   // nudge up, leaves room for the transport strip
+  // Recompute pixel geometry from normalized coords so nothing drifts on resize.
+  for (const s of shapes) { s.x = s.nx * docSize; s.y = s.ny * docSize; s.r = s.nr * docSize; }
+}
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) {
+  return function() {
+    let t = (s += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Shapes render in the neutral --obj; only type varies per shape.
+const TYPES = ['circle', 'square', 'triangle', 'circle', 'square'];
+
+function regen() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  let tries = 0;
+  while (shapes.length < 5 && tries < 3000) {
+    const nx = 0.2 + rng() * 0.6;
+    const ny = 0.2 + rng() * 0.6;
+    const nr = 0.085 + rng() * 0.03;
+    let ok = true;
+    for (const o of shapes) if (Math.hypot(nx - o.nx, ny - o.ny) < nr + o.nr + 0.09) { ok = false; break; }
+    if (ok) {
+      const i = shapes.length;
+      shapes.push({
+        id: i, nx, ny, nr,
+        x: nx * docSize, y: ny * docSize, r: nr * docSize,
+        type: TYPES[i],
+        period: null,          // null until a rhythm is tapped
+        t0: 0,                 // transport-time anchor: phase 0 at t0
+        phaseOffset: 0,        // fractional beat offset (from a phase-offset drag)
+        taps: [],              // recent real-time tap timestamps (interval source)
+        armT: -1e9,            // last-tap time, drives the arm flash ring
+        muted: false, solo: false,
+      });
+    }
+    tries++;
+  }
+}
+regen();
+
+// ───── Rhythm maths ─────
+// Phase runs 0..1 across one period; a beat lands at phase 0. Everything is computed
+// against the single transport clock T, so independent tempos stay coherent (a polyrhythm).
+function getPhase(s) {
+  if (!s.period) return null;
+  let ph = ((T - s.t0) / s.period + s.phaseOffset) % 1;
+  if (ph < 0) ph += 1;
+  return ph;
+}
+function soloActive() { return shapes.some(s => s.solo); }
+function audible(s) { return !s.muted && (!soloActive() || s.solo); }
+
+// Physically eased strike: quick attack at the beat, then a damped overshoot that
+// settles. Never a linear blink. Returns { pop, wob } both decaying from 1 at phase 0.
+function envelope(ph) {
+  const decay = Math.exp(-ph * 5.5);
+  return { pop: decay, wob: decay * Math.cos(ph * Math.PI * 3.0), flash: Math.exp(-ph * 9.0) };
+}
+
+function hitShape(sx, sy, exceptId) {
+  const px = sx - docX, py = sy - docY;
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (exceptId != null && s.id === exceptId) continue;
+    const dx = px - s.x, dy = py - s.y;
+    if (s.type === 'square') { if (Math.abs(dx) <= s.r && Math.abs(dy) <= s.r) return s; }
+    else if (Math.hypot(dx, dy) <= s.r) return s;
+  }
+  return null;
+}
+
+// ───── Theme colours (cached; custom props don't transition, re-read only on toggle) ─────
+let COL = {};
+function readTheme() {
+  const cs = getComputedStyle(document.body);
+  COL = {
+    bg:     cs.getPropertyValue('--bg').trim(),
+    doc:    cs.getPropertyValue('--doc').trim(),
+    fg:     cs.getPropertyValue('--fg').trim(),
+    dim:    cs.getPropertyValue('--dim').trim(),
+    mid:    cs.getPropertyValue('--mid').trim(),
+    active: cs.getPropertyValue('--active').trim(),
+    obj:    cs.getPropertyValue('--obj').trim(),
+  };
+}
+readTheme();
+
+// ───── Render ─────
+function shapePath(type, x, y, r) {
+  X.beginPath();
+  if (type === 'square') {
+    const h = r * 0.9;
+    X.rect(x - h, y - h, h * 2, h * 2);
+  } else if (type === 'triangle') {
+    const tr = r * 1.12;
+    for (let i = 0; i < 3; i++) {
+      const a = -Math.PI / 2 + i * (Math.PI * 2 / 3);
+      const px = x + tr * Math.cos(a), py = y + tr * Math.sin(a);
+      i ? X.lineTo(px, py) : X.moveTo(px, py);
+    }
+    X.closePath();
+  } else {
+    X.arc(x, y, r, 0, Math.PI * 2);
+  }
+}
+
+function drawTransport() {
+  // A quiet strip below the artboard: one lane per shape, beats scrolling right toward
+  // a "now" playhead. It renders the polyrhythm laid against the single global clock.
+  const win = 3200;                       // visible window in ms
+  const laneH = Math.max(8, Math.min(12, H * 0.016));
+  const stripBottom = H - 58;
+  const stripTop = stripBottom - shapes.length * laneH;
+  const xL = W * 0.13, xR = W * 0.87, span = xR - xL;
+
+  X.save();
+  X.font = '9px "IBM Plex Mono", monospace';
+  X.textBaseline = 'middle';
+  for (let i = 0; i < shapes.length; i++) {
+    const s = shapes[i];
+    const ly = stripTop + i * laneH + laneH / 2;
+    // lane baseline
+    X.strokeStyle = COL.dim; X.lineWidth = 1;
+    X.beginPath(); X.moveTo(xL, ly); X.lineTo(xR, ly); X.stroke();
+    // lane label
+    X.textAlign = 'right';
+    X.fillStyle = COL.mid;
+    X.fillText(letterOf(i), xL - 8, ly);
+
+    if (!s.period) continue;
+    const dim = audible(s) ? 1 : 0.28;
+    const nStart = Math.ceil((T - win - s.t0) / s.period + s.phaseOffset);
+    const nEnd = Math.floor((T - s.t0) / s.period + s.phaseOffset);
+    for (let n = nStart; n <= nEnd && n - nStart < 220; n++) {
+      const tb = s.t0 + (n - s.phaseOffset) * s.period;
+      const age = (T - tb) / win;                 // 0 = just fired (at playhead), 1 = leaving
+      if (age < 0 || age > 1) continue;
+      const bx = xR - age * span;
+      const recent = Math.max(0, 1 - age * 8);     // fresh beats glow briefly
+      const th = laneH * 0.34 + recent * laneH * 0.28;
+      X.strokeStyle = COL.fg;
+      X.globalAlpha = (0.28 + recent * 0.7) * dim;
+      X.lineWidth = 1 + recent * 1.4;
+      X.beginPath(); X.moveTo(bx, ly - th); X.lineTo(bx, ly + th); X.stroke();
+    }
+    X.globalAlpha = 1;
+  }
+  // the playhead - a single vertical line where beats fire, in monochrome UI ink
+  X.strokeStyle = COL.active; X.lineWidth = 1;
+  X.beginPath(); X.moveTo(xR, stripTop - 2); X.lineTo(xR, stripBottom + 2); X.stroke();
+  X.restore();
+}
+
+function draw() {
+  const now = performance.now();
+  let dt = now - lastNow; lastNow = now;
+  if (dt > 60) dt = 60;                    // clamp after a tab-switch stall
+  if (playing) T += dt;
+
+  X.clearRect(0, 0, W, H);
+  X.fillStyle = COL.bg;
+  X.fillRect(0, 0, W, H);
+
+  // Work zone: docX/docY/docSize stays as an invisible limit zone (no visible panel).
+
+  drawTransport();
+
+  // Drag link line: source shape → cursor, in neutral ink.
+  if (pending && pending.dragging) {
+    const src = shapes.find(s => s.id === pending.id);
+    if (src) {
+      X.save();
+      X.strokeStyle = COL.active; X.globalAlpha = 0.9;
+      X.lineWidth = 1.4; X.setLineDash([5, 6]);
+      X.beginPath();
+      X.moveTo(docX + src.x, docY + src.y);
+      X.lineTo(mouseX, mouseY);
+      X.stroke();
+      X.setLineDash([]);
+      X.restore();
+    }
+  }
+
+  // Shapes
+  for (const s of shapes) {
+    const cx = docX + s.x, cy = docY + s.y;
+    const ph = getPhase(s);
+    let pop = 0, wob = 0, flash = 0;
+    if (ph != null) {
+      const e = envelope(ph);
+      pop = e.pop; wob = e.wob; flash = e.flash;
+    }
+    const live = audible(s);
+    const baseA = s.muted ? 0.22 : (live ? 1 : 0.4);
+    const scale = 1 + pop * 0.14;
+    const sx = scale * (1 + wob * 0.13);
+    const sy = scale * (1 - wob * 0.13);
+
+    // body (squash / stretch); the dragged source is the one charged thing - fill it accent
+    const charged = pending && pending.dragging && pending.id === s.id;
+    X.save();
+    X.globalAlpha = baseA;
+    X.translate(cx, cy);
+    X.scale(sx, sy);
+    shapePath(s.type, 0, 0, s.r);
+    X.fillStyle = charged ? '#FBF251' : COL.obj;
+    X.fill();
+    X.restore();
+
+    // beat ring flash - hand-drawn, in neutral ink (keeps the polyrhythm legible)
+    if (flash > 0.02 && live) {
+      X.save();
+      X.globalAlpha = flash * 0.85;
+      X.strokeStyle = COL.fg;
+      X.lineWidth = 2;
+      shapePath(s.type, cx, cy, s.r * (1.18 + pop * 0.3));
+      X.stroke();
+      X.restore();
+    }
+
+    // arm flash - a brief ring right after a tap (armed / active state)
+    const arm = Math.max(0, 1 - (T - s.armT) / 520);
+    if (arm > 0.02) {
+      X.save();
+      X.globalAlpha = arm * 0.9;
+      X.strokeStyle = COL.fg;
+      X.lineWidth = 1.6;
+      X.beginPath();
+      X.arc(cx, cy, s.r * 1.42, 0, Math.PI * 2);
+      X.stroke();
+      X.restore();
+    }
+
+    // drop-target highlight during a drag - neutral ink ring
+    if (hoverTarget && hoverTarget.id === s.id) {
+      X.save();
+      X.strokeStyle = COL.fg;
+      X.lineWidth = 2;
+      X.beginPath();
+      X.arc(cx, cy, s.r * 1.5, 0, Math.PI * 2);
+      X.stroke();
+      X.restore();
+    }
+
+    // labels: letter above, BPM below (monochrome UI ink)
+    X.save();
+    X.textAlign = 'center';
+    X.font = '10px "IBM Plex Mono", monospace';
+    X.fillStyle = COL.active;
+    X.textBaseline = 'bottom';
+    X.fillText(letterOf(s.id) + (s.muted ? ' muted' : s.solo ? ' solo' : ''), cx, cy - s.r - 12);
+    if (s.period) {
+      X.textBaseline = 'top';
+      X.fillStyle = COL.fg;
+      X.fillText(bpmOf(s.period) + ' bpm', cx, cy + s.r + 12);
+    }
+    X.restore();
+  }
+
+  requestAnimationFrame(draw);
+}
+
+// ───── Rhythm actions ─────
+function registerTap(s, realT) {
+  // Keep taps that belong to one rhythm; a gap over 3s starts a fresh count.
+  if (s.taps.length && realT - s.taps[s.taps.length - 1] > 3000) s.taps = [];
+  s.taps.push(realT);
+  if (s.taps.length > 5) s.taps.shift();
+  s.armT = T;
+
+  if (s.taps.length >= 2) {
+    let sum = 0;
+    for (let i = 1; i < s.taps.length; i++) sum += s.taps[i] - s.taps[i - 1];
+    let period = sum / (s.taps.length - 1);
+    period = clamp(period, 200, 2000);           // 30 - 300 bpm
+    s.period = period;
+    s.phaseOffset = 0;
+    s.t0 = T;                                     // phase 0 now, aligned to this tap
+    flashBar(seg(key('Tempo ' + bpmOf(period) + ' bpm')) + seg('Shape ' + letterOf(s.id)) + seg('Tap more to refine'), 1600);
+  } else {
+    flashBar(seg(key('Shape ' + letterOf(s.id))) + seg('Tap again to set the tempo'), 1600);
+  }
+}
+
+function nudge(s, dir) {
+  let bpm = s.period ? bpmOf(s.period) : 90;
+  bpm = clamp(bpm + dir * 2, 30, 300);
+  const ph = s.period ? getPhase(s) : 0;
+  s.period = 60000 / bpm;
+  s.t0 = T - ((ph - s.phaseOffset)) * s.period;   // keep the current phase, no jump
+  s.armT = T;
+  flashBar(seg(key('Tempo ' + bpm + ' bpm')) + seg('Shape ' + letterOf(s.id)), 1200);
+}
+
+function applyPhaseOffset(src, tgt, frac) {
+  if (!src.period) return;                         // a rhythmless shape can't lead an offset
+  if (!tgt.period) tgt.period = src.period;       // an untempo'd target inherits the tempo
+  const sp = getPhase(src) || 0;
+  tgt.phaseOffset = 0;
+  tgt.t0 = T - ((sp + frac) % 1) * tgt.period;     // align target's beat to source, plus the drag
+  tgt.armT = T;
+  const off = ((frac % 1) + 1) % 1;
+  const label = off < 0.02 || off > 0.98 ? 'synced' : '+' + off.toFixed(2) + ' beat';
+  flashBar(seg(key('Phase ' + letterOf(src.id) + ' → ' + letterOf(tgt.id))) + seg(label), 1700);
+}
+
+function toggleMute(s) {
+  s.muted = !s.muted;
+  s.armT = T;
+  flashBar(seg(key('Shape ' + letterOf(s.id))) + seg(s.muted ? 'Muted' : 'Unmuted'), 1300);
+}
+function toggleSolo(s) {
+  s.solo = !s.solo;
+  flashBar(seg(key('Shape ' + letterOf(s.id))) + seg(s.solo ? 'Solo' : 'Solo off'), 1300);
+}
+function togglePlay() {
+  playing = !playing;
+  baseBar();
+}
+function resetAll() {
+  for (const s of shapes) { s.period = null; s.t0 = 0; s.phaseOffset = 0; s.taps = []; s.muted = false; s.solo = false; s.armT = -1e9; }
+  T = 0; playing = true;
+  flashBar(seg(key('Reset')), 1000);
+}
+
+// ───── Input ─────
+const cursor = document.getElementById('cursor');
+const toggle = document.getElementById('toggle');
+const LP_MS = 500;      // long-press threshold
+const DRAG_TH = 6;      // px before a press becomes a drag
+
+window.addEventListener('pointermove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top = mouseY + 'px';
+  if (!pending) return;
+  const moved = Math.hypot(e.clientX - pending.sx, e.clientY - pending.sy);
+  if (!pending.dragging && moved > DRAG_TH) {
+    // only shapes with a tempo can lead a phase-offset drag
+    const src = shapes.find(s => s.id === pending.id);
+    if (src && src.period) {
+      pending.dragging = true;
+      clearTimeout(lpTimer);
+      document.body.classList.add('dragging');
+    }
+  }
+  if (pending.dragging) {
+    hoverTarget = hitShape(mouseX, mouseY, pending.id);
+    const src = shapes.find(s => s.id === pending.id);
+    if (hoverTarget) setBar(seg(key('Phase ' + letterOf(src.id) + ' → ' + letterOf(hoverTarget.id))) + seg('Release to offset, drag up or down to syncopate'));
+    else setBar(seg(key('Drag ' + letterOf(src.id))) + seg('Onto another shape to phase-offset it'));
+  }
+});
+
+window.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  if (e.button !== undefined && e.button !== 0) return;
+  activePointers.add(e.pointerId);
+  // A second finger landing on a held shape solos it - the touch path for the 's' key.
+  if (activePointers.size >= 2 && pending && pending.id != null && !pending.dragging) {
+    const s = shapes.find(x => x.id === pending.id);
+    if (s) { clearTimeout(lpTimer); pending.consumed = true; e.preventDefault(); toggleSolo(s); }
+    return;
+  }
+  mouseX = e.clientX; mouseY = e.clientY;
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top = mouseY + 'px';
+  const h = hitShape(e.clientX, e.clientY);
+  e.preventDefault();
+  pending = { id: h ? h.id : null, pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, downT: performance.now(), dragging: false, longpressed: false, consumed: false };
+  try { C.setPointerCapture(e.pointerId); } catch (_) {}
+
+  clearTimeout(lpTimer);
+  lpTimer = setTimeout(() => {
+    if (!pending || pending.dragging) return;
+    pending.longpressed = true;
+    if (h) toggleMute(h);          // long-press a shape = mute / unmute (touch native)
+    else resetAll();               // long-press empty = reset (touch fallback for R)
+  }, LP_MS);
+});
+
+window.addEventListener('pointerup', (e) => {
+  activePointers.delete(e.pointerId);
+  if (!pending) return;
+  // Ignore the lift of a secondary (solo) finger; only the owning pointer commits.
+  if (pending.pointerId !== undefined && e.pointerId !== pending.pointerId) return;
+  clearTimeout(lpTimer);
+  const p = pending;
+  pending = null;
+  document.body.classList.remove('dragging');
+  hoverTarget = null;
+
+  if (p.dragging) {
+    const src = shapes.find(s => s.id === p.id);
+    const tgt = hitShape(mouseX, mouseY, p.id);
+    if (src && tgt) {
+      const frac = clamp((p.sy - mouseY) / 240, -0.5, 0.5);   // drag up / down = syncopate
+      applyPhaseOffset(src, tgt, frac);
+    } else baseBar();
+    return;
+  }
+  if (p.longpressed || p.consumed) { baseBar(); return; }
+
+  if (p.id != null) {
+    const s = shapes.find(x => x.id === p.id);
+    if (s) registerTap(s, p.downT);              // use the press moment for accurate timing
+  } else {
+    // empty tap: a quick double-tap toggles play / pause (touch fallback for Space)
+    const now = p.downT;
+    if (now - lastEmptyTapT < 300) { togglePlay(); lastEmptyTapT = -1e9; }
+    else lastEmptyTapT = now;
+  }
+});
+
+window.addEventListener('pointercancel', (e) => {
+  activePointers.delete(e.pointerId);
+  clearTimeout(lpTimer);
+  pending = null; hoverTarget = null;
+  document.body.classList.remove('dragging');
+  baseBar();
+});
+
+// Scroll on a shape nudges its tempo.
+window.addEventListener('wheel', (e) => {
+  const s = hitShape(mouseX, mouseY);
+  if (!s) return;
+  e.preventDefault();
+  nudge(s, e.deltaY < 0 ? 1 : -1);
+}, { passive: false });
+
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  const k = e.key.toLowerCase();
+  if (k === ' ' || e.code === 'Space') { e.preventDefault(); togglePlay(); }
+  else if (k === 'r') { resetAll(); }
+  else if (k === 'm') { const s = hitShape(mouseX, mouseY); if (s) toggleMute(s); }
+  else if (k === 's') { const s = hitShape(mouseX, mouseY); if (s) toggleSolo(s); }
+});
+
+toggle.addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  ui.theme(dark ? 'dark' : 'light');
+  readTheme();
+});
+
+draw();
+</script>
+</body>
+</html>

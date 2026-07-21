@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<!--
+  Relational scale - resize that ripples through relationships
+  Drag one shape's edge to resize it and watch the change ripple through related shapes by tone, proximity, or role.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Relational scale - resize that ripples through relationships</title>
+<meta name="description" content="Drag one shape's edge to resize it and watch the change ripple through related shapes by tone, proximity, or role.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Relational scale - resize that ripples through relationships">
+<meta property="og:description" content="Drag one shape's edge to resize it and watch the change ripple through related shapes by tone, proximity, or role.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Relational scale",
+  "applicationCategory": "DesignApplication",
+  "description": "Drag one shape's edge to resize it and watch the change ripple through related shapes by tone, proximity, or role.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "relational scale, interaction design, relational, resize, relationships, ripple, proportion, propagation, HTML canvas, generative, interactive",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "alternateName": "AD&",
+    "url": "https://adidizdarevic.com/"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Adi Dizdarevic",
+    "url": "https://adidizdarevic.com/"
+  },
+  "isPartOf": {
+    "@type": "CreativeWork",
+    "name": "NUI - New User Interfaces",
+    "description": "Experiments in interface design and interaction."
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;600&display=swap');
+  :root {
+    --bg: #0a0a0c; --fg: rgba(255,255,255,0.92); --fg-dim: rgba(255,255,255,0.45); --fg-faint: rgba(255,255,255,0.18);
+    --grid: rgba(255,255,255,0.018); --chrome-bg: rgba(20,20,24,0.85); --chrome-bd: rgba(255,255,255,0.08);
+    --obj: rgb(132,137,148); --accent: #FBF251;
+  }
+  body.light { --bg: #FAFAFA; --fg: rgba(0,0,0,0.88); --fg-dim: rgba(0,0,0,0.45); --fg-faint: rgba(0,0,0,0.15); --grid: rgba(0,0,0,0.03); --chrome-bg: rgba(255,255,255,0.88); --chrome-bd: rgba(0,0,0,0.08); --obj: rgb(98,103,113); --accent: #FBF251; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s; }
+  canvas { position: fixed; inset: 0; display: block; }
+  #toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(10,10,10,.35);border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;transition:transform .2s;}
+  #toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+  #toggle:hover{transform:scale(1.08);}
+  body.light #toggle{background:rgba(255,255,255,.5);border-color:rgba(0,0,0,.06);color:rgba(0,0,0,.55);}
+  #cursor { position: fixed; left: 0; top: 0; width: 20px; height: 20px; border: 1.5px solid var(--fg); border-radius: 50%; pointer-events: none; z-index: 100; transform: translate(-50%, -50%); transition: border-color 0.2s, width 0.15s, height 0.15s; }
+  #cursor::before, #cursor::after { content: ''; position: absolute; background: var(--fg); }
+  #cursor::before { top: 50%; left: -3px; right: -3px; height: 1px; transform: translateY(-50%); }
+  #cursor::after { left: 50%; top: -3px; bottom: -3px; width: 1px; transform: translateX(-50%); }
+  #cursor.resize { border-color: var(--fg); }
+</style>
+</head>
+<body class="light">
+  <canvas id="c"></canvas>
+  <div id="toggle" title="Toggle theme"></div>
+  <div id="cursor"></div>
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d');
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const cursor = document.getElementById('cursor');
+const readout = { set innerHTML(v){}, set textContent(v){} };
+const ui = PT.ui({ title: 'Relational scale', hints: 'Drag edge resize · 1 tone · 2 proximity · 3 role · 0 all · Shift isolate · R reset', theme: 'light' });
+const toggle = document.getElementById('toggle');
+toggle.addEventListener('click', () => { const dark = document.body.classList.toggle('dark'); document.body.classList.toggle('light', !dark); ui.theme(dark ? 'dark' : 'light'); });
+
+// state BEFORE resize
+let W = 0, H = 0;
+let seed = 616969;
+let shapes = [];
+let initialSizes = new Map();
+let drag = null; // { id, baseSize, startDist }
+let mode = 'all';
+let shiftDown = false;
+let mx = -100, my = -100;
+let hoverId = null;
+let hoverEdge = null; // which shape's edge we're hovering (shows resize cursor)
+
+// Grey-value tiers re-encode the categorical "tone" group (formerly hue) as discrete
+// value steps: shapes sharing a tier resize together, equality preserved without colour.
+const TIERS_LIGHT = ['#2B2E34', '#484C53', '#666B74', '#878C95', '#A6ABB3'];
+const TIERS_DARK  = ['#EEF0F3', '#C4C8CF', '#9BA1AB', '#787D87', '#575C65'];
+const TIER_N = TIERS_LIGHT.length;
+const tierColor = (i) => (document.body.classList.contains('light') ? TIERS_LIGHT : TIERS_DARK)[i];
+const ROLES = ['primary', 'support', 'detail'];
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layout();
+}
+function layout() { if (shapes.length === 0) build(); }
+resize();
+window.addEventListener('resize', resize);
+
+function mulberry32(s) { return function() { let t = (s += 0x6D2B79F5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// Roles give us a third dimension of relationship. Each shape has one.
+
+function build() {
+  const rng = mulberry32(seed);
+  shapes = [];
+  initialSizes = new Map();
+  const positions = [
+    { x: 0.22, y: 0.35, role: 'primary' },
+    { x: 0.5, y: 0.3, role: 'primary' },
+    { x: 0.78, y: 0.35, role: 'support' },
+    { x: 0.28, y: 0.62, role: 'support' },
+    { x: 0.52, y: 0.6, role: 'detail' },
+    { x: 0.76, y: 0.62, role: 'support' },
+    { x: 0.38, y: 0.82, role: 'detail' },
+    { x: 0.62, y: 0.82, role: 'primary' },
+    { x: 0.15, y: 0.78, role: 'detail' },
+  ];
+  for (let i = 0; i < positions.length; i++) {
+    const p = positions[i];
+    const baseSize = p.role === 'primary' ? 58 : p.role === 'support' ? 40 : 26;
+    const s = {
+      id: i + 1,
+      x: p.x * W,
+      y: p.y * H,
+      size: baseSize,
+      targetSize: baseSize,
+      tier: (rng() * TIER_N) | 0,
+      role: p.role,
+      rolePulse: 0, // used for responsiveness anim
+    };
+    shapes.push(s);
+    initialSizes.set(s.id, baseSize);
+  }
+}
+
+
+function drawShape(s) {
+  // ease targetSize toward size
+  s.size += (s.targetSize - s.size) * 0.22;
+  X.save();
+  const charged = drag ? drag.id === s.id : !!(hoverEdge && hoverEdge.id === s.id);
+  X.fillStyle = charged ? '#FBF251' : tierColor(s.tier);
+  X.beginPath(); X.arc(s.x, s.y, s.size, 0, Math.PI * 2); X.fill();
+  // Role indicator: small internal mark
+  X.globalAlpha = 0.4;
+  X.fillStyle = 'rgba(0,0,0,0.5)';
+  X.font = '8px "IBM Plex Mono", monospace';
+  X.textAlign = 'center';
+  X.textBaseline = 'middle';
+  const letter = s.role.charAt(0).toUpperCase();
+  X.fillText(letter, s.x, s.y);
+  X.restore();
+}
+
+// relationship strength between two shapes, given mode
+function relation(a, b) {
+  if (a.id === b.id) return 0;
+  if (mode === 'tone') return a.tier === b.tier ? 1 : 0;
+  if (mode === 'proximity') {
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    const maxDist = Math.min(W, H) * 0.5;
+    return clamp(1 - dist / maxDist, 0, 1);
+  }
+  if (mode === 'role') return a.role === b.role ? 1 : 0;
+  // 'all' = weighted blend
+  const toneR = a.tier === b.tier ? 1 : 0;
+  const dist = Math.hypot(a.x - b.x, a.y - b.y);
+  const proxR = clamp(1 - dist / (Math.min(W, H) * 0.5), 0, 1);
+  const roleR = a.role === b.role ? 1 : 0;
+  return toneR * 0.45 + proxR * 0.25 + roleR * 0.3;
+}
+
+function drawRelations(focusId) {
+  if (focusId == null) return;
+  const a = shapes.find(x => x.id === focusId);
+  if (!a) return;
+  const objCol = getComputedStyle(document.body).getPropertyValue('--obj');
+  for (const b of shapes) {
+    if (b.id === a.id) continue;
+    const r = relation(a, b);
+    if (r < 0.02) continue;
+    X.save();
+    X.strokeStyle = objCol;
+    X.globalAlpha = r * 0.65;
+    X.lineWidth = 0.8 + r * 2;
+    X.setLineDash([]);
+    X.beginPath(); X.moveTo(a.x, a.y); X.lineTo(b.x, b.y); X.stroke();
+    // strength label mid-line
+    X.globalAlpha = r * 0.9;
+    X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg');
+    X.font = '9px "IBM Plex Mono", monospace';
+    X.textAlign = 'center';
+    X.fillText((r * 100).toFixed(0) + '%', (a.x + b.x) / 2, (a.y + b.y) / 2 - 5);
+    X.restore();
+  }
+}
+
+function drawEdgeHint(s) {
+  // Draw a thin ring at the edge to indicate grabbable
+  X.save();
+  X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg');
+  X.lineWidth = 1.5;
+  X.setLineDash([3, 3]);
+  X.beginPath(); X.arc(s.x, s.y, s.size + 3, 0, Math.PI * 2); X.stroke();
+  // Small notch on the side nearest cursor
+  const dx = mx - s.x, dy = my - s.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = dx / len, ny = dy / len;
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg');
+  X.setLineDash([]);
+  const px = s.x + nx * (s.size + 3);
+  const py = s.y + ny * (s.size + 3);
+  X.beginPath(); X.arc(px, py, 3, 0, Math.PI * 2); X.fill();
+  X.restore();
+}
+
+function draw() {
+  X.clearRect(0, 0, W, H);
+  // Relationship lines shown for drag target, else for hover
+  const focusId = drag ? drag.id : (hoverEdge ? hoverEdge.id : hoverId);
+  if (!shiftDown && focusId != null) drawRelations(focusId);
+  // Shapes
+  for (const s of shapes) drawShape(s);
+  // Edge indicator
+  if (!drag && hoverEdge) {
+    const s = shapes.find(x => x.id === hoverEdge.id);
+    if (s) drawEdgeHint(s);
+  }
+  // Dragged: outer indicator
+  if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    if (s) {
+      X.save();
+      X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--fg');
+      X.lineWidth = 1.5;
+      X.beginPath(); X.arc(s.x, s.y, s.size + 5, 0, Math.PI * 2); X.stroke();
+      // size label
+      X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg');
+      X.font = '10px "IBM Plex Mono", monospace';
+      X.textAlign = 'center';
+      X.fillText(`${Math.round(s.size)}px`, s.x, s.y - s.size - 14);
+      X.restore();
+    }
+  }
+  // Mode legend bottom-left
+  X.save();
+  X.font = '10px "IBM Plex Mono", monospace';
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--fg-dim');
+  X.textBaseline = 'bottom';
+  X.fillText(`Mode · ${mode.charAt(0).toUpperCase() + mode.slice(1)}`, 24, H - 58);
+  X.fillText(`Relates by · ${mode === 'all' ? 'tone(45%) + proximity(25%) + role(30%)' : mode}`, 24, H - 44);
+  X.restore();
+  readout.innerHTML = `Objects <b>${shapes.length}</b> · Mode <b>${mode}</b>${shiftDown ? ' · <span><b>Isolated</b></span>' : ''}`;
+}
+
+function loop() { draw(); requestAnimationFrame(loop); }
+loop();
+
+function hitEdge(x, y) {
+  // Return { id, dist } for shape whose edge is under cursor
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    const d = Math.hypot(x - s.x, y - s.y);
+    // edge band: size - 6 to size + 14
+    if (d > s.size - 6 && d < s.size + 14) return { id: s.id, d };
+  }
+  return null;
+}
+function hitInside(x, y) {
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (Math.hypot(x - s.x, y - s.y) < s.size) return s;
+  }
+  return null;
+}
+
+window.addEventListener('pointermove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx + 'px'; cursor.style.top = my + 'px';
+  if (drag) {
+    const s = shapes.find(x => x.id === drag.id);
+    if (s) {
+      const cur = Math.hypot(mx - s.x, my - s.y);
+      const newSize = clamp(drag.baseSize + (cur - drag.startDist), 8, Math.min(W, H) * 0.3);
+      const deltaRatio = newSize / drag.baseSize;
+      // Apply to shape
+      s.targetSize = newSize;
+      s.size = newSize;
+      // Propagate to others by relationship
+      if (!shiftDown) {
+        for (const t of shapes) {
+          if (t.id === s.id) continue;
+          const r = relation(s, t);
+          if (r < 0.02) continue;
+          const tBase = drag.baseSizes.get(t.id) || initialSizes.get(t.id);
+          const tNewSize = tBase * (1 + (deltaRatio - 1) * r);
+          t.targetSize = clamp(tNewSize, 4, Math.min(W, H) * 0.3);
+        }
+      }
+    }
+  } else {
+    const e2 = hitEdge(mx, my);
+    hoverEdge = e2;
+    cursor.classList.toggle('resize', !!e2);
+    if (!e2) {
+      const inside = hitInside(mx, my);
+      hoverId = inside ? inside.id : null;
+    } else {
+      hoverId = e2.id;
+    }
+  }
+});
+window.addEventListener('pointerdown', e => {
+  const edge = hitEdge(e.clientX, e.clientY);
+  if (edge) {
+    const s = shapes.find(x => x.id === edge.id);
+    const startDist = Math.hypot(e.clientX - s.x, e.clientY - s.y);
+    // snapshot all base sizes for proportional calculation
+    const baseSizes = new Map();
+    for (const t of shapes) baseSizes.set(t.id, t.targetSize);
+    drag = { id: s.id, baseSize: s.targetSize, startDist, baseSizes };
+  }
+});
+window.addEventListener('pointerup', () => { drag = null; });
+window.addEventListener('keydown', e => {
+  if (e.key === '0') mode = 'all';
+  else if (e.key === '1') mode = 'tone';
+  else if (e.key === '2') mode = 'proximity';
+  else if (e.key === '3') mode = 'role';
+  else if (e.key === 'Shift') shiftDown = true;
+  else if (e.key === 'r' || e.key === 'R') {
+    for (const s of shapes) s.targetSize = initialSizes.get(s.id);
+  }
+});
+window.addEventListener('keyup', e => { if (e.key === 'Shift') shiftDown = false; });
+</script>
+</body>
+</html>

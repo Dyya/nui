@@ -1,0 +1,1523 @@
+<!DOCTYPE html>
+<!--
+  Lexical defenders - a typographic arcade
+  Fly a ship and shoot the drifting words to compose a manuscript typeset live by Pretext.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Lexical defenders - a typographic arcade</title>
+<meta name="description" content="A typographic arcade: fly a ship and shoot the drifting words to compose a manuscript typeset live by Pretext.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<!-- Open Graph (minimal) -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Lexical defenders - a typographic arcade">
+<meta property="og:description" content="Fly a ship and shoot the drifting words to compose a manuscript typeset live by Pretext.">
+
+<!-- Machine-readable / AI: schema.org -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Lexical defenders",
+  "applicationCategory": "GameApplication",
+  "description": "A typographic arcade: fly a ship and shoot the drifting words to compose a manuscript typeset live by Pretext. Zen, no fail; read, save, or clear the page.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "typography, typesetting, pretext, line-breaking, game, arcade, space invaders, manuscript, kinetic, canvas",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400..600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100vh;height:100dvh;overflow:hidden;background:var(--paper);color:var(--ink);
+  font-family:'DM Sans',system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+  overscroll-behavior:none;-webkit-tap-highlight-color:transparent;
+  -webkit-user-select:none;user-select:none;
+  transition:background .3s ease,color .3s ease}
+/* The arcade canvas owns its gestures - browser must not intercept */
+.arcade,#game{touch-action:none}
+
+/* House NUI palette: monochrome + one yellow accent (fill only). Light is the default;
+   body.dark is the option. Full house pairing: DM Sans + IBM Plex Mono. */
+:root{
+  --paper:#FAFAFA;
+  --ink:#0A0A0A;
+  --ink-60:rgba(10,10,10,.58);
+  --ink-40:rgba(10,10,10,.38);
+  --ink-22:rgba(10,10,10,.20);
+  --ink-12:rgba(10,10,10,.10);
+  --accent:#FBF251;
+  --accent-soft:rgba(251,242,81,.18);
+  --obj:rgb(98,103,113);
+  --mono:'IBM Plex Mono','SF Mono',Menlo,monospace;
+  --serif:'DM Sans',system-ui,sans-serif;
+  --ease:cubic-bezier(.16,1,.3,1);
+}
+body.dark{
+  --paper:#0A0A0A;
+  --ink:#FAFAFA;
+  --ink-60:rgba(250,250,250,.60);
+  --ink-40:rgba(250,250,250,.40);
+  --ink-22:rgba(250,250,250,.22);
+  --ink-12:rgba(250,250,250,.10);
+  --accent-soft:rgba(251,242,81,.16);
+  --obj:rgb(132,137,148);
+}
+
+/* ── subtle paper grain - kept very low, almost subliminal ── */
+.grain{
+  position:fixed;inset:0;pointer-events:none;z-index:4;mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
+  background-size:220px 220px;opacity:.025;
+}
+
+/* ── layout frame ───────────────────────────────────────── */
+.frame{
+  position:fixed;inset:0;display:grid;
+  grid-template-columns:1fr 420px;
+  grid-template-rows:1fr;
+  gap:0;z-index:1;
+}
+/* Tablets - narrower column */
+@media(max-width:1100px) and (min-width:861px){
+  .frame{grid-template-columns:1fr 340px}
+}
+/* Phones - stack: arcade on top, manuscript below */
+@media(max-width:860px){
+  .frame{
+    grid-template-columns:1fr;
+    grid-template-rows: 58vh 1fr;
+    grid-template-rows: 58dvh 1fr;
+  }
+}
+
+/* ── arcade canvas region ───────────────────────────────── */
+.arcade{position:relative;overflow:hidden}
+#game{position:absolute;inset:0;width:100%;height:100%;display:block;
+  image-rendering:pixelated;image-rendering:crisp-edges}
+
+/* header - just the title */
+.id{
+  position:absolute;top:26px;left:32px;z-index:3;pointer-events:none;
+}
+.id .mark{
+  font-family:var(--serif);font-style:italic;font-size:20px;line-height:1;
+  letter-spacing:-.01em;color:var(--ink);
+}
+
+/* HUD - auto-hides; fades in on activity, out after idle */
+.hud{
+  position:absolute;left:32px;bottom:26px;z-index:3;pointer-events:none;
+  display:flex;gap:18px;align-items:center;
+  font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:none;
+  color:var(--ink-60);
+  opacity:0;transition:opacity .5s ease;
+}
+.hud.on{opacity:1}
+.hud .cell{display:flex;gap:6px;align-items:baseline}
+.hud .k{color:var(--ink-40)}
+.hud .v{color:var(--ink);font-size:11px;letter-spacing:.04em}
+
+/* controls - minimal bottom-center keycap legend, always visible but tiny */
+.keys{
+  position:absolute;left:50%;bottom:24px;transform:translateX(-50%);
+  z-index:3;pointer-events:none;
+  display:flex;gap:14px;align-items:center;opacity:.42;
+  font-family:var(--mono);font-size:8px;letter-spacing:.14em;text-transform:none;
+  color:var(--ink-60);
+}
+.keys .cap{
+  display:inline-block;padding:2px 6px;border:1px solid var(--ink-22);border-radius:3px;
+  font-size:7px;margin-right:5px;line-height:1;
+}
+.keys .touch-only{display:none}
+
+/* Touch hint - appears once on first mobile session, fades on first touch */
+.touch-hint{
+  position:absolute;inset:0;z-index:4;pointer-events:none;
+  display:none;align-items:center;justify-content:center;
+  background:linear-gradient(180deg,transparent 40%,color-mix(in srgb,var(--paper) 72%,transparent) 100%);
+  transition:opacity .6s;
+}
+.touch-hint.on{display:flex}
+.touch-hint.gone{opacity:0}
+.touch-hint-inner{
+  text-align:center;margin-bottom:14vh;padding:0 28px;
+}
+.touch-hint .glyph{
+  font-family:var(--serif);font-style:italic;font-size:44px;line-height:1;
+  color:var(--ink);margin-bottom:14px;
+}
+.touch-hint .line{
+  font-family:var(--mono);font-size:10px;letter-spacing:.24em;text-transform:none;
+  color:var(--ink-60);line-height:1.7;
+}
+.touch-hint .line b{font-weight:500;color:var(--ink)}
+
+/* Mobile - tighten everything */
+@media(max-width:860px){
+  .id{top:18px;left:20px}
+  .id .mark{font-size:16px}
+
+  .hud{left:20px;bottom:20px;gap:12px;font-size:8px;letter-spacing:.1em}
+  .hud .v{font-size:10px}
+
+  .keys{display:none}
+  .keys.touch{
+    display:flex;bottom:18px;gap:10px;opacity:.42;
+    font-size:7px;letter-spacing:.1em;
+  }
+  .keys.touch .cap{display:none}
+  .keys .touch-only{display:inline}
+}
+/* Very small phones */
+@media(max-width:400px){
+  .hud{gap:9px}
+  .hud .v{font-size:9px}
+}
+
+/* ── manuscript column ──────────────────────────────────── */
+.column{
+  position:relative;background:var(--paper);
+  display:flex;flex-direction:column;overflow:hidden;z-index:2;
+}
+.col-head{
+  padding:26px 34px 14px;
+  display:flex;justify-content:space-between;align-items:baseline;gap:16px;
+}
+.col-title{
+  font-family:var(--serif);font-style:italic;font-size:15px;color:var(--ink);
+  display:flex;align-items:baseline;gap:12px;
+}
+.col-meta{
+  font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:none;
+  color:var(--ink-40);font-style:normal;
+}
+.col-actions{
+  display:flex;gap:14px;
+  font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:none;
+  color:var(--ink-60);
+}
+.col-actions button{
+  background:none;border:none;padding:6px 2px;margin:-6px 0;
+  font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;
+  cursor:pointer;transition:color .2s;
+}
+.col-actions button:hover,.col-actions button:active{color:var(--ink)}
+.col-body{
+  flex:1;overflow:hidden;position:relative;
+}
+#manuscript{
+  position:absolute;inset:0;padding:30px 40px 40px;overflow:hidden;
+}
+
+/* Mobile column adjustments */
+@media(max-width:860px){
+  .col-head{padding:14px 20px 8px}
+  .col-title{font-size:13px;gap:10px}
+  .col-meta{font-size:8px;letter-spacing:.12em}
+  .col-actions{gap:11px;font-size:8px;letter-spacing:.12em}
+  #manuscript{padding:14px 22px 22px}
+}
+
+/* ── overlay (read mode) ────────────────────────────────── */
+.overlay{
+  position:fixed;inset:0;z-index:50;background:var(--paper);
+  display:none;align-items:center;justify-content:center;padding:60px;
+}
+.overlay.on{display:flex}
+.overlay-inner{
+  max-width:580px;width:100%;position:relative;
+}
+.overlay-head{
+  font-family:var(--mono);font-size:9px;letter-spacing:.22em;text-transform:none;
+  color:var(--ink-60);margin-bottom:32px;display:flex;justify-content:space-between;
+}
+#overlay-body{font-family:var(--serif);font-size:22px;line-height:1.42;color:var(--ink)}
+.overlay-close{
+  position:absolute;top:32px;right:32px;z-index:51;
+  background:none;border:1px solid var(--ink-22);padding:10px 16px;
+  font-family:var(--mono);font-size:9px;letter-spacing:.18em;text-transform:none;
+  color:var(--ink-60);cursor:pointer;border-radius:2px;
+  /* ensure 44px min tap target */
+  min-width:44px;min-height:36px;
+}
+.overlay-close:hover,.overlay-close:active{color:var(--ink);border-color:var(--ink-40)}
+@media(max-width:860px){
+  .overlay{padding:24px}
+  .overlay-head{margin-bottom:20px;font-size:8px}
+  .overlay-close{top:20px;right:20px;padding:8px 12px}
+}
+
+/* toast */
+.toast{
+  position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+  font-family:var(--mono);font-size:9px;letter-spacing:.18em;text-transform:none;
+  background:var(--ink);color:var(--paper);padding:8px 16px;border-radius:2px;
+  opacity:0;transition:opacity .3s;pointer-events:none;z-index:40;
+}
+.toast.on{opacity:1}
+
+/* House theme toggle: a glass circle with a solid ink dot, bottom-right (syncs with the showcase) */
+#toggle{
+  position:fixed;bottom:16px;right:16px;z-index:60;width:30px;height:30px;border-radius:50%;
+  cursor:pointer;pointer-events:auto;display:grid;place-items:center;
+  -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
+  background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.08);
+  transition:transform .2s var(--ease);
+}
+#toggle:hover{transform:scale(1.08)}
+#toggle .dot{width:12px;height:12px;border-radius:50%;background:var(--ink)}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08)}
+@media(max-width:860px){ #toggle{bottom:14px;right:14px} }
+</style>
+
+<script src="../typography/core/ui.js"></script>
+</head>
+<body>
+
+<div class="grain"></div>
+
+<div class="frame">
+  <section class="arcade">
+    <canvas id="game"></canvas>
+
+    <div class="hud" id="hud">
+      <div class="cell"><span class="k">words</span><span class="v" id="hud-words">0</span></div>
+      <div class="cell"><span class="k">struck</span><span class="v" id="hud-struck">0</span></div>
+      <div class="cell"><span class="k">shots</span><span class="v" id="hud-shots">0</span></div>
+      <div class="cell"><span class="k">acc</span><span class="v" id="hud-acc">·</span></div>
+    </div>
+
+    <!-- touch hint - shown once on first mobile session -->
+    <div class="touch-hint" id="touch-hint">
+      <div class="touch-hint-inner">
+        <div class="glyph">&amp; &nbsp; * &nbsp; &#8767;</div>
+        <div class="line"><b>Drag</b> anywhere to steer</div>
+        <div class="line"><b>Tap</b> to fire a glyph</div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="column">
+    <div class="col-head">
+      <div class="col-title">The manuscript<span class="col-meta"><span id="col-lines">0</span> lines</span></div>
+      <div class="col-actions">
+        <button id="btn-read">Read</button>
+        <button id="btn-save">Save</button>
+        <button id="btn-clear">Clear</button>
+      </div>
+    </div>
+    <div class="col-body">
+      <canvas id="manuscript"></canvas>
+    </div>
+  </aside>
+</div>
+
+<!-- full-bleed reading overlay -->
+<div class="overlay" id="overlay">
+  <button class="overlay-close" id="overlay-close">Esc</button>
+  <div class="overlay-inner">
+    <div class="overlay-head">
+      <span>The manuscript</span>
+      <span id="overlay-meta">0 words</span>
+    </div>
+    <canvas id="overlay-body"></canvas>
+  </div>
+</div>
+
+<!-- House theme toggle (glass dot); the showcase syncs theme via body.dark + #toggle -->
+<div id="toggle" title="Toggle theme"><span class="dot"></span></div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import {
+  prepareWithSegments,
+  layoutNextLine,
+  walkLineRanges,
+} from 'https://esm.sh/@chenglou/pretext@0.0.5';
+
+'use strict';
+
+// ═══════════════════════════════════════════════════════════
+//  CORPUS
+//  Curated register - crossings, thresholds, rivers, memory.
+//  Calvino/Borges-adjacent. Connective tissue keeps phrases
+//  readable when struck in any order.
+// ═══════════════════════════════════════════════════════════
+const CORPUS = {
+  nouns: [
+    'threshold','river','archive','glass','memory','cipher','lantern','ledger',
+    'bridge','cartograph','stone','salt','harbor','rumor','map','margin',
+    'echo','window','page','silence','ember','key','thread','seam',
+    'well','mirror','moth','ink','hinge','vellum','stair','lintel',
+    'orchard','cistern','bell','cloister','gate','quay','reed','dusk'
+  ],
+  verbs: [
+    'crosses','remembers','folds','returns','dissolves','gathers','traces','marks',
+    'opens','keeps','mends','lifts','descends','meets','inscribes','names',
+    'waits','listens','repeats','continues'
+  ],
+  connectives: [
+    'the','a','of','and','in','at','upon','beneath','through','between',
+    'before','after','into','across','above','below','again','still','yet','only',
+    'where','when','while'
+  ],
+  adjectives: [
+    'slow','quiet','distant','forgotten','amber','vast','narrow','faint',
+    'half-drawn','unfinished','returning','blue','silent','shallow','patient',
+    'hollow','braided','unread'
+  ],
+  punctuation: ['—','.',',',':',';']
+};
+
+// Weighted bag for invader seeding - more nouns than connectives.
+function seedWord(){
+  const r = Math.random();
+  if (r < .42) return pick(CORPUS.nouns);
+  if (r < .62) return pick(CORPUS.verbs);
+  if (r < .80) return pick(CORPUS.connectives);
+  if (r < .94) return pick(CORPUS.adjectives);
+  return pick(CORPUS.punctuation);
+}
+const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
+const lerp = (a,b,t) => a+(b-a)*t;
+
+// ═══════════════════════════════════════════════════════════
+//  GAME CANVAS (hi-dpi)
+// ═══════════════════════════════════════════════════════════
+const gameCv = document.getElementById('game');
+const gctx = gameCv.getContext('2d');
+let gameW = 0, gameH = 0, dpr = 1;
+
+function resizeGame(){
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  const rect = gameCv.getBoundingClientRect();
+  gameW = rect.width; gameH = rect.height;
+  gameCv.width  = Math.floor(gameW * dpr);
+  gameCv.height = Math.floor(gameH * dpr);
+  gctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener('resize', () => {
+  resizeGame();
+  resizeManuscript();
+  relayoutInvaders();
+  placeShip();
+});
+// iOS: also listen to orientationchange for the URL-bar jump that
+// resize sometimes misses.
+window.addEventListener('orientationchange', () => {
+  setTimeout(() => {
+    resizeGame();
+    resizeManuscript();
+    relayoutInvaders();
+    placeShip();
+  }, 200);
+});
+
+// ═══════════════════════════════════════════════════════════
+//  THEME COLOURS - read from the CSS vars, re-read on toggle.
+//  House mono + single yellow accent (fill only). ink()/acc()
+//  build rgba at the current theme so the canvas re-colours on
+//  the light/dark flip.
+// ═══════════════════════════════════════════════════════════
+let INK = {r:10,g:10,b:10}, ACC = {r:251,g:242,b:81}, PAPER = '#FAFAFA', OBJ = 'rgb(98,103,113)';
+function hexToRgb(h){
+  h = (h||'').trim();
+  if (h[0] === '#'){
+    h = h.slice(1); if (h.length===3) h = h.split('').map(c=>c+c).join('');
+    return { r:parseInt(h.slice(0,2),16), g:parseInt(h.slice(2,4),16), b:parseInt(h.slice(4,6),16) };
+  }
+  const m = h.match(/(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+  return m ? { r:+m[1], g:+m[2], b:+m[3] } : { r:10, g:10, b:10 };
+}
+function readColors(){
+  const cs = getComputedStyle(document.body);
+  PAPER = cs.getPropertyValue('--paper').trim() || PAPER;
+  INK   = hexToRgb(cs.getPropertyValue('--ink').trim() || '#0A0A0A');
+  ACC   = hexToRgb(cs.getPropertyValue('--accent').trim() || '#FBF251');
+  OBJ   = cs.getPropertyValue('--obj').trim() || OBJ;
+}
+const ink = a => `rgba(${INK.r},${INK.g},${INK.b},${a})`;
+const acc = a => `rgba(${ACC.r},${ACC.g},${ACC.b},${a})`;
+readColors();
+
+// ═══════════════════════════════════════════════════════════
+//  SHIP - drawn as sharp vector pixels (3× inflation)
+//  8×7 matrix that evokes the Space Invaders canon without
+//  copying any particular sprite.
+// ═══════════════════════════════════════════════════════════
+// Symmetric about the centre column so the ship is balanced at rest (no false lean).
+const SHIP = [
+  '...##...',
+  '..####..',
+  '..####..',
+  '.######.',
+  '########',
+  '########',
+  '##....##',
+].map(r => r.split(''));
+
+const SHIP_LEAN_PX = 1.5;                          // top row shears this many px (times px) at full bank
+function shipTopShift(bank, px){ return bank * px * SHIP_LEAN_PX; }
+function drawShip(x, y, px=3, color=ink(1), bank=0){
+  const W = SHIP[0].length, H = SHIP.length;
+  gctx.fillStyle = color;
+  const maxShift = px * SHIP_LEAN_PX;
+  for(let j=0;j<H;j++){
+    // Shear, not rotate: upper rows slide toward the travel direction while the base stays
+    // anchored. Round the magnitude, then re-sign, so left and right lean by the same amount.
+    const mag = Math.round(Math.abs(bank) * maxShift * ((H-1-j)/(H-1)));
+    const shift = bank < 0 ? -mag : mag;
+    for(let i=0;i<W;i++){
+      if (SHIP[j][i] === '#'){
+        gctx.fillRect(
+          Math.floor(x - W*px/2 + i*px) + shift,
+          Math.floor(y - H*px/2 + j*px),
+          px, px
+        );
+      }
+    }
+  }
+}
+
+// A muzzle flash rendered as a 3-pixel burst
+function drawMuzzle(x, y, t){
+  const a = clamp(1 - t/180, 0, 1);
+  if (a <= 0) return;
+  gctx.fillStyle = acc(a*0.9);
+  gctx.fillRect(Math.floor(x-2), Math.floor(y-6), 4, 2);
+  gctx.fillStyle = ink(a*0.6);
+  gctx.fillRect(Math.floor(x-1), Math.floor(y-8), 2, 2);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  AMMUNITION - typographic glyphs
+//  Ship fires actual typographic marks. Each bullet carries
+//  the glyph it draws (em-dash, ampersand, asterisk, etc.).
+// ═══════════════════════════════════════════════════════════
+const GLYPHS = ['—','&','*','§','¶','†','‡','·','◆','∿','◇','○'];
+const bullets = [];
+
+function fireBullet(){
+  if (ship.cooldown > 0) return false;
+  const glyph = GLYPHS[Math.floor(Math.random()*GLYPHS.length)];
+
+  // Gentle auto-aim: nudge the shot toward the nearest alive invader
+  // that's roughly above the ship. Keeps taps/shots feeling purposeful
+  // without being a lock-on - you still have to be pointed the right way.
+  let vx = 0;
+  let best = null, bestScore = Infinity;
+  for (const v of invaders){
+    if (!v.alive) continue;
+    const dx = v.x - ship.x;
+    const dy = ship.y - v.y; // positive = above
+    if (dy < 40) continue;   // ignore anything level/below
+    // Prefer targets nearly overhead: weight horizontal distance heavily.
+    const score = Math.abs(dx) * 1.0 + Math.abs(dy) * 0.15;
+    if (score < bestScore){ bestScore = score; best = { dx, dy }; }
+  }
+  if (best && Math.abs(best.dx) < 140){
+    // Time to reach the target's height, then lateral velocity to match.
+    const t = best.dy / 520;
+    vx = clamp(best.dx / t, -260, 260) * 0.9;
+  }
+
+  bullets.push({
+    x: ship.x, y: ship.y - 20,
+    vx,
+    vy: -520, // px/s
+    glyph,
+    born: performance.now(),
+    size: 18 + Math.random()*6,
+    rot: (Math.random()-.5)*.3,
+  });
+  ship.cooldown = 170; // ms
+  ship.muzzleT = 0;
+  stats.shots++;
+  updateHUD();
+  return true;
+}
+
+function drawBullet(b){
+  gctx.save();
+  gctx.translate(b.x, b.y);
+  gctx.rotate(b.rot);
+  gctx.fillStyle = ink(1);
+  gctx.font = `italic ${b.size}px "DM Sans", system-ui, sans-serif`;
+  gctx.textAlign = 'center';
+  gctx.textBaseline = 'middle';
+  gctx.fillText(b.glyph, 0, 0);
+  gctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INVADERS
+//  A loose grid of words, drifting with a slow sine sway.
+//  Grid dimensions adapt to canvas width so the composition
+//  holds on phones (fewer columns, tighter rows).
+// ═══════════════════════════════════════════════════════════
+const invaders = [];
+let driftPhase = 0;
+let invCols = 6, invRows = 3;
+
+function gridDims(){
+  // Pick cols/rows from available width.
+  if (gameW < 380)  return { cols: 3, rows: 3, rowGap: 40, marginX: 28, marginTop: 74 };
+  if (gameW < 520)  return { cols: 4, rows: 3, rowGap: 42, marginX: 38, marginTop: 80 };
+  if (gameW < 760)  return { cols: 5, rows: 3, rowGap: 44, marginX: 58, marginTop: 84 };
+  return              { cols: 6, rows: 3, rowGap: 48, marginX: 80, marginTop: 90 };
+}
+
+function seedInvaders(){
+  invaders.length = 0;
+  const d = gridDims();
+  invCols = d.cols; invRows = d.rows;
+  const usableW = gameW - d.marginX*2;
+  for(let r=0;r<invRows;r++){
+    for(let c=0;c<invCols;c++){
+      invaders.push({
+        word: seedWord(),
+        col: c, row: r,
+        baseX: d.marginX + (c+0.5)*(usableW/invCols),
+        baseY: d.marginTop + r*d.rowGap,
+        x:0, y:0, w:0, h:0,
+        alive: true,
+        struck: 0,
+        respawnAt: 0,
+        flashPhase: (c+r)*.3,
+      });
+    }
+  }
+}
+
+// Re-place existing invaders onto a new grid layout (preserves alive
+// states / words) - used on resize.
+function relayoutInvaders(){
+  const d = gridDims();
+  const usableW = gameW - d.marginX*2;
+  const newCount = d.cols * d.rows;
+
+  // If dimensions changed, full reseed is cleanest.
+  if (d.cols !== invCols || d.rows !== invRows){
+    // Remember words currently alive so we don't lose them entirely.
+    const kept = invaders.filter(v => v.alive).map(v => v.word);
+    seedInvaders();
+    // Sprinkle kept words across the new grid where possible.
+    for (let i=0; i<Math.min(kept.length, invaders.length); i++){
+      invaders[i].word = kept[i];
+    }
+    return;
+  }
+  // Same dimensions, different spacing: just update base positions.
+  for (const v of invaders){
+    v.baseX = d.marginX + (v.col + 0.5)*(usableW/invCols);
+    v.baseY = d.marginTop + v.row*d.rowGap;
+  }
+}
+
+function updateInvaders(dt){
+  driftPhase += dt * 0.00065;
+  for(const v of invaders){
+    if (!v.alive){
+      if (performance.now() > v.respawnAt){
+        v.alive = true;
+        v.word = seedWord();
+        v.struck = 0;
+      } else continue;
+    }
+    const drift = Math.sin(driftPhase*1.2 + v.col*0.6 + v.row*0.9)*18;
+    const slow  = Math.sin(driftPhase*0.45 + v.col*0.3)*7;
+    v.x = v.baseX + drift;
+    v.y = v.baseY + slow;
+    if (v.struck > 0) v.struck = Math.max(0, v.struck - dt);
+  }
+}
+
+function drawInvaders(){
+  gctx.textAlign = 'center';
+  gctx.textBaseline = 'middle';
+  for(const v of invaders){
+    if (!v.alive) continue;
+    const flash = v.struck > 0 ? v.struck/180 : 0;
+    const sz = 20 + Math.sin(driftPhase*2 + v.flashPhase)*0.6 + flash*4;
+    gctx.font = `italic ${sz}px "DM Sans", system-ui, sans-serif`;
+
+    // Hit box - measure once per frame (cheap)
+    const m = gctx.measureText(v.word);
+    v.w = m.width + 10;
+    v.h = sz + 6;
+
+    // On a strike, mark the word with a yellow highlighter FILL behind it (accent = fill only);
+    // the glyph itself stays ink, never tinted.
+    if (flash > 0){
+      gctx.fillStyle = acc(flash*0.9);
+      gctx.fillRect(v.x - m.width/2 - 4, v.y - sz*0.52, m.width + 8, sz*0.96);
+    }
+    gctx.fillStyle = ink(1);
+    gctx.fillText(v.word, v.x, v.y);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PARTICLES - letter-debris on strike
+//  When a word is struck, its letters scatter and dissolve.
+// ═══════════════════════════════════════════════════════════
+const particles = [];
+
+function spawnDebris(v){
+  const chars = v.word.split('');
+  const sz = 22;
+  gctx.font = `italic ${sz}px "DM Sans", system-ui, sans-serif`;
+  const totalW = gctx.measureText(v.word).width;
+  let cursorX = v.x - totalW/2;
+  for(const ch of chars){
+    const cw = gctx.measureText(ch).width;
+    particles.push({
+      ch,
+      x: cursorX + cw/2,
+      y: v.y,
+      vx: (Math.random()-.5)*120,
+      vy: -180 - Math.random()*120,
+      ay: 520,
+      rot: 0,
+      vrot: (Math.random()-.5)*6,
+      life: 1,
+      size: sz,
+      color: ink(1),
+    });
+    cursorX += cw;
+  }
+}
+
+function updateParticles(dt){
+  const s = dt/1000;
+  for(let i=particles.length-1;i>=0;i--){
+    const p = particles[i];
+    p.x += p.vx*s;
+    p.y += p.vy*s;
+    p.vy += p.ay*s;
+    p.rot += p.vrot*s;
+    p.life -= s*0.9;
+    if (p.life <= 0 || p.y > gameH+40) particles.splice(i,1);
+  }
+}
+
+function drawParticles(){
+  for(const p of particles){
+    gctx.save();
+    gctx.translate(p.x, p.y);
+    gctx.rotate(p.rot);
+    gctx.globalAlpha = clamp(p.life, 0, 1);
+    gctx.fillStyle = p.color;
+    gctx.font = `italic ${p.size}px "DM Sans", system-ui, sans-serif`;
+    gctx.textAlign='center'; gctx.textBaseline='middle';
+    gctx.fillText(p.ch, 0, 0);
+    gctx.restore();
+  }
+  gctx.globalAlpha = 1;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SHIP STATE
+// ═══════════════════════════════════════════════════════════
+const ship = {
+  x: 0, y: 0,
+  vx: 0,
+  speed: 360,    // px/s
+  cooldown: 0,
+  muzzleT: 999,
+};
+const keys = new Set();
+
+function placeShip(){
+  ship.y = gameH - 64;
+  if (ship.x === 0) ship.x = gameW/2;
+  ship.x = clamp(ship.x, 32, gameW-32);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  COLLISIONS
+// ═══════════════════════════════════════════════════════════
+function checkHits(){
+  for(let bi = bullets.length-1; bi >= 0; bi--){
+    const b = bullets[bi];
+    for(const v of invaders){
+      if (!v.alive) continue;
+      const dx = Math.abs(b.x - v.x);
+      const dy = Math.abs(b.y - v.y);
+      if (dx < v.w/2 && dy < v.h/2){
+        // strike!
+        spawnDebris(v);
+        spawnMintEcho(v);
+        mintWord(v.word);
+        v.alive = false;
+        v.struck = 180;
+        v.respawnAt = performance.now() + 1400 + Math.random()*1200;
+        bullets.splice(bi,1);
+        stats.struck++;
+        updateHUD();
+        flashPaper();
+        break;
+      }
+    }
+  }
+}
+
+// Mint echo - a ghost of the struck word flies toward the manuscript
+// (top-right on desktop, top of the column on stacked mobile) and
+// fades. This is the visible thread from "hit" to "written".
+const mintEchoes = [];
+function spawnMintEcho(v){
+  // Target: the upper-right corner of the arcade, toward the column.
+  const tx = gameW - 12;
+  const ty = 40;
+  mintEchoes.push({
+    word: v.word,
+    x: v.x, y: v.y,
+    tx, ty,
+    t: 0, life: 620,
+  });
+  if (mintEchoes.length > 8) mintEchoes.shift();
+}
+function updateMintEchoes(dt){
+  for(let i=mintEchoes.length-1;i>=0;i--){
+    const e = mintEchoes[i];
+    e.t += dt;
+    if (e.t >= e.life) mintEchoes.splice(i,1);
+  }
+}
+function drawMintEchoes(){
+  for(const e of mintEchoes){
+    const p = e.t / e.life;         // 0..1
+    const ease = 1 - Math.pow(1-p, 3); // easeOutCubic
+    const x = lerp(e.x, e.tx, ease);
+    const y = lerp(e.y, e.ty, ease);
+    const alpha = (1 - p) * 0.8;
+    const size = lerp(22, 12, ease);
+    gctx.save();
+    gctx.globalAlpha = alpha;
+    gctx.fillStyle = ink(1);
+    gctx.font = `italic ${size}px "DM Sans", system-ui, sans-serif`;
+    gctx.textAlign = 'center';
+    gctx.textBaseline = 'middle';
+    gctx.fillText(e.word, x, y);
+    gctx.restore();
+  }
+  gctx.globalAlpha = 1;
+}
+
+// brief screen-wide paper flash on strike
+let paperFlashT = 0;
+function flashPaper(){ paperFlashT = 160; }
+
+// ═══════════════════════════════════════════════════════════
+//  MANUSCRIPT - the piece-de-resistance
+//  Each struck word appends to the manuscript text. We keep
+//  the raw string and re-layout via Pretext whenever it
+//  grows or the column resizes. Using `layoutNextLine` lets
+//  each incoming word animate in on its own line when the
+//  previous line fills - exactly the behavior we want.
+// ═══════════════════════════════════════════════════════════
+const MS_FONT = 'italic 22px "DM Sans", system-ui, sans-serif';
+const MS_LINE_HEIGHT = 32;
+const MS_PAD_X = 40;
+const MS_PAD_TOP = 34;
+const MS_PAD_BOT = 44;
+
+let manuscript = '';
+const manuscriptCv = document.getElementById('manuscript');
+const mctx = manuscriptCv.getContext('2d');
+let msW = 0, msH = 0;
+
+function resizeManuscript(){
+  const rect = manuscriptCv.parentElement.getBoundingClientRect();
+  msW = rect.width;
+  msH = rect.height;
+  manuscriptCv.width = Math.floor(msW*dpr);
+  manuscriptCv.height = Math.floor(msH*dpr);
+  manuscriptCv.style.width = msW+'px';
+  manuscriptCv.style.height = msH+'px';
+  mctx.setTransform(dpr,0,0,dpr,0,0);
+  renderManuscript();
+}
+
+// ── Lightweight grammar ──────────────────────────────────
+// Struck words arrive in the order you shoot them, so to keep the
+// passage readable we track the part of speech of the previous word
+// and insert connective tissue (articles, prepositions, punctuation)
+// as needed. The result reads like fragmentary, Calvino-ish prose
+// rather than a word list.
+function posOf(word){
+  if (CORPUS.punctuation.includes(word)) return 'punct';
+  if (CORPUS.nouns.includes(word)) return 'noun';
+  if (CORPUS.verbs.includes(word)) return 'verb';
+  if (CORPUS.adjectives.includes(word)) return 'adj';
+  if (CORPUS.connectives.includes(word)) return 'conn';
+  return 'noun';
+}
+
+let grammar = { lastPos: null, wordsSinceStop: 0, hasSubject: false };
+const ARTICLES = ['the','a','the','that','this'];
+const PREPS = ['of','in','through','beneath','between','across','beyond','within'];
+
+function mintWord(word){
+  const pos = posOf(word);
+
+  // First word ever - open with an article for cadence.
+  if (!manuscript){
+    const opener = (pos === 'noun' || pos === 'adj') ? capitalize(pick(ARTICLES)) + ' ' : '';
+    manuscript = opener + (opener ? word : capitalize(word)) + ' ';
+    grammar.lastPos = pos;
+    grammar.wordsSinceStop = 1;
+    grammar.hasSubject = (pos === 'noun');
+    renderManuscript(); animateMint(word); return;
+  }
+
+  const lastChar = manuscript.trim().slice(-1);
+  const atClauseStart = ['.','—',':',';','!','?'].includes(lastChar);
+  let insert = '';
+
+  if (pos === 'punct'){
+    manuscript = manuscript.replace(/\s*$/, '') + word + ' ';
+    grammar.lastPos = 'punct';
+    if (word === '.' || word === '—' || word === ':' || word === ';'){
+      grammar.wordsSinceStop = 0; grammar.hasSubject = false;
+      if (word === '.' && Math.random() < .4) manuscript = manuscript.trim() + '\n\n';
+    }
+    renderManuscript(); animateMint(word); return;
+  }
+
+  // Decide connective tissue based on the transition.
+  if (atClauseStart){
+    if (pos === 'noun' || pos === 'adj') insert = capitalize(pick(ARTICLES)) + ' ';
+  } else {
+    switch(grammar.lastPos + '>' + pos){
+      case 'noun>noun':
+        // two nouns colliding - bind with a preposition + article
+        insert = pick(PREPS) + ' ' + (Math.random()<.6 ? pick(ARTICLES)+' ' : ''); break;
+      case 'noun>adj':
+        // "stone quiet" → "stone, quiet" (appositive)
+        insert = ', '; break;
+      case 'verb>noun':
+        insert = (Math.random()<.5 ? pick(ARTICLES)+' ' : ''); break;
+      case 'verb>verb':
+        insert = 'and '; break;
+      case 'adj>verb':
+        insert = pick(ARTICLES) + ' '; break; // adj wants a noun; fake one via article
+      case 'noun>verb':
+        insert = ''; break; // subject → predicate, clean
+      case 'adj>noun':
+        insert = ''; break; // "quiet river" - clean
+      case 'conn>conn':
+        insert = ''; break;
+      default:
+        insert = '';
+    }
+  }
+
+  // Capitalize at clause starts.
+  let out = word;
+  if (atClauseStart && !insert) out = capitalize(word);
+
+  manuscript += insert + out + ' ';
+  // Cleanup: no space before punctuation; collapse doubles; no punctuation runs.
+  manuscript = manuscript
+    .replace(/\s+([,;:.])/g, '$1')
+    .replace(/([,;:.—])[,;:]+/g, '$1')   // ",:" → ","  keep first mark
+    .replace(/ {2,}/g, ' ');
+  // a → an before a vowel sound (handles the article we may have inserted)
+  manuscript = manuscript.replace(/\b([Aa])\s+([aeiouAEIOU])/g,
+    (m, art, v) => (art === 'A' ? 'An ' : 'an ') + v);
+  grammar.lastPos = pos;
+  grammar.wordsSinceStop++;
+  if (pos === 'noun') grammar.hasSubject = true;
+
+  // Auto-punctuate: after a longish run, drop a comma or period so
+  // the passage breathes and Pretext gets real sentence structure.
+  // (Skip if we're already sitting on punctuation.)
+  const tail = manuscript.trim().slice(-1);
+  const onPunct = [',',';',':','.','—'].includes(tail);
+  if (!onPunct && grammar.wordsSinceStop >= 6 && Math.random() < .5){
+    const mark = grammar.hasSubject && Math.random() < .55 ? '.' : ',';
+    manuscript = manuscript.replace(/\s*$/,'') + mark + ' ';
+    grammar.lastPos = 'punct';
+    if (mark === '.'){
+      grammar.wordsSinceStop = 0; grammar.hasSubject = false;
+      if (Math.random() < .35) manuscript = manuscript.trim() + '\n\n';
+    }
+  }
+
+  renderManuscript();
+  animateMint(word);
+}
+
+function capitalize(s){
+  if (!s) return s;
+  if (CORPUS.punctuation.includes(s)) return s;
+  return s[0].toUpperCase() + s.slice(1);
+}
+
+// Pretext prep cache - `prepareWithSegments` is O(text length) and
+// we re-render on every minted word. Cache prepared objects and
+// line counts by (text, font, maxWidth). Cleared on manuscript reset.
+const _prepCache = new Map();
+const _lineCache = new Map();
+function getPrepared(text, font){
+  const key = font + '|' + text;
+  let p = _prepCache.get(key);
+  if (!p){
+    p = prepareWithSegments(text, font);
+    _prepCache.set(key, p);
+    // Soft cap so memory doesn't run away on long sessions.
+    if (_prepCache.size > 120){
+      const firstKey = _prepCache.keys().next().value;
+      _prepCache.delete(firstKey);
+    }
+  }
+  return p;
+}
+function getLineCount(prepared, maxWidth, font, text){
+  const key = font + '|' + Math.floor(maxWidth) + '|' + text;
+  let n = _lineCache.get(key);
+  if (n === undefined){
+    n = 0;
+    walkLineRanges(prepared, maxWidth, () => n++);
+    _lineCache.set(key, n);
+    if (_lineCache.size > 200){
+      const firstKey = _lineCache.keys().next().value;
+      _lineCache.delete(firstKey);
+    }
+  }
+  return n;
+}
+
+// Render manuscript through Pretext.
+// When content exceeds the visible column height, we drop leading
+// paragraphs (rolling window) so the growing edge stays on screen.
+function renderManuscript(){
+  mctx.clearRect(0,0,msW,msH);
+  if (!manuscript){
+    mctx.fillStyle = ink(.28);
+    mctx.font = `italic 14px "DM Sans", system-ui, sans-serif`;
+    mctx.textAlign = 'left'; mctx.textBaseline = 'top';
+    mctx.fillText('Nothing written yet.', MS_PAD_X, MS_PAD_TOP);
+    document.getElementById('col-lines').textContent = '0';
+    document.getElementById('hud-words').textContent = '0';
+    return;
+  }
+
+  const maxWidth = msW - MS_PAD_X*2;
+  const lineH = MS_LINE_HEIGHT;
+  const availH = msH - MS_PAD_TOP - MS_PAD_BOT;
+  const maxLines = Math.floor(availH / lineH);
+
+  // Split into paragraphs, measure lines per paragraph via Pretext
+  // (walkLineRanges is the cheap O(segments) path - no string build).
+  let paragraphs = manuscript.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
+  const paraLines = paragraphs.map(p => {
+    const prepared = getPrepared(p, MS_FONT);
+    const n = getLineCount(prepared, maxWidth, MS_FONT, p);
+    return { prepared, n };
+  });
+
+  // Gap between paragraphs costs roughly 0.55 lines (matches draw code).
+  const gapCost = 0.55;
+
+  // Drop leading paragraphs until total fits.
+  let totalLines = 0;
+  for(const p of paraLines) totalLines += p.n;
+  totalLines += (paraLines.length - 1) * gapCost;
+
+  let startIdx = 0;
+  while(totalLines > maxLines && startIdx < paraLines.length - 1){
+    totalLines -= paraLines[startIdx].n;
+    totalLines -= gapCost;
+    startIdx++;
+  }
+
+  // Draw
+  let y = MS_PAD_TOP;
+  let rendered = 0;
+  mctx.fillStyle = ink(1);
+  mctx.font = MS_FONT;
+  mctx.textAlign = 'left';
+  mctx.textBaseline = 'top';
+
+  let lastLineInfo = null;
+
+  for(let pi = startIdx; pi < paraLines.length; pi++){
+    const { prepared } = paraLines[pi];
+    let cursor = { segmentIndex: 0, graphemeIndex: 0 };
+    while(true){
+      if (y + lineH > msH - MS_PAD_BOT) break;
+      const line = layoutNextLine(prepared, cursor, maxWidth);
+      if (!line) break;
+      mctx.fillText(line.text, MS_PAD_X, y);
+      rendered++;
+      lastLineInfo = { text: line.text, y };
+      cursor = line.end;
+      y += lineH;
+    }
+    if (pi < paraLines.length - 1) y += lineH * gapCost;
+  }
+
+  // A short yellow highlighter FILL under the newest line marks where the manuscript is
+  // being written into (accent = fill only, never a thin line).
+  if (lastLineInfo){
+    mctx.font = MS_FONT;
+    const w = mctx.measureText(lastLineInfo.text).width;
+    mctx.fillStyle = acc(.55);
+    mctx.fillRect(MS_PAD_X, lastLineInfo.y + lineH - 5, w, 3);
+    mctx.fillStyle = ink(1);
+  }
+
+  // If we dropped paragraphs, show a faint ellipsis at the top.
+  if (startIdx > 0){
+    mctx.fillStyle = ink(.28);
+    mctx.font = `italic 13px "DM Sans", system-ui, sans-serif`;
+    mctx.fillText('…', MS_PAD_X, 10);
+    mctx.fillStyle = ink(1);
+  }
+
+  // Update counters - lines currently on screen; total words in
+  // the full manuscript (not just what's visible).
+  document.getElementById('col-lines').textContent = String(rendered);
+  const wc = manuscript.replace(/[—.,:;]/g,' ').trim().split(/\s+/).filter(Boolean).length;
+  document.getElementById('hud-words').textContent = String(wc);
+}
+
+// (The riso-red underline on the newest line already telegraphs
+// the just-minted word - no separate pulse needed.)
+function animateMint(_word){ /* reserved for future use */ }
+
+// ═══════════════════════════════════════════════════════════
+//  STATS
+// ═══════════════════════════════════════════════════════════
+const stats = { shots: 0, struck: 0 };
+
+let hudHideTimer = null;
+const HUD_IDLE_MS = 2000;
+function showHUD(){
+  const el = document.getElementById('hud');
+  if (!el) return;
+  el.classList.add('on');
+  clearTimeout(hudHideTimer);
+  hudHideTimer = setTimeout(() => el.classList.remove('on'), HUD_IDLE_MS);
+}
+
+function updateHUD(){
+  document.getElementById('hud-shots').textContent = String(stats.shots).padStart(3,'0');
+  document.getElementById('hud-struck').textContent = String(stats.struck);
+  const acc = stats.shots === 0 ? '·' :
+    Math.round(stats.struck/stats.shots*100) + '%';
+  document.getElementById('hud-acc').textContent = acc;
+  showHUD();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER LOOP
+// ═══════════════════════════════════════════════════════════
+let last = performance.now();
+function frame(now){
+  const dt = Math.min(48, now - last);
+  last = now;
+
+  // input → ship
+  //   keyboard: arrow/AD adds to acceleration
+  //   pointer:  ptrTargetX attracts the ship toward a column
+  let ax = 0;
+  if (keys.has('a') || keys.has('arrowleft'))  ax -= 1;
+  if (keys.has('d') || keys.has('arrowright')) ax += 1;
+
+  if (ptrTargetX !== null){
+    // Attract ship toward ptrTargetX with a critically-damped feel.
+    // Blend: direct attraction dominates, but we keep the acceleration
+    // framework for keyboard input so the two can coexist.
+    const diff = ptrTargetX - ship.x;
+    const attract = clamp(diff / 60, -1.25, 1.25); // normalized steer signal
+    ax = attract; // pointer overrides keyboard when active
+  }
+  ship.vx = lerp(ship.vx, ax*ship.speed, 0.22);
+  ship.x += ship.vx * dt/1000;
+  ship.x = clamp(ship.x, 32, gameW-32);
+  ship.cooldown = Math.max(0, ship.cooldown - dt);
+  ship.muzzleT += dt;
+
+  // auto-fire - keyboard hold on space/J, or pointer hold past threshold
+  if (keys.has(' ') || keys.has('j')) fireBullet();
+  if (ptrActive && !overlayOn && !curtainOn){
+    const held = performance.now() - ptrActive.startT;
+    if (held > HOLD_FIRE_AFTER){
+      ptrActive.autofire = true;
+      fireBullet();
+    }
+  }
+
+  // update world
+  updateInvaders(dt);
+  for(let i = bullets.length-1; i>=0; i--){
+    const b = bullets[i];
+    b.y += b.vy * dt/1000;
+    if (b.vx) b.x += b.vx * dt/1000;
+    b.rot += 0.005;
+    if (b.y < -40) bullets.splice(i,1);
+  }
+  updateParticles(dt);
+  updateMintEchoes(dt);
+  checkHits();
+
+  // clear + draw
+  gctx.clearRect(0,0,gameW,gameH);
+
+  // paper flash overlay - a faint yellow accent bloom on a strike (fill, not text)
+  if (paperFlashT > 0){
+    gctx.fillStyle = acc(paperFlashT/160 * 0.06);
+    gctx.fillRect(0,0,gameW,gameH);
+    paperFlashT = Math.max(0, paperFlashT - dt);
+  }
+
+  drawInvaders();
+  bullets.forEach(drawBullet);
+  drawParticles();
+  drawMintEchoes();
+  // The ship's top rows shear toward its travel direction (level when centred); the muzzle
+  // flash rides the sheared nose (the peak) so the shot light tracks where the ship points.
+  const bank = clamp(ship.vx / ship.speed, -1, 1);
+  drawShip(ship.x, ship.y, 3, ink(1), bank);
+  drawMuzzle(ship.x + shipTopShift(bank, 3) * 1.2, ship.y - 14, ship.muzzleT);
+
+  // Onboarding: state the goal plainly until the first word is written, then fade it out.
+  const introTarget = stats.struck === 0 ? 1 : 0;
+  introAlpha += (introTarget - introAlpha) * 0.06;
+  if (introAlpha > 0.01){
+    const msg = 'Shoot the drifting words to write the manuscript';
+    gctx.save();
+    gctx.globalAlpha = introAlpha;
+    gctx.fillStyle = ink(.5);
+    gctx.font = '500 15px "IBM Plex Mono", monospace';
+    let fs = 15;
+    const tw = gctx.measureText(msg).width;
+    if (tw > gameW*0.9) fs = Math.max(10, 15 * gameW*0.9 / tw);   // scale to fit narrow screens
+    gctx.font = `500 ${fs}px "IBM Plex Mono", monospace`;
+    gctx.textAlign = 'center'; gctx.textBaseline = 'middle';
+    gctx.fillText(msg, gameW/2, gameH*0.52);
+    gctx.restore();
+  }
+
+  requestAnimationFrame(frame);
+}
+let introAlpha = 0;
+
+// ═══════════════════════════════════════════════════════════
+//  INPUT
+// ═══════════════════════════════════════════════════════════
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (curtainOn){
+    hideCurtain();
+    e.preventDefault();
+    return;
+  }
+  // Tab → read mode
+  if (k === 'tab'){ e.preventDefault(); toggleOverlay(); return; }
+  // Esc → close overlay
+  if (k === 'escape'){ if (overlayOn) toggleOverlay(); return; }
+  // S → save
+  if (k === 's' && !e.metaKey && !e.ctrlKey){ saveManuscript(); return; }
+  // T → toggle light / dark theme
+  if (k === 't'){ applyTheme(!document.body.classList.contains('dark')); return; }
+  // Prevent scrolling on arrow/space
+  if (['arrowleft','arrowright','arrowup','arrowdown',' '].includes(k)) e.preventDefault();
+  keys.add(k);
+  showHUD();
+});
+window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+
+// ── Touch / pointer controls ─────────────────────────────
+// Design:
+//   • drag anywhere on the arcade  → ship target x follows pointer
+//   • tap (short press, no drag)   → single shot
+//   • hold (> ~200ms)              → autofire
+//   • one primary pointer at a time; secondary touches still fire
+//
+// We use Pointer Events with touch-action:none (set in CSS) so the
+// browser never steals the gesture for scroll/zoom.
+
+let ptrActive = null;     // { id, downX, downY, startT, moved, steering }
+let ptrTargetX = null;    // latest x while steering - ship aims for this
+const TAP_MAX_MOVE = 10;  // px before "tap" becomes "drag"
+const TAP_MAX_TIME = 250; // ms - longer press starts autofire
+const HOLD_FIRE_AFTER = 200; // ms - start autofire if held past this
+
+function arcadeRectOf(e){
+  const r = gameCv.getBoundingClientRect();
+  return { r, inside: e.clientX >= r.left && e.clientX <= r.right
+                    && e.clientY >= r.top  && e.clientY <= r.bottom };
+}
+
+gameCv.addEventListener('pointerdown', e => {
+  // Curtain: any touch dismisses and begins the game.
+  if (curtainOn){ hideCurtain(); e.preventDefault(); return; }
+  if (overlayOn) return;
+
+  // Dismiss the touch-hint on first tap.
+  hideTouchHint();
+
+  // If we already have an active primary pointer, treat this as
+  // a quick secondary-touch fire - doesn't hijack steering.
+  if (ptrActive){ fireBullet(); return; }
+
+  ptrActive = {
+    id: e.pointerId,
+    downX: e.clientX, downY: e.clientY,
+    startT: performance.now(),
+    moved: false, steering: false,
+    autofire: false,
+  };
+  // Track pointer even if finger/mouse leaves canvas.
+  try { gameCv.setPointerCapture(e.pointerId); } catch(_) {}
+
+  // Begin steering immediately - even a brief press will nudge
+  // the ship toward the pointer column.
+  const { r } = arcadeRectOf(e);
+  ptrTargetX = e.clientX - r.left;
+  ptrActive.steering = true;
+
+  e.preventDefault();
+});
+
+gameCv.addEventListener('pointermove', e => {
+  if (!ptrActive || e.pointerId !== ptrActive.id) return;
+  const dx = e.clientX - ptrActive.downX;
+  const dy = e.clientY - ptrActive.downY;
+  if (Math.hypot(dx, dy) > TAP_MAX_MOVE) ptrActive.moved = true;
+  const { r } = arcadeRectOf(e);
+  ptrTargetX = e.clientX - r.left;
+  showHUD();
+});
+
+function endPointer(e){
+  if (!ptrActive || e.pointerId !== ptrActive.id) return;
+  const dur = performance.now() - ptrActive.startT;
+  const wasTap = !ptrActive.moved && dur < TAP_MAX_TIME;
+  if (wasTap) fireBullet();
+  // If it became autofire, we already fired repeatedly in frame().
+  try { gameCv.releasePointerCapture(e.pointerId); } catch(_) {}
+  ptrActive = null;
+  ptrTargetX = null;
+}
+gameCv.addEventListener('pointerup', endPointer);
+gameCv.addEventListener('pointercancel', endPointer);
+gameCv.addEventListener('pointerleave', e => {
+  // Don't release if we still have capture - pointerup handles that.
+  // But if pointer truly left without button release, clean up.
+  if (ptrActive && e.pointerId === ptrActive.id && e.buttons === 0) endPointer(e);
+});
+
+// Prevent iOS double-tap-to-zoom and long-press callouts on the arcade.
+gameCv.addEventListener('touchstart', e => e.preventDefault(), {passive:false});
+gameCv.addEventListener('contextmenu', e => e.preventDefault());
+
+// ═══════════════════════════════════════════════════════════
+//  SAVE / READ MODE
+// ═══════════════════════════════════════════════════════════
+function saveManuscript(){
+  if (!manuscript.trim()){
+    showToast('The page is empty');
+    return;
+  }
+  const blob = new Blob([manuscript], {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'lexical-defenders-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Manuscript saved');
+}
+
+function clearManuscript(){
+  manuscript = '';
+  grammar = { lastPos: null, wordsSinceStop: 0, hasSubject: false };
+  stats.shots = 0; stats.struck = 0;
+  _prepCache.clear();
+  _lineCache.clear();
+  updateHUD();
+  renderManuscript();
+  showToast('Page cleared');
+}
+
+// Overlay read-mode - render full-bleed manuscript
+let overlayOn = false;
+const overlay = document.getElementById('overlay');
+const overlayBody = document.getElementById('overlay-body');
+const octx = overlayBody.getContext('2d');
+
+function toggleOverlay(){
+  overlayOn = !overlayOn;
+  overlay.classList.toggle('on', overlayOn);
+  // Wait a frame so the overlay has actual dimensions before we measure
+  if (overlayOn) requestAnimationFrame(() => requestAnimationFrame(renderOverlay));
+}
+
+function renderOverlay(){
+  const W = Math.min(580, overlay.clientWidth - 120);
+  const H = overlay.clientHeight - 200;
+  overlayBody.width = Math.floor(W*dpr);
+  overlayBody.height = Math.floor(H*dpr);
+  overlayBody.style.width = W+'px';
+  overlayBody.style.height = H+'px';
+  octx.setTransform(dpr,0,0,dpr,0,0);
+  octx.clearRect(0,0,W,H);
+
+  const font = 'italic 22px "DM Sans", system-ui, sans-serif';
+  const lh = 32;
+  octx.font = font;
+  octx.fillStyle = ink(1);
+  octx.textAlign='left'; octx.textBaseline='top';
+
+  if (!manuscript.trim()){
+    octx.fillStyle = ink(.4);
+    octx.font = 'italic 18px "DM Sans", system-ui, sans-serif';
+    octx.fillText('Nothing written yet.', 0, 0);
+    document.getElementById('overlay-meta').textContent = '0 words';
+    return;
+  }
+
+  const paragraphs = manuscript.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
+  let y = 0, totalLines = 0;
+  octx.font = font;
+  octx.fillStyle = ink(1);
+
+  for(let pi=0; pi<paragraphs.length; pi++){
+    const prepared = getPrepared(paragraphs[pi], font);
+    let cursor = { segmentIndex:0, graphemeIndex:0 };
+    while(true){
+      if (y + lh > H) break;
+      const line = layoutNextLine(prepared, cursor, W);
+      if (!line) break;
+      octx.fillText(line.text, 0, y);
+      cursor = line.end;
+      y += lh;
+      totalLines++;
+    }
+    if (pi < paragraphs.length - 1) y += lh * 0.6;
+  }
+
+  const wc = manuscript.replace(/[—.,:;]/g,' ').trim().split(/\s+/).filter(Boolean).length;
+  document.getElementById('overlay-meta').textContent =
+    `${wc} words · ${totalLines} lines · ${stats.struck} struck`;
+}
+
+document.getElementById('overlay-close').addEventListener('click', toggleOverlay);
+document.getElementById('btn-read').addEventListener('click', toggleOverlay);
+document.getElementById('btn-save').addEventListener('click', saveManuscript);
+document.getElementById('btn-clear').addEventListener('click', () => {
+  if (!manuscript.trim() || confirm('Clear the manuscript?')) clearManuscript();
+});
+
+// ═══════════════════════════════════════════════════════════
+//  TOAST
+// ═══════════════════════════════════════════════════════════
+let toastT = null;
+function showToast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => el.classList.remove('on'), 2200);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CURTAIN - removed; these remain as safe no-ops so the rest
+//  of the input code (which checks curtainOn) keeps working.
+// ═══════════════════════════════════════════════════════════
+let curtainOn = false;
+function hideCurtain(){ curtainOn = false; }
+
+// ═══════════════════════════════════════════════════════════
+//  TOUCH / MOBILE BOOTSTRAP
+// ═══════════════════════════════════════════════════════════
+const isTouch  = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+const isNarrow = () => window.innerWidth <= 860;
+
+function hideTouchHint(){
+  const el = document.getElementById('touch-hint');
+  if (!el || !el.classList.contains('on')) return;
+  el.classList.add('gone');
+  setTimeout(() => el.classList.remove('on','gone'), 700);
+}
+
+function setupMobileUI(){
+  if (isTouch || isNarrow()){
+    // Show the touch hint briefly on first load, auto-dismiss.
+    const hint = document.getElementById('touch-hint');
+    setTimeout(() => hint && hint.classList.add('on'), 300);
+    setTimeout(hideTouchHint, 3400);
+  }
+}
+setupMobileUI();
+
+// ═══════════════════════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════════════════════
+function boot(){
+  resizeGame();
+  seedInvaders();
+  placeShip();
+  resizeManuscript();
+  updateHUD();
+  // Wait a tick to ensure fonts are loaded before first render
+  if (document.fonts && document.fonts.ready){
+    document.fonts.ready.then(() => { renderManuscript(); });
+  } else {
+    setTimeout(renderManuscript, 120);
+  }
+  requestAnimationFrame(frame);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  HOUSE UI + THEME - PT.ui masthead + legend, glass toggle dot.
+//  Light is default; the toggle flips body.dark (which the NUI
+//  showcase detects) and the canvas re-reads its theme colours.
+// ═══════════════════════════════════════════════════════════
+let ui = null;
+function applyTheme(dark){
+  document.body.classList.toggle('dark', dark);
+  readColors();
+  if (ui) ui.theme(dark ? 'dark' : 'light');
+  renderManuscript();
+  if (overlayOn) renderOverlay();
+}
+ui = (window.PT && window.PT.ui) ? window.PT.ui({
+  title: 'Lexical defenders',
+  hints: 'A D move · Space fire · Tab read · S save · T theme',
+  theme: 'light',
+}) : null;
+const _toggleEl = document.getElementById('toggle');
+if (_toggleEl) _toggleEl.addEventListener('click', () => applyTheme(!document.body.classList.contains('dark')));
+
+boot();
+</script>
+</body>
+</html>

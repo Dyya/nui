@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<!--
+  Chladni - see a tone
+  Sand on a vibrating plate: thousands of grains are shaken off the moving regions of a standing wave and come to rest on its nodal lines, drawing the classic Chladni figures. Drag anywhere to sweep the frequency like an invisible fader and watch the sand migrate from one mode to the next. Copy the mode recipe, export the figure.
+
+  Part of NUI - experiments in interface design and interaction.
+  Author · Adi Dizdarevic · AD& · https://adidizdarevic.com/
+  © 2026 Adi Dizdarevic. Licensed under CC BY-NC 4.0.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Chladni - see a tone</title>
+<meta name="description" content="Sand on a vibrating plate: grains shake off the moving regions of a standing wave and settle on its nodal lines, drawing Chladni figures. Drag to sweep the frequency and watch the sand migrate between modes.">
+<meta name="author" content="Adi Dizdarevic">
+<link rel="author" href="https://adidizdarevic.com/">
+<meta name="theme-color" content="#FAFAFA">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Chladni - see a tone">
+<meta property="og:description" content="Sand on a vibrating plate settles on the nodal lines of a standing wave. Drag to sweep the frequency like an invisible fader; the sand migrates from figure to figure.">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Chladni",
+  "applicationCategory": "DesignApplication",
+  "description": "An interactive Chladni plate: sand grains settle on the nodal lines of interpolated standing-wave modes. Sweep the frequency by dragging, step modes with the arrow keys, copy the mode recipe, export the figure.",
+  "operatingSystem": "Any modern web browser",
+  "browserRequirements": "Requires JavaScript and HTML5 canvas",
+  "inLanguage": "en",
+  "keywords": "chladni, cymatics, standing wave, nodal lines, particles, generative, motion study, HTML canvas",
+  "license": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "author": { "@type": "Person", "name": "Adi Dizdarevic", "alternateName": "AD&", "url": "https://adidizdarevic.com/" },
+  "creator": { "@type": "Person", "name": "Adi Dizdarevic", "url": "https://adidizdarevic.com/" },
+  "isPartOf": { "@type": "CreativeWork", "name": "NUI - New User Interfaces", "description": "Experiments in interface design and interaction." }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-white: #FAFAFA; --c-grey: #8A8A8A; --c-black: #0A0A0A;
+  --obj: rgb(98,103,113);
+  --bg: var(--c-white); --fg: rgba(10,10,10,0.95);
+  --line: rgba(10,10,10,0.30);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+body.dark {
+  --bg: var(--c-black); --fg: rgba(250,250,250,0.95);
+  --line: rgba(250,250,250,0.24);
+  --obj: rgb(132,137,148);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: 'DM Sans', sans-serif; cursor: none; transition: background 0.4s var(--ease); touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+#c { position: fixed; inset: 0; z-index: 1; }
+#read { position: fixed; top: 18px; right: 16px; z-index: 40; font-family: 'IBM Plex Mono', monospace; font-size: 10px; line-height: 1.6; letter-spacing: 0.04em; text-align: right; color: var(--fg); opacity: 0.5; pointer-events: none; font-variant-numeric: tabular-nums; }
+#toggle{position:fixed;bottom:14px;right:16px;z-index:9998;width:30px;height:30px;border-radius:50%;cursor:pointer;pointer-events:auto;-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.06);display:grid;place-items:center;transition:transform .2s var(--ease);}
+body.dark #toggle{background:rgba(10,10,10,.35);border-color:rgba(255,255,255,.08);}
+#toggle::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--fg);}
+#toggle:hover{transform:scale(1.08);}
+.cursor { position: fixed; z-index: 50; pointer-events: none; width: 28px; height: 28px; transform: translate(-50%, -50%); left: -100px; top: -100px; }
+.cursor .ring { position: absolute; inset: 0; border: 1px solid var(--c-grey); border-radius: 50%; transition: transform 0.22s var(--ease), border-color 0.22s var(--ease); }
+.cursor .cross { position: absolute; left: 50%; top: 50%; background: var(--c-grey); transform: translate(-50%, -50%); transition: background 0.22s var(--ease); }
+.cursor .cross.h { width: 10px; height: 1px; } .cursor .cross.v { width: 1px; height: 10px; }
+body.dragging .cursor .ring { border-color: var(--fg); transform: scale(0.5); }
+body.dragging .cursor .cross { background: var(--fg); }
+@media (hover: none) and (pointer: coarse) { html, body { cursor: auto; } .cursor { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="read"></div>
+<div id="toggle" title="Toggle theme"></div>
+<div class="cursor" id="cursor"><div class="ring"></div><div class="cross h"></div><div class="cross v"></div></div>
+
+<script src="../typography/core/ui.js"></script>
+<script>
+const C = document.getElementById('c');
+const X = C.getContext('2d', { alpha: false });
+let W = 0, H = 0;
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+const HINTS = 'Drag to sweep the frequency · The sand settles on the nodal lines · Arrows step modes · R rescatter · C copy recipe · E export';
+const ui = PT.ui({ title: 'Chladni', hints: HINTS, theme: 'light' });
+const pill = document.querySelector('.adui-pill');
+const readEl = document.getElementById('read');
+let flashTimer = 0;
+function flashMsg(t, ms = 1700) {
+  if (pill) pill.innerHTML = '<span class="adui-seg"><b class="adui-key">' + t + '</b></span>';
+  clearTimeout(flashTimer); flashTimer = setTimeout(() => ui.setHints(HINTS), ms);
+}
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// ───── Modes ─────
+// Free-plate Chladni field: chi(x,y) = cos(m pi x) cos(n pi y) - cos(n pi x) cos(m pi y).
+// Grains are shaken in proportion to |chi| (the vibration amplitude), so they random-walk
+// off the antinodes and come to rest where chi = 0: the nodal lines ARE the figure.
+// Modes are ordered by m^2 + n^2, which is the frequency ordering: the drag is a fader.
+const MODES = [];
+for (let m = 1; m <= 8; m++)
+  for (let n = m + 1; n <= 8; n++) MODES.push([m, n]);
+MODES.sort((a, b) => (a[0] * a[0] + a[1] * a[1]) - (b[0] * b[0] + b[1] * b[1]));
+const hzOf = ([m, n]) => 48 * Math.pow(m * m + n * n, 0.78);
+
+let q = 3, qT = 3;         // continuous position along the mode list (eased)
+
+function chiAndGrad(m, n, x, y) {
+  const mpx = m * Math.PI * x, npy = n * Math.PI * y, npx = n * Math.PI * x, mpy = m * Math.PI * y;
+  const cmx = Math.cos(mpx), cny = Math.cos(npy), cnx = Math.cos(npx), cmy = Math.cos(mpy);
+  const smx = Math.sin(mpx), sny = Math.sin(npy), snx = Math.sin(npx), smy = Math.sin(mpy);
+  return [
+    cmx * cny - cnx * cmy,
+    -m * Math.PI * smx * cny + n * Math.PI * snx * cmy,
+    -n * Math.PI * cmx * sny + m * Math.PI * cnx * smy,
+  ];
+}
+
+// ───── Sand ─────
+const N = 9000;
+const gx = new Float32Array(N), gy = new Float32Array(N), sp = new Float32Array(N);
+function scatter() {
+  for (let i = 0; i < N; i++) { gx[i] = Math.random(); gy[i] = Math.random(); sp[i] = 1; }
+}
+
+const JITTER = 0.0021;     // random shake per unit |chi|
+const GRAD = 0.000028;     // drift down the amplitude gradient
+const MAX_STEP = 0.0042;   // clamp per-frame travel (normalized plate units)
+let agitation = 1;         // eases to 0 as the plate settles
+
+function stepSand() {
+  const k = Math.floor(clamp(q, 0, MODES.length - 1.0001));
+  const t = q - k;
+  const [m0, n0] = MODES[k], [m1, n1] = MODES[Math.min(k + 1, MODES.length - 1)];
+  let total = 0;
+  for (let i = 0; i < N; i++) {
+    const a = chiAndGrad(m0, n0, gx[i], gy[i]);
+    const b = chiAndGrad(m1, n1, gx[i], gy[i]);
+    const chi = lerp(a[0], b[0], t);
+    const dchx = lerp(a[1], b[1], t), dchy = lerp(a[2], b[2], t);
+    // gradient descent on chi^2 plus amplitude-scaled shake
+    let dx = -chi * dchx * GRAD + (Math.random() - 0.5) * Math.abs(chi) * JITTER * 2;
+    let dy = -chi * dchy * GRAD + (Math.random() - 0.5) * Math.abs(chi) * JITTER * 2;
+    const len = Math.hypot(dx, dy);
+    if (len > MAX_STEP) { dx *= MAX_STEP / len; dy *= MAX_STEP / len; }
+    gx[i] = clamp(gx[i] + dx, 0.004, 0.996);
+    gy[i] = clamp(gy[i] + dy, 0.004, 0.996);
+    sp[i] = len;
+    total += len;
+  }
+  return total / N;
+}
+
+// ───── Plate geometry ─────
+let PX = 0, PY = 0, PS = 0;   // plate top-left + side (css px)
+function fitPlate() {
+  PS = Math.min(W - 96, H - 170);
+  PX = (W - PS) / 2;
+  PY = (H - PS) / 2 + 6;
+}
+
+// ───── Render ─────
+let inkC = 'rgb(98,103,113)';
+const ACCENT_RGB = [251, 242, 81];
+let inkRGB = [98, 103, 113];
+function readTheme() {
+  const cs = getComputedStyle(document.body);
+  inkC = cs.getPropertyValue('--obj').trim();
+  const m = inkC.match(/\d+/g);
+  if (m) inkRGB = m.slice(0, 3).map(Number);
+}
+const BUCKETS = 6;
+const bucketIdx = [];
+for (let b = 0; b < BUCKETS; b++) bucketIdx.push(new Int32Array(N));
+const bucketLen = new Int32Array(BUCKETS);
+function render() {
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  X.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg').trim() || '#FAFAFA';
+  X.fillRect(0, 0, W, H);
+  X.strokeStyle = getComputedStyle(document.body).getPropertyValue('--line').trim();
+  X.lineWidth = 1;
+  X.strokeRect(PX - 0.5, PY - 0.5, PS + 1, PS + 1);
+
+  // group grains into tint buckets (grey -> yellow by how fast each grain is moving)
+  bucketLen.fill(0);
+  for (let i = 0; i < N; i++) {
+    const heat = clamp(sp[i] / MAX_STEP, 0, 1) * agitation;
+    const b = Math.min(BUCKETS - 1, (heat * BUCKETS) | 0);
+    bucketIdx[b][bucketLen[b]++] = i;
+  }
+  const gsz = Math.max(1.3, PS / 460);
+  for (let b = 0; b < BUCKETS; b++) {
+    if (!bucketLen[b]) continue;
+    const t = b / (BUCKETS - 1);
+    const r = Math.round(lerp(inkRGB[0], ACCENT_RGB[0], t));
+    const g = Math.round(lerp(inkRGB[1], ACCENT_RGB[1], t));
+    const bl = Math.round(lerp(inkRGB[2], ACCENT_RGB[2], t));
+    X.fillStyle = 'rgb(' + r + ',' + g + ',' + bl + ')';
+    const arr = bucketIdx[b], len = bucketLen[b];
+    for (let n = 0; n < len; n++) {
+      const i = arr[n];
+      X.fillRect(PX + gx[i] * PS - gsz / 2, PY + gy[i] * PS - gsz / 2, gsz, gsz);
+    }
+  }
+}
+
+function nearestMode() { return MODES[clamp(Math.round(qT), 0, MODES.length - 1)]; }
+function updateRead() {
+  const k = Math.floor(clamp(q, 0, MODES.length - 1.0001));
+  const t = q - k;
+  const hz = Math.round(lerp(hzOf(MODES[k]), hzOf(MODES[Math.min(k + 1, MODES.length - 1)]), t));
+  const [m, n] = nearestMode();
+  readEl.innerHTML = hz + ' Hz<br>mode ' + m + '·' + n;
+}
+
+// ───── Loop with idle stop (the plate sleeps when the sand has found the figure) ─────
+let raf = 0, running = false, lastT = 0;
+function wake() { if (!running) { running = true; lastT = performance.now(); raf = requestAnimationFrame(loop); } }
+function loop(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000 || 0.016); lastT = now;
+  q += (qT - q) * (1 - Math.exp(-dt * 7));
+  const avg = stepSand();
+  const settled = avg < 5.5e-5 && Math.abs(qT - q) < 0.002;
+  agitation += ((settled ? 0 : 1) - agitation) * (1 - Math.exp(-dt * 6));
+  render(); updateRead();
+  if (settled && agitation < 0.02 && !pointer.down) { running = false; return; }
+  raf = requestAnimationFrame(loop);
+}
+
+// ───── Pointer: the invisible fader ─────
+const pointer = { down: false, px: 0 };
+C.addEventListener('pointermove', (e) => {
+  const cur = document.getElementById('cursor'); cur.style.left = e.clientX + 'px'; cur.style.top = e.clientY + 'px';
+  if (pointer.down && e.buttons === 0) { endPointer(); return; }
+  if (pointer.down) {
+    qT = clamp(qT + (e.clientX - pointer.px) / 150, 0, MODES.length - 1);
+    pointer.px = e.clientX;
+    wake();
+  }
+});
+C.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#toggle, .adui')) return;
+  pointer.down = true; pointer.px = e.clientX;
+  document.body.classList.add('dragging');
+  try { C.setPointerCapture(e.pointerId); } catch (err) {}
+  wake();
+});
+function endPointer() {
+  if (pointer.down) {
+    const [m, n] = nearestMode();
+    flashMsg('Mode ' + m + '·' + n + ' - ' + Math.round(hzOf(nearestMode())) + ' Hz');
+  }
+  pointer.down = false;
+  document.body.classList.remove('dragging');
+  wake();
+}
+window.addEventListener('pointerup', endPointer);
+window.addEventListener('pointercancel', endPointer);
+window.addEventListener('blur', endPointer);
+document.addEventListener('visibilitychange', () => { if (document.hidden) endPointer(); });
+window.addEventListener('pointermove', (e) => { if (pointer.down && e.buttons === 0) endPointer(); });
+
+// ───── Keys ─────
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.repeat) return;
+  if (pointer.down) endPointer();
+  const k = e.key;
+  if (k === 'ArrowRight' || k === 'ArrowLeft') {
+    qT = clamp(Math.round(qT) + (k === 'ArrowRight' ? 1 : -1), 0, MODES.length - 1);
+    const [m, n] = nearestMode();
+    flashMsg('Mode ' + m + '·' + n + ' - ' + Math.round(hzOf(nearestMode())) + ' Hz');
+    wake();
+  }
+  else if (k === 'r' || k === 'R') { scatter(); flashMsg('Sand rescattered'); wake(); }
+  else if (k === 'c' || k === 'C') copyRecipe();
+  else if (k === 'e' || k === 'E') exportPNG();
+});
+
+// Payoff: the recipe of the figure the sand found.
+function copyRecipe() {
+  const [m, n] = nearestMode();
+  const data = {
+    mode: { m, n },
+    frequency_hz: Math.round(hzOf(nearestMode())),
+    field: 'cos(' + m + '*pi*x) * cos(' + n + '*pi*y) - cos(' + n + '*pi*x) * cos(' + m + '*pi*y)',
+    figure: 'the sand rests where the field is zero (the nodal lines)',
+  };
+  const json = JSON.stringify(data, null, 2);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(json).then(() => flashMsg('Copied mode recipe'), () => flashMsg('Copy blocked - see console'));
+    console.log(json);
+  } else { console.log(json); flashMsg('Recipe logged to console'); }
+}
+function exportPNG() {
+  const [m, n] = nearestMode();
+  C.toBlob((b) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b); a.download = 'chladni-' + m + '-' + n + '.png'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }, 'image/png');
+  flashMsg('Figure exported');
+}
+
+document.getElementById('toggle').addEventListener('click', () => {
+  const dark = document.body.classList.toggle('dark');
+  ui.theme(dark ? 'dark' : 'light');
+  readTheme(); wake();
+});
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  fitPlate(); readTheme(); wake();
+}
+window.addEventListener('resize', resize);
+document.fonts && document.fonts.ready && document.fonts.ready.then(() => wake());
+scatter();
+resize();
+</script>
+</body>
+</html>
