@@ -4,6 +4,8 @@
 
 Live studies in interaction, typography, sound, and play by [Adi Dizdarevic](https://adidizdarevic.com/). Each piece asks one question about how software should feel, and answers it as a working interface you can touch.
 
+An ongoing collection, first published in late 2025 and grown steadily since. New studies are added as they are finished, one at a time.
+
 **Browse the collection live: [adidizdarevic.com/nui](https://www.adidizdarevic.com/nui/)**
 
 ## How it's built
