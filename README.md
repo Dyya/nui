@@ -2,9 +2,13 @@
 
 **Experiments in interaction design.**
 
-Live studies in interaction, typography, sound, and play by [Adi Dizdarevic](https://adidizdarevic.com/). Each piece asks one question about how software should feel, and answers it as a working interface you can touch.
+A growing collection of interaction concepts. Each explores a single idea, gesture, physical metaphor, or way of seeing or hearing through a functional interaction. No frameworks, no templates. Just hand-written vanilla JavaScript, Canvas, WebGL, and Web Audio, each as a self-contained file you can open in any browser and read from top to bottom.
 
-An ongoing collection, first published in late 2025 and grown steadily since. New studies are added as they are finished, one at a time.
+Interaction has been optimized more than it has been invented.
+Much of today's interaction design refines established grammars.
+This work explores new ones.
+
+You're welcome to explore, study, and build on this work for non-commercial purposes. For commercial use, or to license a specific project, please get in touch.
 
 **Browse the collection live: [adidizdarevic.com/nui](https://www.adidizdarevic.com/nui/)**
 
