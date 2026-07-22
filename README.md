@@ -8,8 +8,6 @@ Interaction has been optimized more than it has been invented.
 Much of today's interaction design refines established grammars.
 This work explores new ones.
 
-You're welcome to explore, study, and build on this work for non-commercial purposes. For commercial use, or to license a specific project, please get in touch.
-
 **Browse the collection live: [adidizdarevic.com/nui](https://www.adidizdarevic.com/nui/)**
 
 ## How it's built
