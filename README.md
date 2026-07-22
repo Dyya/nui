@@ -1,6 +1,6 @@
 # NUI
 
-**A collection of experiments in interface design and interaction.**
+**Experiments in interaction design.**
 
 Live studies in interaction, typography, sound, and play by [Adi Dizdarevic](https://adidizdarevic.com/). Each piece asks one question about how software should feel, and answers it as a working interface you can touch.
 
